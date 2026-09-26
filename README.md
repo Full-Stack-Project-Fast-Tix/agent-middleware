@@ -10,24 +10,18 @@
 >
 > Needs Docker and a key in `.env`. Costs and steps: [Quick start](#quick-start).
 
-## Project Poster
-<img width="905" height="1280" alt="agents_on_a_leash" src="https://github.com/user-attachments/assets/656816ff-4032-4e2d-8edc-9b1ab65d77e1" />
-
 ## Architecture Diagram
 <img width="1280" height="889" alt="architecture_diagram" src="https://github.com/user-attachments/assets/625e2753-09f4-4e59-b7c2-72d39c82e13e" />
 
 ## Motivation and Problem Statement
-**Track Chosen: Agent Launchpad: Design and Build Lightweight Agent Middleware.**
-
 An autonomous coding Agent can go off the rails **on its own**. No attacker is
 required: a bug in its reasoning loop, a bad inference, a malicious line in a
 `README` or skill file it opened, or a panic in a retry loop is enough for it to
 `curl` a credential file to the wrong place or wipe a directory it should never
 have touched.
 
-This project takes the hackathon's [starter kit](#what-this-is-built-on) — a
-minimal browser-based Agent platform running Codex CLI — and adds the missing
-middleware: a **leash**. A small family of **guards** — four deterministic, one
+This project is a minimal browser-based Agent platform running Codex CLI with
+the missing middleware: a **leash**. A small family of **guards** — four deterministic, one
 task-aware model call — watch the Agent's own execution trace and stop it the
 moment it is about to cross a line it must never cross, whatever led it there. A
 separate **reflection layer** then carries what a guard caught into that Agent's
@@ -432,8 +426,8 @@ flowchart LR
     Runner -->|Local POC| Cont["Disposable container per turn<br/>codex app-server over JSON-RPC"]
     Runner -->|ECS / Compose| Proc["Codex child process<br/>in the app container"]
     Cont --> Trace["Trace + guards + reflections"]
-    Cont --> Ark["Volcengine Ark Responses API<br/>(via ark-proxy adapter)"]
-    Proc --> Ark
+    Cont --> Model["OpenAI Responses API"]
+    Proc --> Model
 ```
 
 | Component | Responsibility |
@@ -444,7 +438,6 @@ flowchart LR
 | **JsonStore** ([`store.ts`](apps/server/src/store.ts)) | Serializes writes, atomically replaces one JSON file. Single process only. |
 | **ContainerCodexRunner** ([`container-codex-runner.ts`](apps/server/src/container-codex-runner.ts)) | Local POC: one disposable Docker/Colima/Podman container per turn, `cap-drop ALL`, `no-new-privileges`, CPU/mem/PID caps. Runs `codex app-server` (not `codex exec`) so the turn can be observed and interrupted over JSON-RPC. **Traced. Guards run here.** |
 | **CodexRunner** ([`codex-runner.ts`](apps/server/src/codex-runner.ts)) | ECS / Compose: Codex as a child process in the app container. Not traced; guards do not run. |
-| **ark-proxy** ([`ark-proxy.ts`](apps/server/src/ark-proxy.ts)) | Conforms Codex's multi-turn Responses requests to Ark's stricter schema. Bypassed when `MODEL_PROVIDER=openai`. |
 
 Storage on disk:
 
@@ -505,16 +498,14 @@ derived from those files and nothing else.
 
 - Node.js 22+ and npm 10+
 - One container engine: Docker, Colima, or rootless Podman
-- A Volcengine Ark API key and a Responses-capable endpoint ID (`ep-…`), **or**
-  an OpenAI API key (`MODEL_PROVIDER=openai`)
+- An OpenAI API key
 
 Codex CLI ships inside the runtime image; it is not required on the host.
 
-### One command (local container runtime — the default judging path)
+### One command (local container runtime — recommended)
 
 ```bash
-ARK_API_KEY=your-ark-api-key \
-ARK_MODEL=ep-your-endpoint-id \
+OPENAI_API_KEY=your-openai-api-key \
 npm run poc
 ```
 
@@ -558,7 +549,7 @@ CODEX_HOME=codex-home
 
 ```bash
 ./scripts/bootstrap-local.sh        # creates .env
-# set ARK_API_KEY, ARK_MODEL, and a 24+ char APP_AUTH_TOKEN
+# set OPENAI_API_KEY and a 24+ char APP_AUTH_TOKEN
 docker compose up --build           # http://localhost:3000
 docker compose down                 # stop, keeping Agent data
 ```
@@ -617,10 +608,8 @@ want the result without paying for the first two runs.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `MODEL_PROVIDER` | `ark` | `ark` (Volcengine ModelArk, uses the adapter) or `openai` (Codex-native, no adapter). |
-| `ARK_API_KEY` / `ARK_MODEL` | required for `ark` | Ark key and a Responses-capable endpoint/model ID. |
-| `ARK_BASE_URL` | Beijing v3 endpoint | Ark OpenAI-compatible API URL. |
-| `OPENAI_API_KEY` / `OPENAI_MODEL` | — / `gpt-5.1-codex` | Used when `MODEL_PROVIDER=openai`. |
+| `MODEL_PROVIDER` | `openai` | Model provider used by Codex. |
+| `OPENAI_API_KEY` / `OPENAI_MODEL` | — / `gpt-5.1-codex` | OpenAI API credentials and model. |
 | `APP_AUTH_TOKEN` | empty on loopback | Shared demo bearer token. 24+ random URL-safe chars required for a non-loopback production server. Not user identity. |
 | `RUNTIME_PROVIDER` | `local-process` | `container` for one disposable runtime container per turn (set by `npm run poc`). Only the container path is traced. |
 | `CONTAINER_ENGINE` | `docker` | `docker`, `podman`, … Colima exposes the Docker CLI so it uses `docker`. |
@@ -805,7 +794,7 @@ false negative puts a live credential on a projector.
 - **Only a guard refusal is a hard stop.** Everything the reflection layer does
   is a `warn` plus a `steer`.
 
-### Platform (inherited from the starter kit)
+### Platform limitations
 
 Shared demo token; no user identity, authorization, RBAC, or tenant isolation;
 no CSRF protection; no per-Agent container boundary in ECS mode; ordinary local
@@ -815,20 +804,13 @@ active runtime container. See [SECURITY.md](SECURITY.md).
 
 ---
 
-## What this is built on
+## Platform overview
 
-The starter kit is **Volc Agent Launchpad** — the hackathon's Track 1 baseline:
-a minimal single-node Agent platform with browser Agent CRUD, a Playground,
-persistent workspaces, resumable Codex CLI sessions, a one-command local
-container runtime, and an optional Volcengine ECS deployment.
-
-Per the [extension guide](docs/HACKATHON_EXTENSION_GUIDE.md), teams build
-**exactly one** middleware track and do not rebuild the UI, control plane, local
-runtime, or ECS setup. This repo's track is **Kill Switch**: contain an explicit
-dangerous action with a threat-specific policy, block or terminate a malicious
-Run, keep the protected asset unchanged, and run a safe task afterwards. The
-starter kit's default CPU/memory/PID/capability limits do not count as the new
-control — the guards and the reflection layer are the control.
+This is a single-node Agent platform with browser-based Agent management, a
+Playground, persistent workspaces, resumable Codex CLI sessions, a one-command
+local container runtime, and optional Volcengine ECS deployment. The safety
+layer is the product: guards observe execution traces, block dangerous actions,
+and carry learned patterns into later runs.
 
 ---
 
@@ -858,7 +840,6 @@ apps/
     src/redaction/         One credential-pattern registry, two tiers, three consumers
     src/container-codex-runner.ts   Disposable container per turn; buildGuardChecks
     src/codex-runner.ts    ECS child-process runner (untraced)
-    src/ark-proxy.ts       Codex → Ark Responses schema adapter
     src/trace.ts / store.ts / config.ts / workspace.ts
     tests/{checks,redaction,reflections,policy,semantic,runtime,server}/
 deploy/volcengine/         Terraform: VPC, subnet, security group, ECS, EIP
@@ -871,7 +852,6 @@ scripts/
   bootstrap-local.sh / deploy-existing-ecs.sh / deploy-volcengine.sh
 docs/
   ARCHITECTURE.md  LEARNING_LAYER.md  LOCAL_POC.md  DEPLOYMENT.md
-  HACKATHON_EXTENSION_GUIDE.md
 Dockerfile / Dockerfile.runtime / docker-compose.yml
 ```
 
@@ -887,8 +867,7 @@ Dockerfile / Dockerfile.runtime / docker-compose.yml
   definitions, scenario families, how to run it
 - [Local POC](docs/LOCAL_POC.md) — container-engine detail, rootless Podman
 - [Deployment](docs/DEPLOYMENT.md) — existing ECS and Terraform paths
-- [Hackathon extension guide](docs/HACKATHON_EXTENSION_GUIDE.md) — track
-  definitions, deliverables, acceptance checklist
+- [Setup guide](SETUP.md) — fresh-clone installation and runtime options
 - [Security policy](SECURITY.md) · [Contributing](CONTRIBUTING.md)
 
 ## License

@@ -62,7 +62,7 @@ const envSchema = z.object({
   /**
    * Which model service Codex talks to.
    *
-   * "ark" is the starter kit's BytePlus ModelArk path, and needs the adapter in
+   * "ark" is the legacy BytePlus ModelArk compatibility path, and needs the adapter in
    * ark-proxy.ts because Ark rejects Codex's multi-turn requests.
    * "openai" is Codex's own native provider, so it needs no adapter.
    */

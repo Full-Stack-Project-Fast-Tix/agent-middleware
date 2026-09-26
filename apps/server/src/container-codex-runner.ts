@@ -230,7 +230,7 @@ export class ContainerCodexRunner implements AgentRunner {
     };
     this.active.set(request.agentId, active);
 
-    // Byte cap and stderr tail are the starter kit's original safety net. They
+    // Byte cap and stderr tail are the runtime's baseline safety net. They
     // stay as a crash guard and should never fire during a normal run.
     let stderr = "";
     let totalBytes = 0;

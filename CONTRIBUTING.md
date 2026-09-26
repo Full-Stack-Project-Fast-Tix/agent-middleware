@@ -1,7 +1,7 @@
 # Contributing
 
-Keep changes focused, reproducible, and suitable for a three-day student
-hackathon.
+Keep changes focused, reproducible, and suitable for a small production-shaped
+project.
 
 ## Setup
 

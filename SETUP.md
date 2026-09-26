@@ -1,8 +1,7 @@
 # Setup from a fresh GitHub clone
 
 This guide gets the Agent Launchpad running from a clean checkout. The project
-uses Codex with the native OpenAI provider; the repository does not require an
-Ark account.
+uses Codex with the native OpenAI provider.
 
 ## Prerequisites
 

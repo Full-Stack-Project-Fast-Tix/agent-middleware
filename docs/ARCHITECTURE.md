@@ -1,6 +1,7 @@
 # Architecture
 
-Volc Agent Launchpad is a single-node control plane for hackathon use.
+Agent Launchpad is a single-node control plane for running and supervising
+Codex-based Agents.
 
 ```mermaid
 flowchart LR
@@ -12,8 +13,8 @@ flowchart LR
     Runner -->|Local POC| Container["Disposable Runtime container"]
     Runner -->|ECS| Process["Codex child process"]
     Container --> Guard["Trace checks + semantic intent controller"]
-    Guard --> Ark["Volcengine Ark / OpenAI"]
-    Process --> Ark
+    Guard --> Model["OpenAI Responses API"]
+    Process --> Model
 ```
 
 ## Components
@@ -21,7 +22,7 @@ flowchart LR
 ### Web UI
 
 Lists Agents, manages lifecycle actions, submits prompts, and polls asynchronous
-Runs. It never receives the Ark API key.
+Runs. It never receives the model API key.
 
 ### Fastify API
 

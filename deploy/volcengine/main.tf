@@ -51,7 +51,7 @@ locals {
 
 resource "volcenginecc_vpc_vpc" "launchpad" {
   vpc_name              = local.name
-  description           = "VPC for the CodeJam Agent Launchpad starter kit"
+  description           = "VPC for Agent Launchpad"
   cidr_block            = "172.20.0.0/16"
   support_ipv_4_gateway = true
   enable_ipv_6          = false
@@ -109,7 +109,7 @@ resource "volcenginecc_vpc_security_group" "launchpad" {
 resource "volcenginecc_ecs_instance" "launchpad" {
   instance_name        = local.name
   hostname             = "agent-launchpad"
-  description          = "CodeJam Agent Launchpad starter kit"
+  description          = "Agent Launchpad"
   project_name         = var.project_name
   instance_charge_type = "PostPaid"
   instance_type        = var.instance_type

@@ -1,11 +1,11 @@
 # Security policy
 
-Volc Agent Launchpad is a hackathon proof of concept. Only the latest revision
+Volc Agent Launchpad is a security-focused proof of concept. Only the latest revision
 on the default branch is supported.
 
 ## Report a vulnerability
 
-Send the repository owner or event organizer the affected revision,
+Send the repository owner the affected revision,
 reproduction steps, impact, and suggested mitigation. Do not publish
 credentials, personal data, or exploit details in an issue.
 

@@ -176,7 +176,7 @@ a number. Phase 5 is research and nothing before it depends on it.
 - **Generated executable rules.** [AgentSpec](https://arxiv.org/abs/2503.18666)
   shows the shape to use if we get to phase 5: a model fills slots in a fixed
   grammar and an interpreter we wrote evaluates it. Generated *code* would be a
-  general-purpose policy engine, which is out of scope for this hackathon.
+  general-purpose policy engine, which is outside the scope of this project.
 
 ## How we measure it
 
