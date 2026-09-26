@@ -11,6 +11,12 @@ uses Codex with the native OpenAI provider.
 - Docker Desktop, Colima, or Podman for the recommended runtime
 - Git
 
+## Platform support
+
+The documented and tested local-runtime paths are macOS and Linux. On Windows,
+use WSL2 with Docker Desktop and run the commands inside the WSL2 shell; the
+native Windows path is not currently verified.
+
 ## 1. Clone and install
 
 ```bash
