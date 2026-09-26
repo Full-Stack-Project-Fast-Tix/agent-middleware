@@ -520,7 +520,7 @@ export default function App() {
               <strong>Runtime configuration needed</strong>
               <p>
                 {!system?.arkConfigured
-                  ? "Set ARK_API_KEY and ARK_MODEL in .env before using the Playground."
+                  ? "Set MODEL_PROVIDER=openai and OPENAI_API_KEY in .env before using the Playground."
                   : system.runtimeProvider === "container"
                     ? "The local container engine or Agent Runtime image is unavailable. Rerun npm run poc."
                     : "Codex CLI was not found. Use the Docker image or install @openai/codex."}

@@ -201,7 +201,7 @@ export class AgentService {
     if (!isModelConfigured(this.config)) {
       throw new HttpError(
         503,
-        "Ark is not configured. Set ARK_API_KEY and ARK_MODEL, then restart.",
+        "The model provider is not configured. Set MODEL_PROVIDER and its API key, then restart.",
       );
     }
     const timestamp = now();
