@@ -76,6 +76,7 @@ export interface RunUsage {
   outputTokens?: number;
 }
 
+/* Transitional compatibility model: future orchestration will separate Run, Task, and AgentExecution. */
 export interface AgentRun {
   id: string;
   agentId: string;

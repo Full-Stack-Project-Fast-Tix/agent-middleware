@@ -5,7 +5,8 @@
   "description": "A safety-focused Agent platform for running Codex CLI locally or on Volcengine ECS.",
   "type": "module",
   "workspaces": [
-    "apps/*"
+    "apps/*",
+    "packages/*"
   ],
   "engines": {
     "node": ">=22"

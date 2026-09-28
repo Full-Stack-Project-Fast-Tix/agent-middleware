@@ -3,6 +3,7 @@ import type { AppConfig } from "./config.js";
 import { isModelConfigured } from "./config.js";
 import { HttpError, RunCancelledError, traceOf } from "./errors.js";
 import { JsonStore } from "./store.js";
+import { JsonAgentRepository, JsonRunRepository, type AgentRepository, type RunRepository } from "./repositories.js";
 import type {
   Agent,
   AgentRun,
@@ -34,13 +35,18 @@ export class AgentService {
   private readonly activeExecutions = new Map<string, Promise<void>>();
   private readonly cancellationRequests = new Set<string>();
   private readonly pendingApprovals = new Map<string, PendingApprovalWaiter>();
+  private readonly agents: AgentRepository;
+  private readonly runs: RunRepository;
 
   constructor(
     private readonly config: AppConfig,
     private readonly store: JsonStore,
     private readonly workspaces: WorkspaceManager,
     private readonly runner: AgentRunner,
-  ) {}
+  ) {
+    this.agents = new JsonAgentRepository(store);
+    this.runs = new JsonRunRepository(store);
+  }
 
   async initialize(): Promise<void> {
     await this.store.initialize();
@@ -68,13 +74,11 @@ export class AgentService {
   }
 
   listAgents(): Agent[] {
-    return this.store
-      .snapshot()
-      .agents.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+    return this.agents.list().sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
   }
 
   getAgent(id: string): Agent {
-    const agent = this.store.snapshot().agents.find((item) => item.id === id);
+    const agent = this.agents.get(id);
     if (!agent) {
       throw new HttpError(404, "Agent not found");
     }
@@ -156,7 +160,7 @@ export class AgentService {
   }
 
   getRun(runId: string): AgentRun {
-    const run = this.store.snapshot().runs.find((item) => item.id === runId);
+    const run = this.runs.get(runId);
     if (!run) {
       throw new HttpError(404, "Run not found");
     }
@@ -165,10 +169,7 @@ export class AgentService {
 
   getRuns(agentId: string): AgentRun[] {
     this.getAgent(agentId);
-    return this.store
-      .snapshot()
-      .runs.filter((run) => run.agentId === agentId)
-      .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+    return this.runs.listByAgent(agentId).sort((left, right) => right.createdAt.localeCompare(left.createdAt));
   }
 
   adminOverview(): AdminOverview {
