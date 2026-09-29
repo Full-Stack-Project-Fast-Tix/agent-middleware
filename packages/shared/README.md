@@ -26,6 +26,7 @@ types everywhere else.
 | `audit.ts` | AuditEvent and its event types | P3 |
 | `events.ts` | RunEvent (SSE), RunSnapshot | P2, P4 |
 | `api.ts` | error shape, pagination, request bodies | all |
+| `sse-client.ts` | SSE parser and `followRunEvents` client | P4 |
 
 ## Conventions
 
@@ -39,6 +40,36 @@ types everywhere else.
   `seq > lastEventSeq`.
 - Runtime-only state (process handles, working-copy paths, the semantic
   trajectory window, raw JSONL traces) is never part of a persisted entity.
+
+## Live run events
+
+The server publishes RunEvents through `RunEventHub` (`apps/server/src/run-events.ts`)
+and streams them at `GET /api/runs/:id/events` as Server-Sent Events. Browsers and
+the integration harness follow the stream with `followRunEvents`. It uses fetch
+rather than `EventSource` so it can send the Authorization header:
+
+```ts
+const snapshot = await loadRunSnapshot(runId); // your API call
+applySnapshot(snapshot);
+await followRunEvents({
+  url: `/api/runs/${runId}/events`,
+  afterSeq: snapshot.lastEventSeq,
+  headers: { authorization: `Bearer ${token}` },
+  signal: controller.signal,
+  onEvent: (event) => upsert(event), // each event carries a full entity
+  onResync: async () => {
+    const fresh = await loadRunSnapshot(runId);
+    applySnapshot(fresh);
+    return fresh.lastEventSeq;
+  },
+});
+```
+
+The client reconnects after network drops and resumes from the last seq it
+applied. The server replies with a `resync` event when it cannot replay from
+that seq: it restarted, or its per-run buffer has moved past it. The client
+then reloads the snapshot. Every frame is redacted on the server before it is
+written.
 
 ## Changing a contract
 

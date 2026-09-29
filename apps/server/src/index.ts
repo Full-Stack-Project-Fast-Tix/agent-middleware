@@ -3,6 +3,7 @@ import { AgentService } from "./agent-service.js";
 import { startArkProxy, type ArkProxy } from "./ark-proxy.js";
 import { createApp } from "./app.js";
 import { loadConfig, writeCodexConfig } from "./config.js";
+import { RunEventHub } from "./run-events.js";
 import { createRunner } from "./runner-factory.js";
 import { JsonStore } from "./store.js";
 import { WorkspaceManager } from "./workspace.js";
@@ -24,7 +25,11 @@ const runner = createRunner(config);
 const service = new AgentService(config, store, workspaces, runner);
 await service.initialize();
 
-const app = await createApp(config, service);
+// The orchestrator publishes RunEvents here; browsers follow them over SSE.
+const runEvents = new RunEventHub();
+const app = await createApp(config, service, {
+  runEvents: { hub: runEvents, canReadRun: (runId) => runEvents.has(runId) },
+});
 
 if (arkProxy) {
   app.log.info(

@@ -25,7 +25,11 @@ export type JsonObject = z.infer<typeof jsonObjectSchema>;
 export const factsSchema = z.record(z.string(), z.string());
 export type Facts = z.infer<typeof factsSchema>;
 
-export const nonEmptyStringSchema = z.string().trim().min(1);
+/** Not blank. Validation only: entity strings are never rewritten, so a parsed row equals the stored one. */
+export const nonEmptyStringSchema = z.string().refine((value) => value.trim().length > 0, "Must not be blank");
+
+/** Request input: surrounding whitespace is trimmed, then it must not be empty. */
+export const requiredTextSchema = z.string().trim().min(1);
 
 export const auditTimestampsShape = {
   createdAt: timestampSchema,

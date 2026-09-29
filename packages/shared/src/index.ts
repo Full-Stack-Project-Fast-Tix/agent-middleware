@@ -8,3 +8,4 @@ export * from "./middleware.js";
 export * from "./audit.js";
 export * from "./events.js";
 export * from "./api.js";
+export * from "./sse-client.js";

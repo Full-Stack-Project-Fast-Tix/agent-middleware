@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { idSchema, jsonObjectSchema, nonEmptyStringSchema } from "./common.js";
+import { idSchema, jsonObjectSchema, requiredTextSchema } from "./common.js";
 import { agentCapabilitiesSchema } from "./agents.js";
 import { approvalDecisionSchema, orchestrationModeSchema, workspaceRoleSchema } from "./enums.js";
 
@@ -49,7 +49,7 @@ export type PageQuery = z.infer<typeof pageQuerySchema>;
 // are path parameters and are not repeated here.
 
 export const createRunRequestSchema = z.object({
-  userPrompt: nonEmptyStringSchema.max(20_000),
+  userPrompt: requiredTextSchema.max(20_000),
   orchestrationMode: orchestrationModeSchema.default("single"),
   /** Agent for `single` mode, or the supervisor for `auto`. Server default when omitted. */
   agentId: idSchema.optional(),
@@ -62,7 +62,7 @@ export const resolveApprovalRequestSchema = z.object({
 export type ResolveApprovalRequest = z.infer<typeof resolveApprovalRequestSchema>;
 
 export const createAgentRequestSchema = z.object({
-  name: nonEmptyStringSchema.max(80),
+  name: requiredTextSchema.max(80),
   description: z.string().max(500).optional(),
   instructions: z.string().max(20_000).optional(),
   profileId: idSchema,
@@ -75,14 +75,14 @@ export const updateAgentRequestSchema = createAgentRequestSchema
 export type UpdateAgentRequest = z.infer<typeof updateAgentRequestSchema>;
 
 export const createAgentProfileRequestSchema = z.object({
-  name: nonEmptyStringSchema.max(80),
+  name: requiredTextSchema.max(80),
   description: z.string().max(500).optional(),
   capabilities: agentCapabilitiesSchema,
 });
 export type CreateAgentProfileRequest = z.infer<typeof createAgentProfileRequestSchema>;
 
 export const createSecurityPolicyRequestSchema = z.object({
-  name: nonEmptyStringSchema.max(120),
+  name: requiredTextSchema.max(120),
   rules: jsonObjectSchema,
 });
 export type CreateSecurityPolicyRequest = z.infer<typeof createSecurityPolicyRequestSchema>;

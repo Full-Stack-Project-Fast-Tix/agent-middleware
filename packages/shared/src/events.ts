@@ -78,6 +78,11 @@ export type RunEvent = z.infer<typeof runEventSchema>;
 export type RunEventType = RunEvent["type"];
 export type RunEventOf<T extends RunEventType> = Extract<RunEvent, { type: T }>;
 
+/** A RunEvent as the orchestrator publishes it; the server stamps id, seq and timestamp. */
+export type RunEventDraft = {
+  [T in RunEventType]: Omit<RunEventOf<T>, "id" | "seq" | "timestamp">;
+}[RunEventType];
+
 export const RUN_EVENT_TYPES = runEventSchema.options.map(
   (option) => option.shape.type.value,
 ) as readonly RunEventType[];
@@ -101,4 +106,15 @@ export type RunSnapshot = z.infer<typeof runSnapshotSchema>;
  */
 export function encodeRunEventFrame(event: RunEvent): string {
   return `id: ${event.seq}\ndata: ${JSON.stringify(event)}\n\n`;
+}
+
+/**
+ * Sent instead of events when the server cannot replay from the client's
+ * position: it restarted, or the replay buffer has moved past it. The client
+ * reloads the RunSnapshot and reconnects from its lastEventSeq.
+ */
+export const RUN_STREAM_RESYNC_EVENT = "resync";
+
+export function encodeResyncFrame(): string {
+  return `event: ${RUN_STREAM_RESYNC_EVENT}\ndata: {}\n\n`;
 }

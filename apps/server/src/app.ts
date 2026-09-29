@@ -16,6 +16,7 @@ import {
   WorkspacePathError,
 } from "./workspace-files.js";
 import type { AgentService } from "./agent-service.js";
+import { registerRunEventStream, type RunEventStreamOptions } from "./run-events-route.js";
 
 /**
  * Response bodies the outbound redactor runs over. Anything else — static
@@ -47,9 +48,15 @@ const workspaceFileBody = z.object({
   content: z.string().max(1_048_576),
 });
 
+export interface AppExtensions {
+  /** Live RunEvent stream. Omitted, the route is not registered. */
+  runEvents?: RunEventStreamOptions;
+}
+
 export async function createApp(
   config: AppConfig,
   service: AgentService,
+  extensions: AppExtensions = {},
 ): Promise<FastifyInstance> {
   const app = Fastify({
     logger: {
@@ -106,7 +113,8 @@ export async function createApp(
    *
    * The payload may be a string, a Buffer, or a stream. Streams pass through
    * untouched: buffering one here to redact it would defeat the point of
-   * streaming, and nothing in this app currently streams a response body.
+   * streaming. The one streaming route, the RunEvent SSE stream, bypasses
+   * this hook entirely and redacts each frame itself (run-events-route.ts).
    */
   app.addHook("onSend", async (_request, reply, payload) => {
     const contentType = String(reply.getHeader("content-type") ?? "");
@@ -271,6 +279,10 @@ export async function createApp(
 
     return reply.type("application/x-ndjson").send(contents);
   });
+
+  if (extensions.runEvents) {
+    registerRunEventStream(app, extensions.runEvents);
+  }
 
   if (config.nodeEnv === "production") {
     const webRoot = fileURLToPath(new URL("../../web/dist", import.meta.url));
