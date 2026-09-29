@@ -18,6 +18,7 @@ types everywhere else.
 | --- | --- | --- |
 | `common.ts` | ids, timestamps, JSON payload helpers | all |
 | `enums.ts` | statuses, roles, layers, outcomes | all |
+| `lifecycle.ts` | allowed status transitions, terminal statuses | P2 |
 | `identity.ts` | User, Workspace, WorkspaceMember | P3 |
 | `agents.ts` | Agent, AgentProfile, capabilities, SecurityPolicy | P1, P2 |
 | `runs.ts` | Run, Task, TaskDependency, AgentExecution | P2, P3 |
@@ -25,7 +26,7 @@ types everywhere else.
 | `middleware.ts` | SecurityContext, ProposedAction, SecurityDecision, SecurityEvaluator | P1, P2 |
 | `audit.ts` | AuditEvent and its event types | P3 |
 | `events.ts` | RunEvent (SSE), RunSnapshot | P2, P4 |
-| `api.ts` | error shape, pagination, request bodies | all |
+| `api.ts` | routes, error shape, pagination, request and response bodies | all |
 | `sse-client.ts` | SSE parser and `followRunEvents` client | P4 |
 
 ## Conventions

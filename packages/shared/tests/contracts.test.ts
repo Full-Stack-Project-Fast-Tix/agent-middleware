@@ -27,6 +27,12 @@ import {
   taskStatusSchema,
   approvalStatusSchema,
   workspaceRoleSchema,
+  RUN_TRANSITIONS,
+  TASK_TRANSITIONS,
+  EXECUTION_TRANSITIONS,
+  APPROVAL_TRANSITIONS,
+  canTransitionRun,
+  canTransitionTask,
   type RunEvent,
 } from "../src/index.js";
 import { approval, execution, finding, ids, now, run, securityContext, task } from "./fixtures.js";
@@ -49,6 +55,29 @@ describe("shared enums", () => {
     [orchestrationModeSchema, ["single", "auto"]],
   ] as const)("%# matches the plan", (schema, values) => {
     expect(schema.options).toEqual(values);
+  });
+
+  it("defines transitions for every status, to known statuses only", () => {
+    const tables = [
+      [RUN_TRANSITIONS, runStatusSchema],
+      [TASK_TRANSITIONS, taskStatusSchema],
+      [EXECUTION_TRANSITIONS, executionStatusSchema],
+      [APPROVAL_TRANSITIONS, approvalStatusSchema],
+    ] as const;
+    for (const [table, schema] of tables) {
+      expect(Object.keys(table).sort()).toEqual([...schema.options].sort());
+      for (const targets of Object.values(table) as string[][]) {
+        for (const target of targets) expect(schema.options).toContain(target);
+      }
+    }
+  });
+
+  it("allows the normal path and refuses leaving a terminal status", () => {
+    expect(canTransitionRun("queued", "planning")).toBe(true);
+    expect(canTransitionRun("waiting_approval", "running")).toBe(true);
+    expect(canTransitionRun("completed", "running")).toBe(false);
+    expect(canTransitionTask("pending", "running")).toBe(false);
+    expect(canTransitionTask("ready", "running")).toBe(true);
   });
 
   it("identifies terminal statuses", () => {

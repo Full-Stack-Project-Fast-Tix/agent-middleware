@@ -97,32 +97,3 @@ export type ApprovalDecision = z.infer<typeof approvalDecisionSchema>;
 export const ACTOR_TYPES = ["user", "agent", "system"] as const;
 export const actorTypeSchema = z.enum(ACTOR_TYPES);
 export type ActorType = z.infer<typeof actorTypeSchema>;
-
-// Terminal statuses: nothing transitions out of these. The scheduler uses them
-// to decide when a Run is finished; the UI uses them to stop showing spinners.
-
-const TERMINAL_RUN_STATUSES: ReadonlySet<RunStatus> = new Set(["completed", "failed", "cancelled"]);
-const TERMINAL_TASK_STATUSES: ReadonlySet<TaskStatus> = new Set([
-  "completed",
-  "failed",
-  "skipped",
-  "cancelled",
-]);
-const TERMINAL_EXECUTION_STATUSES: ReadonlySet<ExecutionStatus> = new Set([
-  "completed",
-  "failed",
-  "cancelled",
-]);
-const TERMINAL_APPROVAL_STATUSES: ReadonlySet<ApprovalStatus> = new Set([
-  "approved",
-  "denied",
-  "timed_out",
-  "cancelled",
-]);
-
-export const isTerminalRunStatus = (status: RunStatus): boolean => TERMINAL_RUN_STATUSES.has(status);
-export const isTerminalTaskStatus = (status: TaskStatus): boolean => TERMINAL_TASK_STATUSES.has(status);
-export const isTerminalExecutionStatus = (status: ExecutionStatus): boolean =>
-  TERMINAL_EXECUTION_STATUSES.has(status);
-export const isTerminalApprovalStatus = (status: ApprovalStatus): boolean =>
-  TERMINAL_APPROVAL_STATUSES.has(status);

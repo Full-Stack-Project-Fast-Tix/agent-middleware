@@ -2,6 +2,9 @@ import { z } from "zod";
 import { idSchema, jsonObjectSchema, requiredTextSchema } from "./common.js";
 import { agentCapabilitiesSchema } from "./agents.js";
 import { approvalDecisionSchema, orchestrationModeSchema, workspaceRoleSchema } from "./enums.js";
+import { runSnapshotSchema } from "./events.js";
+import { runSchema } from "./runs.js";
+import { approvalSchema } from "./security.js";
 
 // HTTP conventions, matching what the server already does:
 //
@@ -44,6 +47,32 @@ export const pageQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).optional(),
 });
 export type PageQuery = z.infer<typeof pageQuerySchema>;
+
+/**
+ * Routes for the Run -> Task -> AgentExecution model. The legacy single-agent
+ * routes (`/api/agents/...`, `GET /api/runs/:id`) keep working alongside these
+ * until the new model replaces them.
+ *
+ *   POST /api/workspaces/:workspaceId/runs   CreateRunRequest   -> 201 { run }
+ *   GET  /api/runs/:runId/snapshot                              -> { snapshot }
+ *   GET  /api/runs/:runId/events             Server-Sent Events (RunEvent)
+ *   POST /api/approvals/:approvalId/resolve  ResolveApprovalRequest -> { approval }
+ */
+export const apiPaths = {
+  runs: (workspaceId: string) => `/api/workspaces/${encodeURIComponent(workspaceId)}/runs`,
+  runSnapshot: (runId: string) => `/api/runs/${encodeURIComponent(runId)}/snapshot`,
+  runEvents: (runId: string) => `/api/runs/${encodeURIComponent(runId)}/events`,
+  resolveApproval: (approvalId: string) => `/api/approvals/${encodeURIComponent(approvalId)}/resolve`,
+} as const;
+
+export const runResponseSchema = z.object({ run: runSchema });
+export type RunResponse = z.infer<typeof runResponseSchema>;
+
+export const runSnapshotResponseSchema = z.object({ snapshot: runSnapshotSchema });
+export type RunSnapshotResponse = z.infer<typeof runSnapshotResponseSchema>;
+
+export const approvalResponseSchema = z.object({ approval: approvalSchema });
+export type ApprovalResponse = z.infer<typeof approvalResponseSchema>;
 
 // Request bodies. Ids that appear in the URL (workspaceId, runId, approvalId)
 // are path parameters and are not repeated here.
