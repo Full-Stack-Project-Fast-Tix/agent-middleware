@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { idSchema, jsonObjectSchema, requiredTextSchema } from "./common.js";
-import { agentCapabilitiesSchema } from "./agents.js";
+import { agentCapabilitiesSchema, capabilityCeilingSchema } from "./agents.js";
 import { approvalDecisionSchema, orchestrationModeSchema, workspaceRoleSchema } from "./enums.js";
 import { runSnapshotSchema } from "./events.js";
 import { runSchema } from "./runs.js";
@@ -56,12 +56,19 @@ export type PageQuery = z.infer<typeof pageQuerySchema>;
  *   POST /api/workspaces/:workspaceId/runs   CreateRunRequest   -> 201 { run }
  *   GET  /api/runs/:runId/snapshot                              -> { snapshot }
  *   GET  /api/runs/:runId/events             Server-Sent Events (RunEvent)
+ *   POST /api/runs/:runId/cancel                                -> 202 { run }
  *   POST /api/approvals/:approvalId/resolve  ResolveApprovalRequest -> { approval }
+ *
+ * Cancel is idempotent: the first call sets cancelRequestedAt and the run
+ * reaches `cancelled` asynchronously, visible on the event stream. Repeating
+ * it, even once the run is cancelled, returns 202 with the run unchanged. Only
+ * a run that already completed or failed answers 409.
  */
 export const apiPaths = {
   runs: (workspaceId: string) => `/api/workspaces/${encodeURIComponent(workspaceId)}/runs`,
   runSnapshot: (runId: string) => `/api/runs/${encodeURIComponent(runId)}/snapshot`,
   runEvents: (runId: string) => `/api/runs/${encodeURIComponent(runId)}/events`,
+  cancelRun: (runId: string) => `/api/runs/${encodeURIComponent(runId)}/cancel`,
   resolveApproval: (approvalId: string) => `/api/approvals/${encodeURIComponent(approvalId)}/resolve`,
 } as const;
 
@@ -98,9 +105,12 @@ export const createAgentRequestSchema = z.object({
 });
 export type CreateAgentRequest = z.infer<typeof createAgentRequestSchema>;
 
+/** Optimistic concurrency: the version the editor started from. A stale one is a 409. */
+const expectedVersion = { expectedVersion: z.number().int().positive() };
+
 export const updateAgentRequestSchema = createAgentRequestSchema
   .partial()
-  .extend({ enabled: z.boolean().optional() });
+  .extend({ enabled: z.boolean().optional(), ...expectedVersion });
 export type UpdateAgentRequest = z.infer<typeof updateAgentRequestSchema>;
 
 export const createAgentProfileRequestSchema = z.object({
@@ -110,16 +120,18 @@ export const createAgentProfileRequestSchema = z.object({
 });
 export type CreateAgentProfileRequest = z.infer<typeof createAgentProfileRequestSchema>;
 
+export const updateAgentProfileRequestSchema = createAgentProfileRequestSchema.partial().extend(expectedVersion);
+export type UpdateAgentProfileRequest = z.infer<typeof updateAgentProfileRequestSchema>;
+
 export const createSecurityPolicyRequestSchema = z.object({
   name: requiredTextSchema.max(120),
+  capabilityCeiling: capabilityCeilingSchema.default({}),
   rules: jsonObjectSchema,
+  rulesSchemaVersion: z.number().int().positive(),
 });
-export type CreateSecurityPolicyRequest = z.infer<typeof createSecurityPolicyRequestSchema>;
+export type CreateSecurityPolicyRequest = z.input<typeof createSecurityPolicyRequestSchema>;
 
-export const updateSecurityPolicyRequestSchema = createSecurityPolicyRequestSchema.partial().extend({
-  /** Optimistic concurrency: the version the editor started from. */
-  expectedVersion: z.number().int().positive(),
-});
+export const updateSecurityPolicyRequestSchema = createSecurityPolicyRequestSchema.partial().extend(expectedVersion);
 export type UpdateSecurityPolicyRequest = z.infer<typeof updateSecurityPolicyRequestSchema>;
 
 export const addWorkspaceMemberRequestSchema = z.object({

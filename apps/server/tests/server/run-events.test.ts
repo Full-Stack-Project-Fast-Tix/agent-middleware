@@ -31,6 +31,8 @@ function runRow(id: string, status: Run["status"] = "running"): Run {
     status,
     finalOutput: null,
     error: null,
+    cancelRequestedAt: null,
+    evaluation: null,
     createdAt: now,
     updatedAt: now,
     startedAt: now,
@@ -57,63 +59,114 @@ function taskRow(result: string | null = null): Task {
   };
 }
 
-const runUpdated = (id = runId, status: Run["status"] = "running"): RunEventDraft => ({
+/** A draft before persistence has assigned its seq. */
+type Uncommitted = RunEventDraft extends infer D ? (D extends RunEventDraft ? Omit<D, "seq"> : never) : never;
+
+const runUpdated = (id = runId, status: Run["status"] = "running"): Uncommitted => ({
   runId: id,
   type: "run.updated",
   payload: { run: runRow(id, status) },
 });
 
+/** Publishes the way persistence will: seq assigned per run, in commit order, starting after `from`. */
+function committer(hub: RunEventHub, from: Record<string, number> = {}) {
+  const seqs = new Map(Object.entries(from));
+  return (draft: Uncommitted): RunEvent => {
+    const seq = (seqs.get(draft.runId) ?? 0) + 1;
+    seqs.set(draft.runId, seq);
+    return hub.publish({ ...draft, seq } as RunEventDraft);
+  };
+}
+
+const listen = (onEvent: (event: RunEvent) => void, onResync: () => void = () => undefined) => ({ onEvent, onResync });
+
 describe("RunEventHub", () => {
-  it("numbers events per run and stamps id and timestamp", () => {
+  it("publishes committed events and stamps id and timestamp", () => {
     const hub = new RunEventHub({ now: () => Date.parse(now) });
-    expect(hub.publish(runUpdated()).seq).toBe(1);
-    expect(hub.publish(runUpdated()).seq).toBe(2);
-    const other = hub.publish(runUpdated(otherRunId));
+    const publish = committer(hub);
+    expect(publish(runUpdated()).seq).toBe(1);
+    expect(publish(runUpdated()).seq).toBe(2);
+    const other = publish(runUpdated(otherRunId));
     expect(other.seq).toBe(1);
     expect(other.timestamp).toBe(now);
     expect(other.id).toMatch(/^[0-9a-f-]{36}$/);
   });
 
-  it("rejects a draft that breaks the contract without using up a seq", () => {
+  it("refuses a seq that is not after the last one published", () => {
     const hub = new RunEventHub();
-    const bad = { ...runUpdated(), payload: { run: { ...runRow(runId), status: "exploded" } } };
+    hub.publish({ ...runUpdated(), seq: 1 } as RunEventDraft);
+    expect(() => hub.publish({ ...runUpdated(), seq: 1 } as RunEventDraft)).toThrow(/seq 1 published after seq 1/);
+    expect(hub.lastSeq(runId)).toBe(1);
+  });
+
+  it("rejects a draft that breaks the contract", () => {
+    const hub = new RunEventHub();
+    const bad = { ...runUpdated(), seq: 1, payload: { run: { ...runRow(runId), status: "exploded" } } };
     expect(() => hub.publish(bad as RunEventDraft)).toThrow();
     expect(hub.lastSeq(runId)).toBe(0);
   });
 
   it("strips fields that are not part of the contract", () => {
     const hub = new RunEventHub();
-    const draft = runUpdated();
-    const leaky = { ...draft, payload: { run: { ...runRow(runId), internalNotes: "do not ship" } } };
+    const leaky = { ...runUpdated(), seq: 1, payload: { run: { ...runRow(runId), internalNotes: "do not ship" } } };
     const event = hub.publish(leaky as RunEventDraft);
     expect(JSON.stringify(event)).not.toContain("internalNotes");
   });
 
   it("replays after the requested seq, then delivers live events", () => {
     const hub = new RunEventHub();
-    hub.publish(runUpdated());
-    hub.publish(runUpdated());
+    const publish = committer(hub);
+    publish(runUpdated());
+    publish(runUpdated());
     const seen: number[] = [];
-    const subscription = hub.subscribe(runId, 1, (event) => seen.push(event.seq));
-    hub.publish(runUpdated());
+    const subscription = hub.subscribe(runId, 1, listen((event) => seen.push(event.seq)));
+    publish(runUpdated());
     expect(subscription.status).toBe("subscribed");
     expect(seen).toEqual([2, 3]);
   });
 
   it("asks for a resync when it cannot replay from the requested seq", () => {
     const hub = new RunEventHub({ bufferSize: 2 });
-    for (let index = 0; index < 4; index += 1) hub.publish(runUpdated());
-    // Ahead of the hub, as after a server restart.
-    expect(hub.subscribe(runId, 9, () => undefined).status).toBe("resync");
+    const publish = committer(hub);
+    for (let index = 0; index < 4; index += 1) publish(runUpdated());
+    // Ahead of anything this process has published.
+    expect(hub.subscribe(runId, 9, listen(() => undefined)).status).toBe("resync");
     // Behind the buffer, which now holds only seq 3 and 4.
-    expect(hub.subscribe(runId, 1, () => undefined).status).toBe("resync");
-    expect(hub.subscribe(runId, 2, () => undefined).status).toBe("subscribed");
+    expect(hub.subscribe(runId, 1, listen(() => undefined)).status).toBe("resync");
+    expect(hub.subscribe(runId, 2, listen(() => undefined)).status).toBe("subscribed");
+  });
+
+  it("continues from durable seqs after a restart, so old positions never collide", () => {
+    // The previous process published up to seq 57; persistence continues from there.
+    const hub = new RunEventHub();
+    const publish = committer(hub, { [runId]: 57 });
+    const seen: number[] = [];
+    publish(runUpdated());
+    expect(hub.subscribe(runId, 57, listen((event) => seen.push(event.seq))).status).toBe("subscribed");
+    expect(seen).toEqual([58]);
+    // Positions the new process cannot replay are told to resync, never served a wrong tail.
+    expect(hub.subscribe(runId, 30, listen(() => undefined)).status).toBe("resync");
+    expect(hub.subscribe(runId, 60, listen(() => undefined)).status).toBe("resync");
+  });
+
+  it("tells subscribers to resync when a committed seq was never published", () => {
+    const hub = new RunEventHub();
+    hub.publish({ ...runUpdated(), seq: 1 } as RunEventDraft);
+    let resyncs = 0;
+    const seen: number[] = [];
+    hub.subscribe(runId, 1, listen((event) => seen.push(event.seq), () => (resyncs += 1)));
+    hub.publish({ ...runUpdated(), seq: 3 } as RunEventDraft);
+    expect(resyncs).toBe(1);
+    expect(seen).toEqual([]);
+    expect(hub.listenerCount(runId)).toBe(0);
+    // Anyone reconnecting from before the gap is sent to the snapshot too.
+    expect(hub.subscribe(runId, 1, listen(() => undefined)).status).toBe("resync");
+    expect(hub.subscribe(runId, 2, listen(() => undefined)).status).toBe("subscribed");
   });
 
   it("stops delivering after unsubscribe and forgets runs that never published", () => {
     const hub = new RunEventHub();
-    const seen: number[] = [];
-    const subscription = hub.subscribe(runId, 0, (event) => seen.push(event.seq));
+    const subscription = hub.subscribe(runId, 0, listen(() => undefined));
     if (subscription.status !== "subscribed") throw new Error("expected a subscription");
     expect(hub.listenerCount(runId)).toBe(1);
     subscription.unsubscribe();
@@ -123,13 +176,18 @@ describe("RunEventHub", () => {
 
   it("drops a throwing listener without affecting others", () => {
     const hub = new RunEventHub();
+    const publish = committer(hub);
     const seen: number[] = [];
-    hub.subscribe(runId, 0, () => {
-      throw new Error("broken socket");
-    });
-    hub.subscribe(runId, 0, (event) => seen.push(event.seq));
-    hub.publish(runUpdated());
-    hub.publish(runUpdated());
+    hub.subscribe(
+      runId,
+      0,
+      listen(() => {
+        throw new Error("broken socket");
+      }),
+    );
+    hub.subscribe(runId, 0, listen((event) => seen.push(event.seq)));
+    publish(runUpdated());
+    publish(runUpdated());
     expect(seen).toEqual([1, 2]);
     expect(hub.listenerCount(runId)).toBe(1);
   });
@@ -137,12 +195,13 @@ describe("RunEventHub", () => {
   it("forgets a finished run after the retention period", () => {
     let clock = Date.parse(now);
     const hub = new RunEventHub({ retainFinishedMs: 1_000, now: () => clock });
-    hub.publish(runUpdated(runId, "completed"));
+    const publish = committer(hub);
+    publish(runUpdated(runId, "completed"));
     clock += 999;
-    hub.publish(runUpdated(otherRunId));
+    publish(runUpdated(otherRunId));
     expect(hub.has(runId)).toBe(true);
     clock += 2;
-    hub.publish(runUpdated(otherRunId));
+    publish(runUpdated(otherRunId));
     expect(hub.has(runId)).toBe(false);
     expect(hub.has(otherRunId)).toBe(true);
   });
@@ -171,7 +230,7 @@ describe("GET /api/runs/:id/events", () => {
     apps.push(app);
     await app.listen({ host: "127.0.0.1", port: 0 });
     const { port } = app.server.address() as AddressInfo;
-    return { app, hub, url: (id = runId) => `http://127.0.0.1:${port}/api/runs/${id}/events` };
+    return { app, hub, publish: committer(hub), url: (id = runId) => `http://127.0.0.1:${port}/api/runs/${id}/events` };
   }
 
   /** Read frames until `done` says stop, then disconnect. Returns the frames and raw text. */
@@ -201,8 +260,8 @@ describe("GET /api/runs/:id/events", () => {
   const events = (frames: SseFrame[]): RunEvent[] => frames.map((frame) => runEventSchema.parse(JSON.parse(frame.data)));
 
   it("refuses unknown runs, malformed resume positions and unauthenticated callers", async () => {
-    const { app, hub } = await start({ authToken: "a-strong-test-token" });
-    hub.publish(runUpdated());
+    const { app, hub, publish } = await start({ authToken: "a-strong-test-token" });
+    publish(runUpdated());
     const auth = { authorization: "Bearer a-strong-test-token" };
 
     const unauthenticated = await app.inject({ method: "GET", url: `/api/runs/${runId}/events` });
@@ -220,12 +279,12 @@ describe("GET /api/runs/:id/events", () => {
   });
 
   it("replays history, then streams live events in order", async () => {
-    const { hub, url } = await start();
-    hub.publish(runUpdated());
-    hub.publish({ runId, type: "task.created", payload: { task: taskRow(), dependsOnTaskIds: [] } });
+    const { hub, publish, url } = await start();
+    publish(runUpdated());
+    publish({ runId, type: "task.created", payload: { task: taskRow(), dependsOnTaskIds: [] } });
 
     const { response, frames } = await read(url(), {}, (received) => {
-      if (received.length === 2 && hub.lastSeq(runId) === 2) hub.publish(runUpdated(runId, "completed"));
+      if (received.length === 2 && hub.lastSeq(runId) === 2) publish(runUpdated(runId, "completed"));
       return received.length === 3;
     });
 
@@ -236,8 +295,8 @@ describe("GET /api/runs/:id/events", () => {
   });
 
   it("resumes after Last-Event-ID, or ?after= on the first connection", async () => {
-    const { hub, url } = await start();
-    for (let index = 0; index < 3; index += 1) hub.publish(runUpdated());
+    const { hub, publish, url } = await start();
+    for (let index = 0; index < 3; index += 1) publish(runUpdated());
 
     const byHeader = await read(url(), { "last-event-id": "2" }, (frames) => frames.length === 1);
     expect(byHeader.frames.map((frame) => frame.id)).toEqual(["3"]);
@@ -247,16 +306,16 @@ describe("GET /api/runs/:id/events", () => {
   });
 
   it("tells a client that is ahead of the server to resync, then closes", async () => {
-    const { hub, url } = await start();
-    hub.publish(runUpdated());
+    const { hub, publish, url } = await start();
+    publish(runUpdated());
     const { frames } = await read(url(), { "last-event-id": "40" }, () => false);
     expect(frames).toEqual([{ id: null, event: "resync", data: "{}" }]);
   });
 
   it("redacts credential-shaped text in every frame", async () => {
-    const { hub, url } = await start();
+    const { hub, publish, url } = await start();
     const secret = "sk_live_" + "A1b2C3d4E5f6G7h8I9j0";
-    hub.publish({ runId, type: "task.updated", payload: { task: taskRow(`Found key ${secret} in .env`) } });
+    publish({ runId, type: "task.updated", payload: { task: taskRow(`Found key ${secret} in .env`) } });
 
     const { frames, text } = await read(url(), {}, (received) => received.length === 1);
     expect(text).not.toContain(secret);
@@ -264,8 +323,8 @@ describe("GET /api/runs/:id/events", () => {
   });
 
   it("sends heartbeats and unsubscribes when the client goes away", async () => {
-    const { hub, url } = await start({ heartbeatMs: 10 });
-    hub.publish(runUpdated());
+    const { hub, publish, url } = await start({ heartbeatMs: 10 });
+    publish(runUpdated());
 
     const { text } = await read(url(), {}, (_frames, received) => received.includes(": ping"));
     expect(text).toContain(": ping");
@@ -273,8 +332,8 @@ describe("GET /api/runs/:id/events", () => {
   });
 
   it("ends open streams so the server can shut down", async () => {
-    const { app, hub, url } = await start();
-    hub.publish(runUpdated());
+    const { app, hub, publish, url } = await start();
+    publish(runUpdated());
     const response = await fetch(url());
     expect(hub.listenerCount(runId)).toBe(1);
 
@@ -286,9 +345,9 @@ describe("GET /api/runs/:id/events", () => {
   });
 
   it("works end to end with the shared client, including resync", async () => {
-    const { hub, url } = await start();
-    hub.publish(runUpdated());
-    hub.publish(runUpdated());
+    const { hub, publish, url } = await start();
+    publish(runUpdated());
+    publish(runUpdated());
 
     const controller = new AbortController();
     const received: RunEvent[] = [];
@@ -303,7 +362,7 @@ describe("GET /api/runs/:id/events", () => {
         resyncs += 1;
         // A real client reloads the RunSnapshot here.
         const seq = hub.lastSeq(runId);
-        setTimeout(() => hub.publish(runUpdated(runId, "completed")), 20);
+        setTimeout(() => publish(runUpdated(runId, "completed")), 20);
         return seq;
       },
       onEvent: (event) => {

@@ -51,6 +51,11 @@ export class HarnessClient {
     return (await this.call("GET", apiPaths.runSnapshot(runId), runSnapshotResponseSchema, 200)).snapshot;
   }
 
+  /** Idempotent; the run reaches `cancelled` asynchronously. */
+  async cancelRun(runId: string): Promise<Run> {
+    return (await this.call("POST", apiPaths.cancelRun(runId), runResponseSchema, 202)).run;
+  }
+
   async resolveApproval(approvalId: string, decision: ApprovalDecision): Promise<Approval> {
     const path = apiPaths.resolveApproval(approvalId);
     return (await this.call("POST", path, approvalResponseSchema, 200, { decision })).approval;

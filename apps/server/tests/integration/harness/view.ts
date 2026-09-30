@@ -42,7 +42,7 @@ export function applyEvent(view: RunView, event: RunEvent): void {
     case "task.created":
       view.tasks.set(event.payload.task.id, event.payload.task);
       for (const dependsOnTaskId of event.payload.dependsOnTaskIds) {
-        view.dependencies.push({ taskId: event.payload.task.id, dependsOnTaskId });
+        view.dependencies.push({ runId: event.runId, taskId: event.payload.task.id, dependsOnTaskId });
       }
       return;
     case "task.updated":

@@ -20,10 +20,10 @@ types everywhere else.
 | `enums.ts` | statuses, roles, layers, outcomes | all |
 | `lifecycle.ts` | allowed status transitions, terminal statuses | P2 |
 | `identity.ts` | User, Workspace, WorkspaceMember | P3 |
-| `agents.ts` | Agent, AgentProfile, capabilities, SecurityPolicy | P1, P2 |
+| `agents.ts` | Agent, AgentProfile, capabilities, SecurityPolicy, EffectivePolicy | P1, P2 |
 | `runs.ts` | Run, Task, TaskDependency, AgentExecution | P2, P3 |
 | `security.ts` | SecurityFinding, Approval, Reflection, ReflectionSighting | P1, P3 |
-| `middleware.ts` | SecurityContext, ProposedAction, SecurityDecision, SecurityEvaluator | P1, P2 |
+| `middleware.ts` | SecurityContext, ProposedAction, SecurityDecision (the guard interfaces are in `apps/server/src/security-middleware.ts`) | P1, P2 |
 | `audit.ts` | AuditEvent and its event types | P3 |
 | `events.ts` | RunEvent (SSE), RunSnapshot | P2, P4 |
 | `api.ts` | routes, error shape, pagination, request and response bodies | all |
@@ -31,7 +31,8 @@ types everywhere else.
 
 ## Conventions
 
-- Ids are UUIDs. Timestamps are UTC ISO-8601 strings ending in `Z`.
+- Ids are UUID-shaped (`z.guid()`). Timestamps are UTC ISO-8601 strings
+  ending in `Z`, with millisecond precision.
 - A nullable column is `T | null` and always present. `?` is only used in
   request bodies, where leaving a field out means "default" or "unchanged".
 - Success responses name the resource (`{ run }`, `{ runs }`). Errors are
@@ -74,7 +75,9 @@ written.
 
 ## Changing a contract
 
-Contract changes are team changes. Open a small PR, tag the owners listed
+The reasons behind the current contracts are in
+[docs/contract-decisions.md](../../docs/contract-decisions.md). Contract
+changes are team changes. Open a small PR, tag the owners listed
 above, and update the tests in `tests/`. The enum tests pin the values from the
 work plan on purpose: if they fail, that change needs to be agreed.
 

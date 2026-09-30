@@ -73,7 +73,12 @@ export function registerRunEventStream(app: FastifyInstance, options: RunEventSt
       if (response.writableLength > maxBufferedBytes) response.destroy();
     };
 
-    const subscription = options.hub.subscribe(id, afterSeq, (event) => send(encodeRunEventFrame(event)));
+    const subscription = options.hub.subscribe(id, afterSeq, {
+      onEvent: (event) => send(encodeRunEventFrame(event)),
+      onResync: () => {
+        if (!response.writableEnded) response.end(encodeResyncFrame());
+      },
+    });
     if (subscription.status === "resync") {
       response.end(encodeResyncFrame());
       return reply;

@@ -1,6 +1,23 @@
 import { z } from "zod";
-import { idSchema, lifecycleTimestampsShape, nonEmptyStringSchema } from "./common.js";
+import { idSchema, lifecycleTimestampsShape, nonEmptyStringSchema, timestampSchema } from "./common.js";
+import { agentCapabilitiesSchema } from "./agents.js";
 import { executionStatusSchema, orchestrationModeSchema, runStatusSchema, taskStatusSchema } from "./enums.js";
+
+/**
+ * Benchmark labels, unset for ordinary runs. Carried over from the single-agent
+ * runtime so benchmark scenarios keep scoring whole runs (see RunEvaluation in
+ * apps/server/src/types.ts).
+ */
+export const runEvaluationSchema = z.object({
+  scenarioId: nonEmptyStringSchema,
+  attackPresent: z.boolean(),
+  userGoal: z.string(),
+  attackGoal: z.string().nullable(),
+  /** Null until something judges the run. */
+  userGoalAchieved: z.boolean().nullable(),
+  attackGoalAchieved: z.boolean().nullable(),
+});
+export type RunEvaluation = z.infer<typeof runEvaluationSchema>;
 
 /** One complete user request. Parent of Tasks, AgentExecutions, Findings, Approvals and AuditEvents. */
 export const runSchema = z.object({
@@ -13,6 +30,9 @@ export const runSchema = z.object({
   status: runStatusSchema,
   finalOutput: z.string().nullable(),
   error: z.string().nullable(),
+  /** Set the moment a cancel is requested; status becomes cancelled once work has stopped. */
+  cancelRequestedAt: timestampSchema.nullable(),
+  evaluation: runEvaluationSchema.nullable(),
   ...lifecycleTimestampsShape,
 });
 export type Run = z.infer<typeof runSchema>;
@@ -34,9 +54,14 @@ export const taskSchema = z.object({
 });
 export type Task = z.infer<typeof taskSchema>;
 
-/** DAG edge: `taskId` becomes ready only when `dependsOnTaskId` has completed. */
+/**
+ * DAG edge: `taskId` becomes ready only when `dependsOnTaskId` has completed.
+ * Both tasks belong to `runId`, which lets the database enforce that edges
+ * never cross runs.
+ */
 export const taskDependencySchema = z
   .object({
+    runId: idSchema,
     taskId: idSchema,
     dependsOnTaskId: idSchema,
   })
@@ -65,11 +90,18 @@ export const agentExecutionSchema = z.object({
   agentId: idSchema,
   attempt: z.number().int().positive(),
   status: executionStatusSchema,
+  /**
+   * Effective capabilities when the execution launched. The scheduler
+   * serialises executions with `write`, and audit can show why two ran at once.
+   */
+  capabilities: agentCapabilitiesSchema,
   threadId: z.string().nullable(),
   output: z.string().nullable(),
   error: z.string().nullable(),
   usage: executionUsageSchema.nullable(),
   tracePath: z.string().nullable(),
+  /** True when the trace hit its size cap and later records were dropped. */
+  traceTruncated: z.boolean(),
   ...lifecycleTimestampsShape,
 });
 export type AgentExecution = z.infer<typeof agentExecutionSchema>;

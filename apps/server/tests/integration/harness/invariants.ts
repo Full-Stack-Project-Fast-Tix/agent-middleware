@@ -27,7 +27,8 @@ export interface Violation {
 const IMMUTABLE = {
   run: ["workspaceId", "createdByUserId", "userPrompt", "orchestrationMode", "createdAt"],
   task: ["runId", "parentTaskId", "createdByExecutionId", "objective", "createdAt"],
-  execution: ["runId", "taskId", "agentId", "attempt", "createdAt"],
+  // capabilities is the policy snapshot taken at launch.
+  execution: ["runId", "taskId", "agentId", "attempt", "capabilities", "createdAt"],
   approval: ["runId", "taskId", "executionId", "agentId", "actionType", "reason", "requestedAt"],
 } as const;
 
@@ -79,6 +80,10 @@ export function checkRunInvariants(runId: string, events: RunEvent[], snapshot?:
     }
   };
 
+  const pendingApprovals = () => [...view.approvals.values()].filter((approval) => approval.status === "pending");
+  // The phase the run left when it began waiting for approval.
+  let phaseBeforeApproval: string | null = null;
+
   let expectedSeq = 1;
   for (const event of events) {
     const { seq } = event;
@@ -90,9 +95,29 @@ export function checkRunInvariants(runId: string, events: RunEvent[], snapshot?:
       case "run.updated": {
         const next = event.payload.run;
         if (next.id !== runId) report("run.id", seq, `run.updated carries run ${next.id}`);
-        if (view.run) {
-          transition("run", canTransitionRun, next.id, seq, view.run.status, next.status);
-          unchanged("run", next.id, seq, view.run, next);
+        const previous = view.run;
+        if (previous) {
+          transition("run", canTransitionRun, next.id, seq, previous.status, next.status);
+          unchanged("run", next.id, seq, previous, next);
+          if (previous.cancelRequestedAt !== null && next.cancelRequestedAt !== previous.cancelRequestedAt) {
+            report("run.cancel-requested", seq, "cancelRequestedAt changed after it was set");
+          }
+          const entering = next.status === "waiting_approval" && previous.status !== "waiting_approval";
+          const leaving = previous.status === "waiting_approval" && next.status !== "waiting_approval";
+          if (entering) {
+            phaseBeforeApproval = previous.status;
+            if (pendingApprovals().length === 0) {
+              report("run.waiting-approval", seq, "run is waiting_approval with no pending approval");
+            }
+          }
+          if (leaving && !isTerminalRunStatus(next.status)) {
+            if (pendingApprovals().length > 0) {
+              report("run.waiting-approval", seq, `run became ${next.status} with approvals still pending`);
+            }
+            if (phaseBeforeApproval !== null && next.status !== phaseBeforeApproval) {
+              report("run.resume-phase", seq, `run left ${phaseBeforeApproval} for approval but resumed as ${next.status}`);
+            }
+          }
         }
         break;
       }
@@ -127,6 +152,14 @@ export function checkRunInvariants(runId: string, events: RunEvent[], snapshot?:
         if (previous) {
           transition("execution", canTransitionExecution, next.id, seq, previous.status, next.status);
           unchanged("execution", next.id, seq, previous, next);
+        }
+        // Write-capable work is serialised within a run (plan section 3.2).
+        if (next.capabilities.write && isActive(next.status)) {
+          for (const other of view.executions.values()) {
+            if (other.id !== next.id && other.capabilities.write && isActive(other.status)) {
+              report("execution.write-overlap", seq, `write-capable executions ${other.id} and ${next.id} overlap`);
+            }
+          }
         }
         break;
       }
@@ -168,6 +201,8 @@ export function checkRunInvariants(runId: string, events: RunEvent[], snapshot?:
   if (snapshot) checkSnapshot(view, snapshot, report);
   return violations;
 }
+
+const isActive = (status: string) => status === "running" || status === "waiting_approval";
 
 function checkEndState(view: RunView, report: (rule: string, seq: number | null, message: string) => void): void {
   const { run } = view;
@@ -237,8 +272,8 @@ function checkSnapshot(
       if (!fromEvents.has(id)) report(`snapshot.${name}`, null, `${id} is in the snapshot but never announced`);
     }
   }
-  const edges = (list: readonly { taskId: string; dependsOnTaskId: string }[]) =>
-    new Set(list.map((edge) => `${edge.taskId}->${edge.dependsOnTaskId}`));
+  const edges = (list: readonly { runId: string; taskId: string; dependsOnTaskId: string }[]) =>
+    new Set(list.map((edge) => `${edge.runId}:${edge.taskId}->${edge.dependsOnTaskId}`));
   if (!isDeepStrictEqual(edges(snapshot.dependencies), edges(view.dependencies))) {
     report("snapshot.dependencies", null, "task dependencies differ between snapshot and events");
   }

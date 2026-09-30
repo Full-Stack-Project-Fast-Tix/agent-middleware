@@ -85,12 +85,16 @@ export const reflectionSchema = z.object({
 });
 export type Reflection = z.infer<typeof reflectionSchema>;
 
-/** Where a reflection was observed, instead of a growing array on the Reflection. */
+/**
+ * Where a reflection was observed, instead of a growing array on the Reflection.
+ * runId and executionId are null only on rows migrated from the JSON store,
+ * which kept run ids and thread ids unpaired. New sightings always set both.
+ */
 export const reflectionSightingSchema = z.object({
   id: idSchema,
   reflectionId: idSchema,
-  runId: idSchema,
-  executionId: idSchema,
+  runId: idSchema.nullable(),
+  executionId: idSchema.nullable(),
   threadId: z.string().nullable(),
   seenAt: timestampSchema,
 });

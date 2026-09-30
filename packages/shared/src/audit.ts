@@ -18,11 +18,16 @@ export const AUDIT_EVENT_TYPES = [
   "security.decision",
   "approval.requested",
   "approval.resolved",
+  "run.cancel_requested",
   "policy.created",
   "policy.updated",
-  "policy.deleted",
+  "policy.archived",
+  "profile.created",
+  "profile.updated",
+  "profile.archived",
   "agent.created",
   "agent.updated",
+  "agent.archived",
   "member.added",
   "member.role_changed",
   "member.removed",
@@ -30,11 +35,16 @@ export const AUDIT_EVENT_TYPES = [
 export const auditEventTypeSchema = z.enum(AUDIT_EVENT_TYPES);
 export type AuditEventType = z.infer<typeof auditEventTypeSchema>;
 
-/** Append-only. Never updated or deleted by application code. */
+/**
+ * Append-only. Never updated or deleted by application code. Nothing is
+ * deleted elsewhere either: policies, profiles and agents are archived, so the
+ * evidence that references them survives.
+ */
 export const auditEventSchema = z
   .object({
     id: idSchema,
-    workspaceId: idSchema,
+    /** Null only for platform-scope events, such as changes to platform policy. */
+    workspaceId: idSchema.nullable(),
     actorType: actorTypeSchema,
     /** User or Agent id; null for system actors. */
     actorId: idSchema.nullable(),

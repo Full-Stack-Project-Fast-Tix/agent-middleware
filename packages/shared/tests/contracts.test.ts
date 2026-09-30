@@ -33,6 +33,7 @@ import {
   APPROVAL_TRANSITIONS,
   canTransitionRun,
   canTransitionTask,
+  highestSeverity,
   type RunEvent,
 } from "../src/index.js";
 import { approval, execution, finding, ids, now, run, securityContext, task } from "./fixtures.js";
@@ -74,10 +75,18 @@ describe("shared enums", () => {
 
   it("allows the normal path and refuses leaving a terminal status", () => {
     expect(canTransitionRun("queued", "planning")).toBe(true);
+    expect(canTransitionRun("planning", "waiting_approval")).toBe(true);
+    expect(canTransitionRun("waiting_approval", "planning")).toBe(true);
     expect(canTransitionRun("waiting_approval", "running")).toBe(true);
     expect(canTransitionRun("completed", "running")).toBe(false);
     expect(canTransitionTask("pending", "running")).toBe(false);
     expect(canTransitionTask("ready", "running")).toBe(true);
+  });
+
+  it("orders severities by rank, not alphabetically", () => {
+    expect(highestSeverity([])).toBe("info");
+    expect(highestSeverity(["info", "critical", "high"])).toBe("critical");
+    expect(highestSeverity(["low", "medium"])).toBe("medium");
   });
 
   it("identifies terminal statuses", () => {
@@ -102,8 +111,9 @@ describe("domain entities", () => {
     expect(runSchema.safeParse({ ...run, createdAt: "29/09/2026" }).success).toBe(false);
   });
 
-  it("requires UUID ids", () => {
+  it("requires UUID-shaped ids, including hand-written seed ids", () => {
     expect(runSchema.safeParse({ ...run, id: "run-1" }).success).toBe(false);
+    expect(runSchema.safeParse({ ...run, id: "00000000-0000-0000-0000-000000000001" }).success).toBe(true);
   });
 
   it("requires nullable columns to be present", () => {
@@ -112,8 +122,9 @@ describe("domain entities", () => {
   });
 
   it("rejects a task that depends on itself", () => {
-    expect(taskDependencySchema.safeParse({ taskId: ids.task, dependsOnTaskId: ids.otherTask }).success).toBe(true);
-    expect(taskDependencySchema.safeParse({ taskId: ids.task, dependsOnTaskId: ids.task }).success).toBe(false);
+    const edge = { runId: ids.run, taskId: ids.task };
+    expect(taskDependencySchema.safeParse({ ...edge, dependsOnTaskId: ids.otherTask }).success).toBe(true);
+    expect(taskDependencySchema.safeParse({ ...edge, dependsOnTaskId: ids.task }).success).toBe(false);
   });
 
   it("ties policy scope to workspaceId", () => {
@@ -122,8 +133,11 @@ describe("domain entities", () => {
       workspaceId: null,
       name: "No secrets egress",
       scope: "platform",
+      capabilityCeiling: { network: false },
       rules: { denyPaths: [".env"] },
+      rulesSchemaVersion: 1,
       locked: true,
+      archivedAt: null,
       version: 1,
       createdAt: now,
       updatedAt: now,
@@ -152,12 +166,17 @@ describe("domain entities", () => {
     expect(auditEventSchema.safeParse(event).success).toBe(true);
     expect(auditEventSchema.safeParse({ ...event, actorType: "user" }).success).toBe(false);
     expect(auditEventSchema.safeParse({ ...event, eventType: "made.up" }).success).toBe(false);
+    expect(auditEventSchema.safeParse({ ...event, workspaceId: null, eventType: "policy.updated" }).success).toBe(true);
   });
 });
 
 describe("security middleware contract", () => {
-  it("accepts a delegated specialist context", () => {
+  it("identifies the acting execution by id only", () => {
     expect(securityContextSchema.parse(securityContext)).toEqual(securityContext);
+    // Trusted facts are loaded by the middleware, never supplied by the caller.
+    expect(securityContextSchema.parse({ ...securityContext, originalUserGoal: "attacker goal" })).toEqual(
+      securityContext,
+    );
   });
 
   it("parses each proposed action kind", () => {
@@ -176,6 +195,13 @@ describe("security middleware contract", () => {
         objective: "Cover the new validation",
         dependsOnTaskIds: [ids.task],
       },
+      {
+        type: "context_handoff",
+        actionId: "item_4",
+        fromTaskId: ids.task,
+        toTaskId: ids.otherTask,
+        content: "The signup handler lacks email validation.",
+      },
     ];
     for (const action of actions) {
       expect(proposedActionSchema.parse(action)).toEqual(action);
@@ -188,14 +214,25 @@ describe("security middleware contract", () => {
     );
   });
 
-  it("requires steering text for steer and a reason for require_approval", () => {
-    const base = { reason: "Command reads .env before a network call.", severity: "high", findings: [] };
+  it("requires steering text for steer, a stop scope for block and a reason for require_approval", () => {
+    const base = {
+      reason: "Command reads .env before a network call.",
+      severity: "high",
+      findings: [],
+      appliedPolicies: [{ policyId: ids.finding, version: 3 }],
+    };
     expect(securityDecisionSchema.safeParse({ ...base, outcome: "allow" }).success).toBe(true);
     expect(securityDecisionSchema.safeParse({ ...base, outcome: "steer" }).success).toBe(false);
     expect(
       securityDecisionSchema.safeParse({ ...base, outcome: "steer", steer: "Do not send workspace secrets." }).success,
     ).toBe(true);
-    expect(securityDecisionSchema.safeParse({ ...base, outcome: "block", steer: null }).success).toBe(true);
+    expect(securityDecisionSchema.safeParse({ ...base, outcome: "block", steer: null }).success).toBe(false);
+    expect(securityDecisionSchema.safeParse({ ...base, outcome: "block", stop: "action", steer: null }).success).toBe(
+      true,
+    );
+    expect(
+      securityDecisionSchema.safeParse({ ...base, outcome: "block", stop: "execution", steer: null }).success,
+    ).toBe(true);
     expect(securityDecisionSchema.safeParse({ ...base, outcome: "require_approval" }).success).toBe(false);
     expect(
       securityDecisionSchema.safeParse({ ...base, outcome: "require_approval", approvalReason: "policy_required" })

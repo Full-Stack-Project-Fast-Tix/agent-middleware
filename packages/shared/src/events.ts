@@ -12,13 +12,20 @@ import { approvalSchema, securityFindingSchema } from "./security.js";
 // Loading a Run Detail page:
 //   1. GET the RunSnapshot; note lastEventSeq.
 //   2. Open the event stream; apply only events with seq > lastEventSeq.
-//   3. On reconnect, EventSource sends Last-Event-ID (= seq) so the server
+//   3. On reconnect, the client sends Last-Event-ID (= seq) so the server
 //      can replay what was missed.
+//
+// seq is assigned by persistence, in the same transaction as the write the
+// event describes (a per-run counter column is incremented there), and the event is
+// published only after that transaction commits. seq is therefore durable and
+// increases per Run across server restarts, and the snapshot and its
+// lastEventSeq are read in one transaction. The hub never invents seqs, so a
+// restarted server cannot reuse a number a client has already seen.
 
 const envelope = {
   id: idSchema,
   runId: idSchema,
-  /** Per-Run, strictly increasing from 1. Used as the SSE event id. */
+  /** Per-Run, strictly increasing, durable. Used as the SSE event id. */
   seq: z.number().int().positive(),
   timestamp: timestampSchema,
 };
@@ -78,9 +85,9 @@ export type RunEvent = z.infer<typeof runEventSchema>;
 export type RunEventType = RunEvent["type"];
 export type RunEventOf<T extends RunEventType> = Extract<RunEvent, { type: T }>;
 
-/** A RunEvent as the orchestrator publishes it; the server stamps id, seq and timestamp. */
+/** A RunEvent as published after its write commits (seq included); the hub stamps id and timestamp. */
 export type RunEventDraft = {
-  [T in RunEventType]: Omit<RunEventOf<T>, "id" | "seq" | "timestamp">;
+  [T in RunEventType]: Omit<RunEventOf<T>, "id" | "timestamp">;
 }[RunEventType];
 
 export const RUN_EVENT_TYPES = runEventSchema.options.map(

@@ -4,13 +4,33 @@ import type { ApprovalStatus, ExecutionStatus, RunStatus, TaskStatus } from "./e
 // the integration harness flags anything else, and the UI can rely on it.
 // A status with no outgoing transitions is terminal. An update that keeps
 // the same status (to change another field) is not a transition.
+//
+// Rules the tables cannot express, which the orchestrator follows and the
+// harness checks:
+//
+//   - Run.waiting_approval means "at least one Approval in this run is
+//     pending". Enter it after the approval is requested; leave it once none
+//     are pending, returning to the phase it left (planning or running).
+//     Independent work may keep running underneath it.
+//   - A denied or timed-out approval declines that one action. The execution
+//     goes back to running and the agent is steered; it is not a failure.
+//   - An execution the middleware stops (block with stop: "execution") is
+//     failed and is not retried. Nor is an action retried after a block,
+//     deny or timeout: a fresh attempt must not become a way around the
+//     middleware.
+//   - When a task fails, every task downstream of it is skipped. Independent
+//     work already running finishes before the run fails.
+//   - Cancelling sets Run.cancelRequestedAt at once. Pending approvals are
+//     cancelled, open tasks and executions are cancelled, and the run becomes
+//     cancelled once work has stopped.
 
 export const RUN_TRANSITIONS: Readonly<Record<RunStatus, readonly RunStatus[]>> = {
   // `single` mode skips planning.
   queued: ["planning", "running", "failed", "cancelled"],
-  planning: ["running", "failed", "cancelled"],
+  // A supervisor delegation can need approval while planning.
+  planning: ["running", "waiting_approval", "failed", "cancelled"],
   running: ["waiting_approval", "completed", "failed", "cancelled"],
-  waiting_approval: ["running", "failed", "cancelled"],
+  waiting_approval: ["planning", "running", "failed", "cancelled"],
   completed: [],
   failed: [],
   cancelled: [],

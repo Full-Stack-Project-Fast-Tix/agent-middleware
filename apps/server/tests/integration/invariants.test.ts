@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { RunEvent, RunEventDraft } from "@launchpad/shared";
 import { RunEventHub } from "../../src/run-events.js";
-import { AGENTS, makeApproval, makeExecution, makeRun, makeTask, timestamp } from "./harness/factories.js";
+import { AGENTS, CAPABILITIES, makeApproval, makeExecution, makeRun, makeTask, timestamp } from "./harness/factories.js";
 import { checkRunInvariants, type Violation } from "./harness/invariants.js";
 import { snapshotOf, viewFromEvents } from "./harness/view.js";
 
@@ -11,10 +11,11 @@ import { snapshotOf, viewFromEvents } from "./harness/view.js";
 const run = makeRun({ status: "queued" });
 const first = makeTask(run.id, { title: "First", status: "ready" });
 const second = makeTask(run.id, { title: "Second" });
-const execution = makeExecution(second, AGENTS.developer);
+const execution = makeExecution(second, AGENTS.developer, { capabilities: CAPABILITIES.developer });
 const done = { completedAt: timestamp() };
 
-type Step = RunEventDraft;
+/** An event as the orchestrator hands it over, before persistence assigns its seq. */
+type Step = RunEventDraft extends infer D ? (D extends RunEventDraft ? Omit<D, "seq"> : never) : never;
 const runUpdated = (changes: Partial<typeof run>): Step => ({
   runId: run.id,
   type: "run.updated",
@@ -49,13 +50,38 @@ function validSteps(): Step[] {
   ];
 }
 
-/** Publish through the real hub so ids, seqs and timestamps are stamped as in production. */
+/** Commit seqs in order, as persistence does, and publish through the real hub. */
 function record(steps: Step[]): RunEvent[] {
   const hub = new RunEventHub();
   const events: RunEvent[] = [];
-  hub.subscribe(run.id, 0, (event) => events.push(event));
-  for (const step of steps) hub.publish(step);
+  hub.subscribe(run.id, 0, { onEvent: (event) => events.push(event), onResync: () => undefined });
+  steps.forEach((step, index) => hub.publish({ ...step, seq: index + 1 } as RunEventDraft));
   return events;
+}
+
+/** An approval raised while planning, before any task exists. */
+const planningApproval = makeApproval(execution, { taskId: null, executionId: null });
+const approvalRequested: Step = { runId: run.id, type: "approval.requested", payload: { approval: planningApproval } };
+const approvalResolved: Step = {
+  runId: run.id,
+  type: "approval.resolved",
+  payload: { approval: { ...planningApproval, status: "approved", resolvedAt: timestamp() } },
+};
+
+/** validSteps, with the run pausing for approval while planning and resuming as `resumeAs`. */
+function pausedWhilePlanning(resumeAs: "planning" | "running"): Step[] {
+  const steps = validSteps();
+  steps.splice(
+    1,
+    1,
+    runUpdated({ status: "planning" }),
+    approvalRequested,
+    runUpdated({ status: "waiting_approval" }),
+    approvalResolved,
+    runUpdated({ status: resumeAs }),
+    ...(resumeAs === "planning" ? [runUpdated({ status: "running" })] : []),
+  );
+  return steps;
 }
 
 const rules = (violations: Violation[]) => [...new Set(violations.map((violation) => violation.rule))];
@@ -64,6 +90,39 @@ describe("run invariants", () => {
   it("accept a valid run and its matching snapshot", () => {
     const events = record(validSteps());
     expect(checkRunInvariants(run.id, events, snapshotOf(viewFromEvents(events)))).toEqual([]);
+  });
+
+  it("accept a run that pauses for approval while planning and resumes planning", () => {
+    const events = record(pausedWhilePlanning("planning"));
+    expect(checkRunInvariants(run.id, events, snapshotOf(viewFromEvents(events)))).toEqual([]);
+  });
+
+  it("catch a run waiting for approval with nothing pending", () => {
+    const steps = validSteps();
+    steps.splice(9, 0, runUpdated({ status: "waiting_approval" }), runUpdated({ status: "running" }));
+    expect(rules(checkRunInvariants(run.id, record(steps)))).toEqual(["run.waiting-approval"]);
+  });
+
+  it("catch a run resuming a different phase than the one it paused", () => {
+    expect(rules(checkRunInvariants(run.id, record(pausedWhilePlanning("running"))))).toEqual(["run.resume-phase"]);
+  });
+
+  it("catch two write-capable executions running at once", () => {
+    const other = makeExecution(first, AGENTS.developer, { capabilities: CAPABILITIES.developer });
+    const steps = validSteps();
+    steps.splice(
+      9,
+      0,
+      { runId: run.id, type: "execution.updated", payload: { execution: { ...other, status: "running" } } },
+      { runId: run.id, type: "execution.updated", payload: { execution: { ...other, status: "completed", ...done } } },
+    );
+    expect(rules(checkRunInvariants(run.id, record(steps)))).toEqual(["execution.write-overlap"]);
+  });
+
+  it("catch a cancel request being withdrawn", () => {
+    const steps = validSteps();
+    steps[1] = runUpdated({ status: "running", cancelRequestedAt: timestamp() });
+    expect(rules(checkRunInvariants(run.id, record(steps)))).toEqual(["run.cancel-requested"]);
   });
 
   it("catch a gap in the stream", () => {

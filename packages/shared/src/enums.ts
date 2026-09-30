@@ -52,9 +52,25 @@ export const APPROVAL_STATUSES = ["pending", "approved", "denied", "timed_out", 
 export const approvalStatusSchema = z.enum(APPROVAL_STATUSES);
 export type ApprovalStatus = z.infer<typeof approvalStatusSchema>;
 
+/**
+ * Ordered from least to most severe; compare with severityRank, never as text
+ * ("critical" < "high" < "info" alphabetically). Severity describes a finding;
+ * what happens to an action is decided by SecurityDecision.outcome.
+ */
 export const FINDING_SEVERITIES = ["info", "low", "medium", "high", "critical"] as const;
 export const findingSeveritySchema = z.enum(FINDING_SEVERITIES);
 export type FindingSeverity = z.infer<typeof findingSeveritySchema>;
+
+export const severityRank = (severity: FindingSeverity): number => FINDING_SEVERITIES.indexOf(severity);
+
+/** The most severe of `severities`, or "info" when there are none. */
+export function highestSeverity(severities: Iterable<FindingSeverity>): FindingSeverity {
+  let highest: FindingSeverity = "info";
+  for (const severity of severities) {
+    if (severityRank(severity) > severityRank(highest)) highest = severity;
+  }
+  return highest;
+}
 
 export const SECURITY_LAYERS = ["deterministic", "semantic", "policy", "memory", "runtime"] as const;
 export const securityLayerSchema = z.enum(SECURITY_LAYERS);
@@ -73,7 +89,7 @@ export const securityDecisionOutcomeSchema = z.enum(SECURITY_DECISION_OUTCOMES);
 export type SecurityDecisionOutcome = z.infer<typeof securityDecisionOutcomeSchema>;
 
 /** Normalised action kinds the middleware evaluates. Expand only when needed. */
-export const ACTION_TYPES = ["command", "file_change", "delegation"] as const;
+export const ACTION_TYPES = ["command", "file_change", "delegation", "context_handoff"] as const;
 export const actionTypeSchema = z.enum(ACTION_TYPES);
 export type ActionType = z.infer<typeof actionTypeSchema>;
 
@@ -93,6 +109,11 @@ export type ApprovalReason = z.infer<typeof approvalReasonSchema>;
 export const APPROVAL_DECISIONS = ["approve", "deny"] as const;
 export const approvalDecisionSchema = z.enum(APPROVAL_DECISIONS);
 export type ApprovalDecision = z.infer<typeof approvalDecisionSchema>;
+
+/** Platform-wide authority, separate from any workspace (edits mandatory platform policy). */
+export const PLATFORM_ROLES = ["platform_admin"] as const;
+export const platformRoleSchema = z.enum(PLATFORM_ROLES);
+export type PlatformRole = z.infer<typeof platformRoleSchema>;
 
 export const ACTOR_TYPES = ["user", "agent", "system"] as const;
 export const actorTypeSchema = z.enum(ACTOR_TYPES);

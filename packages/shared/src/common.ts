@@ -12,9 +12,19 @@ import { z } from "zod";
  *     validated here, never free-form strings parsed later.
  */
 
-export const idSchema = z.uuid();
+/**
+ * Any 8-4-4-4-12 hex id. Postgres' uuid type does the real validation; the
+ * stricter z.uuid() would reject hand-written seed ids such as
+ * 00000000-0000-0000-0000-000000000001, so a stored row would not parse back.
+ */
+export const idSchema = z.guid();
 export type Id = z.infer<typeof idSchema>;
 
+/**
+ * UTC with a trailing "Z", millisecond precision. Postgres columns are
+ * timestamptz(3) and one row mapper converts driver Dates with toISOString(),
+ * so values compare exactly in keyset cursors and optimistic-concurrency checks.
+ */
 export const timestampSchema = z.iso.datetime();
 export type Timestamp = z.infer<typeof timestampSchema>;
 

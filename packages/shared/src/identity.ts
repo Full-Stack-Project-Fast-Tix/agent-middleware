@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { auditTimestampsShape, idSchema, nonEmptyStringSchema, timestampSchema } from "./common.js";
-import { workspaceRoleSchema } from "./enums.js";
+import { platformRoleSchema, workspaceRoleSchema } from "./enums.js";
 
 /** Human identity only. Workspace access comes through WorkspaceMember. */
 export const userSchema = z.object({
@@ -9,6 +9,8 @@ export const userSchema = z.object({
   name: nonEmptyStringSchema,
   /** Subject claim from the auth provider. */
   authSubject: nonEmptyStringSchema,
+  /** Null for ordinary users. Workspace access still comes through WorkspaceMember. */
+  platformRole: platformRoleSchema.nullable(),
   ...auditTimestampsShape,
 });
 export type User = z.infer<typeof userSchema>;
