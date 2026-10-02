@@ -645,7 +645,9 @@ terraform fmt -check -recursive deploy/volcengine
 docker compose config
 ```
 
-`npm test` runs the server suite (Vitest). Tests are grouped under
+`npm test` runs the shared contract tests
+([`packages/shared/tests/`](packages/shared/tests)) and then the server suite
+(Vitest). Server tests are grouped under
 [`apps/server/tests/`](apps/server/tests):
 
 | Area | Covers |
@@ -653,10 +655,11 @@ docker compose config
 | `checks/` | Egress classification, credential-shape matching, outbound-blob, agent-intent patterns, and a dedicated **bypass suite** (`check-sensitive-egress.bypass.test.ts`) that pins each known gap. |
 | `reflections/` | Fact validation, dedup, tiered eviction, the fold into guard params, host-family derivation, recurrence tiers, source attribution, withdrawal, the "user asked" gate, and the end-to-end learn → warn loop. |
 | `redaction/` | The two pattern tiers (recall a superset of precision), the protocol-id exclusion, the `onSend` hook, fingerprint format and idempotence. |
-| `policy/` | The shared steering vocabulary and the resolved turn security policy. |
+| `policy/` | The shared steering vocabulary, the resolved turn security policy, and the mapping from guard severities to the shared scale. |
 | `semantic/` | The semantic monitor's schema validation and prompt shaping. |
 | `runtime/` | `run-turn` enforcement (decline / interrupt / steer), the semantic approval boundary, the container runner arg-building and lifecycle, ark-proxy schema conforming, codex-runner. |
-| `server/` | API routes and auth, `JsonStore`, trace writer, `AgentService` lifecycle. |
+| `server/` | API routes and auth, `JsonStore`, trace writer, `AgentService` lifecycle, the RunEvent hub and its SSE stream. |
+| `integration/` | End-to-end harness for the multi-agent Run model: drives Runs through the public API against stand-in subsystems and checks the invariants every Run must satisfy. See its [README](apps/server/tests/integration/README.md). |
 
 ---
 
@@ -840,8 +843,14 @@ apps/
     src/redaction/         One credential-pattern registry, two tiers, three consumers
     src/container-codex-runner.ts   Disposable container per turn; buildGuardChecks
     src/codex-runner.ts    ECS child-process runner (untraced)
+    src/run-events.ts      RunEvent fan-out with a per-run replay buffer
+    src/run-events-route.ts         GET /api/runs/:id/events (SSE, redacted per frame)
+    src/security-middleware.ts      Per-execution security guard interface (P1/P2)
     src/trace.ts / store.ts / config.ts / workspace.ts
-    tests/{checks,redaction,reflections,policy,semantic,runtime,server}/
+    tests/{checks,redaction,reflections,policy,semantic,runtime,server,integration}/
+packages/
+  shared/                  Zod contracts used by server and web: domain model,
+                           security contract, run events, API shapes, SSE client
 deploy/volcengine/         Terraform: VPC, subnet, security group, ECS, EIP
 scripts/
   start-local-poc.sh        npm run poc
@@ -851,7 +860,8 @@ scripts/
   replay-trace.ts           Re-run the checks over a recorded trace, offline
   bootstrap-local.sh / deploy-existing-ecs.sh / deploy-volcengine.sh
 docs/
-  ARCHITECTURE.md  LEARNING_LAYER.md  LOCAL_POC.md  DEPLOYMENT.md
+  ARCHITECTURE.md  LEARNING_LAYER.md  BENCHMARK.md  LOCAL_POC.md  DEPLOYMENT.md
+  architecture-direction.md  contract-decisions.md
 Dockerfile / Dockerfile.runtime / docker-compose.yml
 ```
 
@@ -861,6 +871,14 @@ Dockerfile / Dockerfile.runtime / docker-compose.yml
 
 - [Architecture](docs/ARCHITECTURE.md) — components, deployment profiles,
   extension seams
+- [Architecture direction](docs/architecture-direction.md) — the agreed
+  multi-agent direction and how far it has got
+- [Contract decisions](docs/contract-decisions.md) — why the shared contracts
+  are shaped as they are
+- [Shared contracts](packages/shared/README.md) — layout, conventions, live run
+  events
+- [Integration harness](apps/server/tests/integration/README.md) — end-to-end
+  checks and Run invariants
 - [The learning layer](docs/LEARNING_LAYER.md) — the full plan for the
   reflection loop, and its relation to prior work
 - [Benchmark](docs/BENCHMARK.md): the AgentDojo-style harness, metric

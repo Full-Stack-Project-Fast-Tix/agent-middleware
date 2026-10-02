@@ -97,6 +97,32 @@ ungated. A completed file change without its expected approval is recorded as
 an enforcement-boundary violation and interrupts the turn, but cannot undo an
 already-completed change.
 
+### Multi-agent foundation (in progress)
+
+The next phase replaces the single Agent → Run model with
+Run → Task → AgentExecution (see
+[architecture-direction.md](architecture-direction.md)). These parts of it
+exist now, alongside the single-agent path above:
+
+- **Shared contracts** ([`packages/shared`](../packages/shared)): Zod schemas
+  for the domain model, the security contract, run events and API shapes, used
+  by both server and web. The reasons are recorded in
+  [contract-decisions.md](contract-decisions.md).
+- **Live run events:** `RunEventHub` fans out each committed event, with its
+  durable seq, and `GET /api/runs/:id/events` streams them as Server-Sent
+  Events. Each frame is redacted, and clients resume or resync by seq.
+- **Security middleware interface**
+  ([`security-middleware.ts`](../apps/server/src/security-middleware.ts)): one
+  stateful guard per AgentExecution. The existing guards will sit behind it.
+- **Integration harness**
+  ([`apps/server/tests/integration`](../apps/server/tests/integration)): drives
+  Runs through the public API and checks the invariants every Run must
+  satisfy. For now it runs against stand-ins for persistence, orchestration
+  and the middleware.
+
+Not built yet: PostgreSQL persistence, identity and RBAC, the orchestrator, the
+middleware implementation and the new console UI.
+
 ## Deployment profiles
 
 | Profile | Control plane | Agent execution |

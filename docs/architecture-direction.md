@@ -13,3 +13,17 @@ This document records the agreed direction for the next phase of AgentGuard. It 
 - Avoid unnecessary Kubernetes, Kafka, service mesh, or broad microservice decomposition.
 
 The current single-agent runtime remains supported during this transition. Its existing `AgentRun` shape is a compatibility model; future work should introduce the Run/Task/AgentExecution relationship without breaking existing traces or approval behavior.
+
+## Where this stands
+
+- The shared contracts for this model are in
+  [`packages/shared`](../packages/shared/README.md). The decisions behind them,
+  and the evidence for each, are in [contract-decisions.md](contract-decisions.md).
+- Live run updates are streamed over SSE from `GET /api/runs/:id/events`, with
+  durable per-run sequence numbers.
+- The security decision interface is defined in
+  [`apps/server/src/security-middleware.ts`](../apps/server/src/security-middleware.ts).
+- An end-to-end integration harness
+  ([`apps/server/tests/integration`](../apps/server/tests/integration/README.md))
+  checks Gate 1 scenarios and Run invariants. For now it runs against stand-ins
+  for the pieces still to be built.
