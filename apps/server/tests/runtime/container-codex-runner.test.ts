@@ -21,7 +21,8 @@ describe("Container Codex runner", () => {
     });
     const args = buildContainerRunArgs(
       {
-        agentId: "agent/unsafe",
+        agentId: "agent-1",
+        executionId: "execution/unsafe",
         workspacePath: "/tmp/agent-workspace",
         prompt: "write a small program",
         threadId: null,
@@ -29,9 +30,13 @@ describe("Container Codex runner", () => {
       config,
     );
 
-    expect(containerName("agent/unsafe", "test-instance")).toBe(
-      "launchpad-test-instance-agent-unsafe",
+    // Named per execution, so one Agent can run several Tasks at once.
+    expect(containerName("execution/unsafe", "test-instance")).toBe(
+      "launchpad-test-instance-execution-unsafe",
     );
+    expect(args).toContain("launchpad-test-instance-execution-unsafe");
+    expect(args).toContain("io.codejam.agent-id=agent-1");
+    expect(args).toContain("io.codejam.execution-id=execution/unsafe");
     expect(args).toContain("runtime:test");
     expect(args).toContain("type=bind,src=/tmp/agent-workspace,dst=/workspace");
     expect(args).toContain("type=bind,src=/tmp/codex-home,dst=/codex-home");
@@ -51,6 +56,7 @@ describe("Container Codex runner", () => {
     const args = buildContainerRunArgs(
       {
         agentId: "agent",
+        executionId: "execution",
         workspacePath: "/tmp/workspace",
         prompt: "continue",
         threadId: "thread-123",

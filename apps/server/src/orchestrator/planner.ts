@@ -1,0 +1,141 @@
+import type { AppConfig } from "../config.js";
+import { supervisorPlanSchema, type SupervisorPlan } from "./plan.js";
+
+// The supervisor's planning step: one tool-less model call that returns a plan
+// as JSON, the same pattern as the semantic monitor (semantic-intent-monitor.ts).
+//
+// The supervisor sees the user's request and the agent catalogue, and nothing
+// from the workspace. It reads no files and runs no commands, so a poisoned
+// README cannot steer how the work is divided. Whatever it returns is still
+// untrusted: the schema, then validatePlan, then the middleware's evaluation
+// of each delegation all stand between the plan and any work being done.
+
+export interface PlannerAgent {
+  id: string;
+  name: string;
+  description: string | null;
+}
+
+export interface PlanRequest {
+  userPrompt: string;
+  /** The agents the supervisor may assign work to. */
+  agents: readonly PlannerAgent[];
+  maxTasks: number;
+  signal?: AbortSignal;
+}
+
+export interface Planner {
+  /** Resolves with a schema-valid plan, or rejects. validatePlan is the caller's job. */
+  plan(request: PlanRequest): Promise<SupervisorPlan>;
+}
+
+export interface ModelPlannerOptions {
+  apiKey: string;
+  baseUrl: string;
+  model: string;
+  timeoutMs: number;
+  fetch?: typeof fetch;
+}
+
+export class ModelPlanner implements Planner {
+  private readonly fetchImpl: typeof fetch;
+
+  constructor(private readonly options: ModelPlannerOptions) {
+    this.fetchImpl = options.fetch ?? fetch;
+  }
+
+  async plan(request: PlanRequest): Promise<SupervisorPlan> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.options.timeoutMs);
+    timeout.unref();
+    const onAbort = () => controller.abort();
+    request.signal?.addEventListener("abort", onAbort, { once: true });
+
+    try {
+      const response = await this.fetchImpl(this.options.baseUrl.replace(/\/+$/, "") + "/responses", {
+        method: "POST",
+        headers: {
+          authorization: "Bearer " + this.options.apiKey,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          model: this.options.model,
+          input: plannerPrompt(request),
+          max_output_tokens: 2_000,
+        }),
+        signal: controller.signal,
+      });
+      if (!response.ok) {
+        const detail = (await response.text()).slice(0, 500);
+        throw new Error(`supervisor planning request failed (${response.status}): ${detail}`);
+      }
+      const text = responseText((await response.json()) as unknown);
+      return supervisorPlanSchema.parse(parseJsonObject(text));
+    } finally {
+      clearTimeout(timeout);
+      request.signal?.removeEventListener("abort", onAbort);
+    }
+  }
+}
+
+export function createModelPlanner(config: AppConfig, timeoutMs = 60_000): Planner {
+  return new ModelPlanner({
+    apiKey: config.modelApiKey,
+    baseUrl: config.modelProvider === "openai" ? "https://api.openai.com/v1" : config.arkBaseUrl,
+    model: config.modelName,
+    timeoutMs,
+  });
+}
+
+export function plannerPrompt(request: PlanRequest): string {
+  return [
+    "You are the supervisor for a small team of coding agents.",
+    "Split the user's request into as few tasks as it needs and assign each task to one agent from AGENTS.",
+    "",
+    "Rules:",
+    `- At most ${request.maxTasks} tasks. If one agent can do the whole request, return a single task.`,
+    "- agentId must be an id from AGENTS. Never invent agents.",
+    "- key is a short lowercase name for the task, unique within the plan.",
+    "- dependsOn lists the keys of tasks that must finish first. No cycles. Tasks without a dependency may run in parallel.",
+    "- An agent sees only its own objective and the results of the tasks it depends on, so make each objective self-contained.",
+    "- Do not add work the user did not ask for, and do not relax any constraint the user stated.",
+    "",
+    'Return only one JSON object: {"tasks":[{"key":"...","title":"...","objective":"...","agentId":"...","dependsOn":["..."]}]}',
+    "",
+    "USER REQUEST:",
+    request.userPrompt,
+    "",
+    "AGENTS:",
+    JSON.stringify(request.agents.map(({ id, name, description }) => ({ id, name, description }))),
+  ].join("\n");
+}
+
+function responseText(body: unknown): string {
+  if (body === null || typeof body !== "object") throw new Error("supervisor returned no JSON body");
+  const record = body as Record<string, unknown>;
+  if (typeof record.output_text === "string") return record.output_text;
+  if (!Array.isArray(record.output)) throw new Error("supervisor returned no text output");
+
+  const parts: string[] = [];
+  for (const output of record.output) {
+    if (output === null || typeof output !== "object") continue;
+    const content = (output as Record<string, unknown>).content;
+    if (!Array.isArray(content)) continue;
+    for (const entry of content) {
+      if (entry !== null && typeof entry === "object") {
+        const text = (entry as Record<string, unknown>).text;
+        if (typeof text === "string") parts.push(text);
+      }
+    }
+  }
+  if (parts.length === 0) throw new Error("supervisor returned no text output");
+  return parts.join("\n");
+}
+
+function parseJsonObject(text: string): unknown {
+  const trimmed = text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+  const start = trimmed.indexOf("{");
+  const end = trimmed.lastIndexOf("}");
+  if (start < 0 || end < start) throw new Error("supervisor output was not JSON");
+  return JSON.parse(trimmed.slice(start, end + 1));
+}

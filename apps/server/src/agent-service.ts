@@ -33,6 +33,8 @@ interface PendingApprovalWaiter {
 
 export class AgentService {
   private readonly activeExecutions = new Map<string, Promise<void>>();
+  /** The legacy run each busy Agent is executing; the runner is cancelled by it. */
+  private readonly activeRunIds = new Map<string, string>();
   private readonly cancellationRequests = new Set<string>();
   private readonly pendingApprovals = new Map<string, PendingApprovalWaiter>();
   private readonly agents: AgentRepository;
@@ -253,10 +255,12 @@ export class AgentService {
     });
     const execution = this.executeRun(agentAtStart, run);
     this.activeExecutions.set(agentId, execution);
+    this.activeRunIds.set(agentId, runId);
     void execution
       .finally(() => {
         if (this.activeExecutions.get(agentId) === execution) {
           this.activeExecutions.delete(agentId);
+          this.activeRunIds.delete(agentId);
         }
       })
       .catch(() => undefined);
@@ -298,6 +302,8 @@ export class AgentService {
       }
       const result = await this.runner.run({
         agentId: agentAtStart.id,
+        // A legacy run is a single execution, so it reuses the run's id.
+        executionId: run.id,
         workspacePath: agentAtStart.workspacePath,
         prompt: run.prompt,
         taskContext: {
@@ -390,7 +396,8 @@ export class AgentService {
     this.cancellationRequests.add(agentId);
     try {
       await this.cancelPendingApprovals(agentId);
-      await this.runner.cancel(agentId);
+      const runId = this.activeRunIds.get(agentId);
+      if (runId !== undefined) await this.runner.cancel(runId);
       const execution = this.activeExecutions.get(agentId);
       if (execution) {
         await execution;

@@ -113,8 +113,8 @@ export class CodexRunner implements AgentRunner {
     }
   }
 
-  async cancel(agentId: string): Promise<boolean> {
-    const active = this.active.get(agentId);
+  async cancel(executionId: string): Promise<boolean> {
+    const active = this.active.get(executionId);
     if (!active) {
       return false;
     }
@@ -125,8 +125,8 @@ export class CodexRunner implements AgentRunner {
   }
 
   async run(request: RunnerRequest): Promise<RunnerResult> {
-    if (this.active.has(request.agentId)) {
-      throw new Error("Agent already has an active Codex process");
+    if (this.active.has(request.executionId)) {
+      throw new Error("Execution already has an active Codex process");
     }
 
     const args = buildCodexArgs(request, this.config.codexSandboxMode);
@@ -147,7 +147,7 @@ export class CodexRunner implements AgentRunner {
       settled,
       forceKillTimer: null as NodeJS.Timeout | null,
     };
-    this.active.set(request.agentId, active);
+    this.active.set(request.executionId, active);
 
     const parsed: ParsedEvents = {
       messages: [],
@@ -223,7 +223,7 @@ export class CodexRunner implements AgentRunner {
     } finally {
       clearTimeout(timeout);
       if (active.forceKillTimer) clearTimeout(active.forceKillTimer);
-      this.active.delete(request.agentId);
+      this.active.delete(request.executionId);
     }
   }
 

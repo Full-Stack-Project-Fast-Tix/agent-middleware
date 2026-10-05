@@ -32,17 +32,18 @@ interface ActiveContainer {
   termination: Promise<void> | null;
 }
 
-export function containerName(agentId: string, instanceId = "default"): string {
+/** One container per execution, so one Agent can run several Tasks at once. */
+export function containerName(executionId: string, instanceId = "default"): string {
   const safeInstance = instanceId.replace(/[^a-zA-Z0-9_.-]/g, "-").slice(0, 32);
-  const safeAgent = agentId.replace(/[^a-zA-Z0-9_.-]/g, "-").slice(0, 48);
-  return "launchpad-" + safeInstance + "-" + safeAgent;
+  const safeExecution = executionId.replace(/[^a-zA-Z0-9_.-]/g, "-").slice(0, 48);
+  return "launchpad-" + safeInstance + "-" + safeExecution;
 }
 
 export function buildContainerRunArgs(
   request: RunnerRequest,
   config: AppConfig,
 ): string[] {
-  const name = containerName(request.agentId, config.runtimeInstanceId);
+  const name = containerName(request.executionId, config.runtimeInstanceId);
   const engineName = config.containerEngine.split(/[\\/]/).at(-1)?.toLowerCase();
   return [
     "run",
@@ -56,6 +57,8 @@ export function buildContainerRunArgs(
     "io.codejam.launchpad=agent-runtime",
     "--label",
     "io.codejam.agent-id=" + request.agentId,
+    "--label",
+    "io.codejam.execution-id=" + request.executionId,
     "--label",
     "io.codejam.instance-id=" + config.runtimeInstanceId,
     ...(engineName === "podman" ? ["--userns", "keep-id"] : []),
@@ -173,8 +176,8 @@ export class ContainerCodexRunner implements AgentRunner {
     }
   }
 
-  async cancel(agentId: string): Promise<boolean> {
-    const active = this.active.get(agentId);
+  async cancel(executionId: string): Promise<boolean> {
+    const active = this.active.get(executionId);
     if (!active) return false;
 
     active.cancelled = true;
@@ -201,8 +204,8 @@ export class ContainerCodexRunner implements AgentRunner {
   }
 
   async run(request: RunnerRequest): Promise<RunnerResult> {
-    if (this.active.has(request.agentId)) {
-      throw new Error("Agent already has an active Runtime container");
+    if (this.active.has(request.executionId)) {
+      throw new Error("Execution already has an active Runtime container");
     }
 
     const child = spawn(
@@ -221,14 +224,14 @@ export class ContainerCodexRunner implements AgentRunner {
     });
     const active: ActiveContainer = {
       child,
-      containerName: containerName(request.agentId, this.config.runtimeInstanceId),
+      containerName: containerName(request.executionId, this.config.runtimeInstanceId),
       cancelled: false,
       timedOut: false,
       outputExceeded: false,
       settled,
       termination: null,
     };
-    this.active.set(request.agentId, active);
+    this.active.set(request.executionId, active);
 
     // Byte cap and stderr tail are the runtime's baseline safety net. They
     // stay as a crash guard and should never fire during a normal run.
@@ -361,7 +364,7 @@ export class ContainerCodexRunner implements AgentRunner {
     } finally {
       clearTimeout(timeout);
       void this.removeContainer(active);
-      this.active.delete(request.agentId);
+      this.active.delete(request.executionId);
     }
   }
 
