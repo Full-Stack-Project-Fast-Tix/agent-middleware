@@ -23,10 +23,15 @@ export function setAuthToken(token: string): void {
   authToken = token.trim();
 }
 
-async function request<T>(url: string, options?: RequestInit): Promise<T> {
+/** For requests that cannot go through `request`, such as the event stream. */
+export function authHeaders(): Record<string, string> {
+  return authToken ? { Authorization: "Bearer " + authToken } : {};
+}
+
+export async function request<T>(url: string, options?: RequestInit): Promise<T> {
   const headers = {
     ...(options?.body ? { "Content-Type": "application/json" } : {}),
-    ...(authToken ? { Authorization: "Bearer " + authToken } : {}),
+    ...authHeaders(),
     ...options?.headers,
   };
   const response = await fetch(url, {
