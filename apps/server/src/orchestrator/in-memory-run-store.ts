@@ -113,6 +113,13 @@ export class InMemoryRunStore implements RunStore {
     return this.inRun(this.approvals, runId);
   }
 
+  async listExpiredApprovals(asOf: string): Promise<Approval[]> {
+    const cutoff = Date.parse(asOf);
+    return [...this.approvals.values()].filter(
+      (approval) => approval.status === "pending" && approval.expiresAt !== null && Date.parse(approval.expiresAt) <= cutoff,
+    );
+  }
+
   async requestApproval(approval: Approval): Promise<Approval> {
     this.approvals.set(approval.id, approval);
     this.commit({ runId: approval.runId, type: "approval.requested", payload: { approval } });

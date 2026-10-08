@@ -7,6 +7,7 @@ describe("buildTaskPrompt", () => {
   it("fences earlier results with a nonce so they cannot pose as the platform", () => {
     const prompt = buildTaskPrompt({
       task,
+      instructions: "",
       inputs: [
         {
           title: "Find missing\nvalidation",
@@ -27,6 +28,7 @@ describe("buildTaskPrompt", () => {
   it("places middleware steer text outside the fences and reports withheld results", () => {
     const prompt = buildTaskPrompt({
       task,
+      instructions: "",
       inputs: [{ title: "Analysis", content: "ok", steer: "Do not reuse the token shown above." }],
       withheld: [{ title: "Secrets audit", steer: "Work from the analysis instead." }],
       nonce: "n",
@@ -38,6 +40,7 @@ describe("buildTaskPrompt", () => {
   it("bounds each input", () => {
     const prompt = buildTaskPrompt({
       task,
+      instructions: "",
       inputs: [{ title: "Huge", content: "x".repeat(MAX_INPUT_CHARS + 10), steer: null }],
       withheld: [],
       nonce: "n",
@@ -46,6 +49,14 @@ describe("buildTaskPrompt", () => {
   });
 
   it("has no results section for a task without dependencies", () => {
-    expect(buildTaskPrompt({ task, inputs: [], withheld: [], nonce: "n" })).not.toContain("RESULTS FROM EARLIER TASKS");
+    expect(buildTaskPrompt({ task, instructions: "", inputs: [], withheld: [], nonce: "n" })).not.toContain(
+      "RESULTS FROM EARLIER TASKS",
+    );
+  });
+
+  it("carries the agent's configured instructions ahead of the task, and omits an empty section", () => {
+    const prompt = buildTaskPrompt({ task, instructions: "  Keep changes small.  ", inputs: [], withheld: [], nonce: "n" });
+    expect(prompt).toContain("YOUR INSTRUCTIONS\nKeep changes small.\n\nTASK: Add validation");
+    expect(buildTaskPrompt({ task, instructions: " ", inputs: [], withheld: [], nonce: "n" })).not.toContain("YOUR INSTRUCTIONS");
   });
 });

@@ -32,17 +32,22 @@ export interface WithheldInput {
 
 export function buildTaskPrompt(input: {
   task: Pick<Task, "title" | "objective">;
+  /**
+   * The Agent's configured instructions. Trusted: written by a developer, and
+   * what the semantic guard holds the agent to. In a shared run working copy
+   * there is no per-agent AGENTS.md to carry them, so they travel here.
+   */
+  instructions: string;
   inputs: readonly TaskInput[];
   withheld: readonly WithheldInput[];
   /** Random per prompt; pass a fixed value only in tests. */
   nonce: string;
 }): string {
-  const lines = [
-    "You are one agent working on one task within a larger request. Complete this task only.",
-    "",
-    `TASK: ${input.task.title}`,
-    input.task.objective,
-  ];
+  const lines = ["You are one agent working on one task within a larger request. Complete this task only."];
+  if (input.instructions.trim() !== "") {
+    lines.push("", "YOUR INSTRUCTIONS", input.instructions.trim());
+  }
+  lines.push("", `TASK: ${input.task.title}`, input.task.objective);
 
   if (input.inputs.length > 0) {
     lines.push(

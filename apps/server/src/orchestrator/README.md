@@ -20,8 +20,14 @@ always the middleware's decision
 | `scheduler.ts` | `tasksToMarkReady`, `tasksToSkip`, `pickLaunches`: dependency order, skipping downstream of a failure, `maxParallel`, one writer at a time. Pure. |
 | `planner.ts` | `ModelPlanner`: one tool-less model call returning the plan as JSON. It sees the request and the agent catalogue, never workspace content. |
 | `task-prompt.ts` | What a specialist is told: its objective, plus earlier results fenced with a per-prompt nonce and marked as data. |
-| `ports.ts` | The interfaces the orchestrator depends on: `RunStore`, `AgentDirectory`, `ExecutionRuntime` and `ActionGate`. |
+| `ports.ts` | The interfaces the orchestrator depends on: `RunStore`, `AgentDirectory`, `ExecutionRuntime`, `WorkingCopies` and `ActionGate`. |
 | `in-memory-run-store.ts` | `RunStore` in memory, publishing RunEvents with per-run seqs. Used until the PostgreSQL repositories land. |
+| `codex-execution-runtime.ts` | `CodexExecutionRuntime`: one execution, one disposable container, the Run's working copy at `/workspace`, its own trace file. Drives the turn with `../gated-turn.ts`. |
+| `working-copies.ts` | `DirectoryWorkingCopies`: copies the workspace to `<root>/<runId>/workspace` once per Run. Skips `node_modules` and `.codex`, keeps `.env`, copies symlinks as links. |
+
+Outside this folder: `../gated-turn.ts` drives one Codex turn whose
+approval requests go to `ActionGate.decide` and whose trace records go to
+`ActionGate.observe`. `../run-routes.ts` holds the HTTP routes.
 
 ## What goes through the middleware
 
@@ -50,20 +56,43 @@ is created either. A blocked handoff withholds that result from the prompt.
   `AgentExecution.capabilities`. The scheduler serialises on
   `capabilities.write`. The runtime settings come from the middleware, never
   from here.
+- **The runtime fails closed.** `CodexExecutionRuntime` refuses to start
+  unless the policy is `read-only` sandbox with `untrusted` approvals, the only
+  combination under which every non-read action stops at an approval request.
+  A gate that throws declines the action and ends the turn. A file change it
+  cannot describe is declined.
+- **Fresh thread per execution.** Context moves between agents only through
+  results the middleware has evaluated. An agent's configured instructions
+  travel in its prompt, because a shared working copy has no per-agent
+  `AGENTS.md`.
+- **Approval timeouts.** `startApprovalSweep` runs `expireDueApprovals`
+  periodically: one query for overdue approvals, not a timer per approval.
 
-## Not yet wired (Week 9)
+## Wiring it into the server
 
-- **HTTP routes.** Register `POST /api/workspaces/:id/runs`, `cancel` and
-  `approvals/:id/resolve` against `Orchestrator`, then swap it in for
-  `ScriptedOrchestrator` in `tests/integration/harness/stand-in.ts`.
-- **Codex runtime adapter.** An `ExecutionRuntime` over `ContainerCodexRunner`
-  that feeds trace records to `ActionGate.observe` and calls
-  `ActionGate.decide` at each approval request (`run-turn.ts`).
-- **Per-run working copy.** `runs/<runId>/workspace`, prepared before the first
-  execution.
-- **Approval timeout sweep.** Calls `expireApproval` once `expiresAt` passes
-  (contract decision: a database sweep, not in-process timers).
+The routes, runtime, working copies and sweep are all built. `index.ts` does
+not start them yet, because there is no real `SecurityMiddleware` until P1's
+lands. Once it does:
+
+```ts
+const orchestrator = new Orchestrator({
+  store,                          // P3's repositories (InMemoryRunStore until then)
+  agents,                         // P3's agent repository
+  middleware,                     // P1's SecurityMiddleware
+  planner: createModelPlanner(config),
+  runtime: new CodexExecutionRuntime(new ContainerCodexRunner(config)),
+  workingCopies: new DirectoryWorkingCopies({ root: path.join(config.dataDirectory, "runs"), sources }),
+});
+startApprovalSweep(orchestrator);
+// createApp(..., { runEvents, runs: { orchestrator, snapshot, approval, currentUserId, canAccessWorkspace } })
+```
+
+## Still to do
+
 - **Restart recovery** for Runs that were active when the server stopped.
+- **Working-copy retention:** copies are kept after a Run for inspection;
+  deleting old ones is a retention policy still to be decided.
+- **Reviewer/synthesis step** to replace the concatenated final output (Week 10).
 
 ## Tests
 

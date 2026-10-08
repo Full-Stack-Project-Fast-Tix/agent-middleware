@@ -112,6 +112,7 @@ export interface ScriptStep {
 export class ScriptedRuntime implements ExecutionRuntime {
   readonly executed: Array<{ taskTitle: string; action: ProposedAction }> = [];
   readonly prompts = new Map<string, string>();
+  readonly workingDirectories = new Set<string>();
   readonly attempts = new Map<string, number>();
   maxActive = 0;
   maxActiveWriters = 0;
@@ -127,6 +128,7 @@ export class ScriptedRuntime implements ExecutionRuntime {
     const attempt = (this.attempts.get(title) ?? 0) + 1;
     this.attempts.set(title, attempt);
     this.prompts.set(title, request.prompt);
+    this.workingDirectories.add(request.workingDirectory);
     const writer = request.execution.capabilities.write;
     this.active += 1;
     this.maxActive = Math.max(this.maxActive, this.active);
@@ -181,6 +183,8 @@ export interface Harness {
   runtime: ScriptedRuntime;
   middleware: SecurityMiddleware;
   scripted: ScriptedMiddleware;
+  /** Run ids whose working copy was prepared, once per preparation. */
+  prepared: string[];
   errors: unknown[];
   /** Every event of the run from seq 1, kept up to date. */
   record(runId: string): RunEvent[];
@@ -202,12 +206,19 @@ export function startHarness(options: {
   const scripted = new ScriptedMiddleware(options.middleware ?? {});
   const middleware = options.wrapMiddleware?.(scripted) ?? scripted;
   const errors: unknown[] = [];
+  const prepared: string[] = [];
   const orchestrator = new Orchestrator({
     store,
     agents: directory,
     middleware,
     planner,
     runtime,
+    workingCopies: {
+      prepare: async (run) => {
+        prepared.push(run.id);
+        return `/runs/${run.id}/workspace`;
+      },
+    },
     limits: { approvalTtlMs: 60_000, ...options.limits },
     onError: (error) => errors.push(error),
   });
@@ -220,6 +231,7 @@ export function startHarness(options: {
     runtime,
     middleware,
     scripted,
+    prepared,
     errors,
     record(runId) {
       const events: RunEvent[] = [];

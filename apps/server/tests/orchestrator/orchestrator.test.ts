@@ -340,6 +340,53 @@ describe("scheduling", () => {
   });
 });
 
+describe("working copies and approvals over time", () => {
+  it("prepares one working copy per run, shared by every execution in it", async () => {
+    const { run, events } = await start("auto", { script: { ...SIGNUP_SCRIPT, "Add validation": {} } });
+    await settle(run.id, events);
+
+    expect(harness.prepared).toEqual([run.id]);
+    expect([...harness.runtime.workingDirectories]).toEqual([`/runs/${run.id}/workspace`]);
+  });
+
+  it("does not copy the workspace for a run whose planning failed", async () => {
+    const { run, events } = await start("auto", {}, AGENTS.analyst);
+    await settle(run.id, events);
+    expect(harness.prepared).toEqual([]);
+  });
+
+  it("gives each agent its configured instructions", async () => {
+    harness = startHarness();
+    harness.directory.agents.set(AGENTS.analyst, {
+      ...harness.directory.agents.get(AGENTS.analyst)!,
+      instructions: "Only read; never edit files.",
+    });
+    const run = await harness.orchestrator.createRun({
+      workspaceId: WORKSPACE_ID,
+      createdByUserId: USER_ID,
+      userPrompt: PROMPT,
+      orchestrationMode: "single",
+      agentId: AGENTS.analyst,
+    });
+    await harness.orchestrator.whenSettled(run.id);
+    expect(harness.runtime.prompts.get(PROMPT)).toContain("YOUR INSTRUCTIONS\nOnly read; never edit files.");
+  });
+
+  it("times out an unanswered approval: the action is declined and the run carries on", async () => {
+    const { run, events } = await start("auto", { limits: { approvalTtlMs: 1 } });
+    const pending = await waitFor(pendingApproval(run.id));
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    expect(await harness.orchestrator.expireDueApprovals()).toBe(1);
+    const snapshot = await settle(run.id, events);
+
+    expect(snapshot.run.status).toBe("completed");
+    expect(snapshot.approvals).toEqual([expect.objectContaining({ id: pending.id, status: "timed_out", resolvedByUserId: null })]);
+    expect(findingsOf(snapshot, "Add validation")).toContainEqual(["runtime", "approval-timed-out", true]);
+    expect(executedTypes()).not.toContain("file_change");
+    expect(await harness.orchestrator.expireDueApprovals()).toBe(0);
+  });
+});
+
 describe("cancellation and misuse", () => {
   it("cancels a run waiting for approval, idempotently", async () => {
     const { run, events } = await start("auto");

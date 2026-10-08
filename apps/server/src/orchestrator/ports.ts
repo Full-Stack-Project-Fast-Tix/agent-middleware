@@ -54,6 +54,8 @@ export interface RunStore {
 
   getApproval(approvalId: string): Promise<Approval | null>;
   listApprovals(runId: string): Promise<Approval[]>;
+  /** Pending approvals, in every run, whose expiresAt is at or before `asOf`. For the timeout sweep. */
+  listExpiredApprovals(asOf: string): Promise<Approval[]>;
   requestApproval(approval: Approval): Promise<Approval>;
   resolveApproval(
     approvalId: string,
@@ -87,11 +89,22 @@ export interface ActionGate {
   observe(record: TraceRecord): Promise<SecurityDecision | null>;
 }
 
+/**
+ * Each Run gets its own copy of the workspace, so Runs cannot overwrite each
+ * other (plan section 3.2). Within a Run, write-capable work is serialised.
+ */
+export interface WorkingCopies {
+  /** Prepare the Run's working copy if it does not exist yet, and return its absolute path. */
+  prepare(run: Run): Promise<string>;
+}
+
 export interface ExecutionRequest {
   run: Run;
   task: Task;
   execution: AgentExecution;
   agent: Agent;
+  /** The Run's working copy, mounted as the agent's workspace. */
+  workingDirectory: string;
   /** The task objective plus earlier tasks' results, built by the orchestrator. */
   prompt: string;
   /** Chosen by the middleware, never by the orchestrator (contract decision 3). */

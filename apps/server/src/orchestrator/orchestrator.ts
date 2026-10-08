@@ -20,12 +20,12 @@ import {
   type Task,
   type TaskStatus,
 } from "@launchpad/shared";
-import { HttpError, RunCancelledError } from "../errors.js";
+import { HttpError, RunCancelledError, traceOf } from "../errors.js";
 import { redactSensitiveText } from "../redaction/index.js";
 import type { ExecutionGuard, ResolvedPolicy, SecurityMiddleware } from "../security-middleware.js";
 import { validatePlan } from "./plan.js";
 import type { Planner } from "./planner.js";
-import type { ActionGate, AgentDirectory, ExecutionRuntime, RunStore } from "./ports.js";
+import type { ActionGate, AgentDirectory, ExecutionRuntime, RunStore, WorkingCopies } from "./ports.js";
 import { pickLaunches, tasksToMarkReady, tasksToSkip, type LaunchCandidate } from "./scheduler.js";
 import { buildTaskPrompt, type TaskInput, type WithheldInput } from "./task-prompt.js";
 
@@ -72,6 +72,7 @@ export interface OrchestratorOptions {
   middleware: SecurityMiddleware;
   planner: Planner;
   runtime: ExecutionRuntime;
+  workingCopies: WorkingCopies;
   limits?: Partial<OrchestratorLimits>;
   now?: () => string;
   newId?: () => string;
@@ -131,6 +132,7 @@ export class Orchestrator {
   private readonly middleware: SecurityMiddleware;
   private readonly planner: Planner;
   private readonly runtime: ExecutionRuntime;
+  private readonly workingCopies: WorkingCopies;
   private readonly limits: OrchestratorLimits;
   private readonly now: () => string;
   private readonly newId: () => string;
@@ -148,6 +150,7 @@ export class Orchestrator {
     this.middleware = options.middleware;
     this.planner = options.planner;
     this.runtime = options.runtime;
+    this.workingCopies = options.workingCopies;
     const limits = { ...DEFAULT_ORCHESTRATOR_LIMITS, ...options.limits };
     // Below 1, the scheduler could never launch anything and would stall.
     this.limits = {
@@ -220,9 +223,24 @@ export class Orchestrator {
     return this.settleApproval(approvalId, decision === "approve" ? "approved" : "denied", userId);
   }
 
-  /** Called by the approval-timeout sweep once `expiresAt` has passed. */
+  /** Time out one pending approval: the action is declined and the execution carries on. */
   async expireApproval(approvalId: string): Promise<Approval> {
     return this.settleApproval(approvalId, "timed_out", null);
+  }
+
+  /** Time out every pending approval past its expiresAt. Returns how many were expired. */
+  async expireDueApprovals(): Promise<number> {
+    let expired = 0;
+    for (const approval of await this.store.listExpiredApprovals(this.now())) {
+      try {
+        await this.expireApproval(approval.id);
+        expired += 1;
+      } catch (error) {
+        // Answered by a person between the query and now: nothing to expire.
+        if (!(error instanceof HttpError && error.statusCode === 409)) throw error;
+      }
+    }
+    return expired;
   }
 
   /**
@@ -383,6 +401,8 @@ export class Orchestrator {
     /** Whether each in-flight execution is write-capable. */
     const writing = new Map<string, boolean>();
     let failureSeen = false;
+    /** Prepared just before the first launch; a Run with nothing to run never copies. */
+    let workingDirectory: string | null = null;
 
     for (;;) {
       this.throwIfCancelled(state);
@@ -419,6 +439,9 @@ export class Orchestrator {
         active: [...writing.values()].map((write) => ({ write })),
         maxParallel: this.limits.maxParallel,
       });
+      if (launches.length > 0 && workingDirectory === null) {
+        workingDirectory = await this.workingCopies.prepare(run);
+      }
       for (const taskId of launches) {
         const policy = policies.get(taskId)!;
         policies.delete(taskId);
@@ -427,7 +450,7 @@ export class Orchestrator {
         const attempt = (attempts.get(taskId) ?? 0) + 1;
         attempts.set(taskId, attempt);
         writing.set(taskId, policy.capabilities.write);
-        const work = this.runTask(state, run, taskId, policy, attempt)
+        const work = this.runTask(state, run, taskId, policy, attempt, workingDirectory!)
           .then((result) => {
             if (result === "retry") retries.push(taskId);
           })
@@ -470,7 +493,14 @@ export class Orchestrator {
   // ---------------------------------------------------------------------------
 
   /** Never rejects for a failed attempt; it records the failure and says what should happen next. */
-  private async runTask(state: RunState, run: Run, taskId: string, policy: ResolvedPolicy, attempt: number): Promise<TaskResult> {
+  private async runTask(
+    state: RunState,
+    run: Run,
+    taskId: string,
+    policy: ResolvedPolicy,
+    attempt: number,
+    workingDirectory: string,
+  ): Promise<TaskResult> {
     let task = await this.requireTask(taskId);
     if (attempt === 1) task = await this.moveTask(taskId, "running", { startedAt: this.now() });
 
@@ -497,7 +527,14 @@ export class Orchestrator {
         task,
         execution: launch.execution,
         agent,
-        prompt: buildTaskPrompt({ task, inputs, withheld, nonce: randomUUID().replaceAll("-", "").slice(0, 12) }),
+        workingDirectory,
+        prompt: buildTaskPrompt({
+          task,
+          instructions: agent.instructions,
+          inputs,
+          withheld,
+          nonce: randomUUID().replaceAll("-", "").slice(0, 12),
+        }),
         runtimePolicy: policy.runtime,
         gate: launch.gate,
         signal: state.abort.signal,
@@ -520,7 +557,13 @@ export class Orchestrator {
       const message = stopped && !(error instanceof ExecutionStoppedError)
         ? new ExecutionStoppedError(launch.stopReason!).message
         : errorMessage(error);
-      await this.moveExecution(launch.execution.id, "failed", { error: message, completedAt: this.now() });
+      // A failed attempt is the one whose trace matters most; keep its pointer.
+      const trace = traceOf(error);
+      await this.moveExecution(launch.execution.id, "failed", {
+        error: message,
+        completedAt: this.now(),
+        ...(trace === null ? {} : { tracePath: trace.path, traceTruncated: trace.truncated }),
+      });
       if (stopped || launch.refused || attempt >= this.limits.maxAttempts) {
         await this.moveTask(taskId, "failed", { error: message, completedAt: this.now() });
         return "failed";
@@ -854,6 +897,31 @@ export class Orchestrator {
       release();
     }
   }
+}
+
+/**
+ * Expire overdue approvals every `intervalMs`, so an unanswered request
+ * declines its action instead of holding the execution forever. One periodic
+ * query rather than a timer per approval, which also covers approvals that
+ * were pending across a restart. Returns a function that stops the sweep.
+ */
+export function startApprovalSweep(
+  orchestrator: Pick<Orchestrator, "expireDueApprovals">,
+  options: { intervalMs?: number; onError?: (error: unknown) => void } = {},
+): () => void {
+  let sweeping = false;
+  const timer = setInterval(() => {
+    if (sweeping) return;
+    sweeping = true;
+    orchestrator
+      .expireDueApprovals()
+      .catch((error: unknown) => options.onError?.(error))
+      .finally(() => {
+        sweeping = false;
+      });
+  }, options.intervalMs ?? 5_000);
+  timer.unref();
+  return () => clearInterval(timer);
 }
 
 function noteDecision(launch: Launch, decision: SecurityDecision): void {
