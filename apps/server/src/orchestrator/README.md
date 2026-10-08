@@ -68,6 +68,48 @@ is created either. A blocked handoff withholds that result from the prompt.
 - **Approval timeouts.** `startApprovalSweep` runs `expireDueApprovals`
   periodically: one query for overdue approvals, not a timer per approval.
 
+- **Final output.** The Run's result is what its final tasks produced: the
+  ones no other task depends on. A plan that ends with a review task reports
+  that review. No extra model call summarises, which would cost tokens and
+  give agent output one more way to steer what the user is told.
+- **Restart recovery.** `recoverInterruptedRuns()` at startup fails every Run
+  a previous process left active, or cancels it if a cancel was requested,
+  and closes its open work. Containers do not survive a restart, so nothing
+  is resumed.
+
+## Audit trail
+
+Every event goes through `RunStore.appendAudit`, attributed to who caused it.
+
+| Event | Actor | When |
+| --- | --- | --- |
+| `run.created` | user | `createRun` |
+| `run.cancel_requested` | user (system if none) | first `cancel` |
+| `run.status_changed` | system | every Run status change, with `from` and `to` |
+| `task.created` | the delegating agent, or system | each Task |
+| `task.status_changed` | system | every Task status change |
+| `execution.started` | agent | launch, with attempt, capabilities and applied policies |
+| `execution.finished` | agent | terminal status, with error and trace path |
+| `delegation.requested` | supervisor | before the middleware evaluates it |
+| `security.decision` | agent | every final decision from `evaluate`, and every non-null one from `observe` |
+| `approval.requested` | agent | an approval is opened |
+| `approval.resolved` | user, or system for timeouts and cancels | an approval is answered |
+
+Metadata holds ids, statuses, finding codes and redacted, bounded text only.
+Commands, diffs and results stay in the trace and the entities themselves.
+
+## Contract surface (frozen at the end of Week 10)
+
+Changing any of these is a contract change: record it in
+`docs/contract-decisions.md`.
+
+- **RunEvents** come only from `RunStore` writes. The orchestrator emits no
+  event types beyond those in `packages/shared/src/events.ts`.
+- **HTTP:** the four routes in `../run-routes.ts`, exactly as in `api.ts`.
+- **`RunStore`, `AgentDirectory`, `ExecutionRuntime`, `WorkingCopies`** in
+  `ports.ts`. P3 implements the first two against PostgreSQL.
+- **Audit:** the table above.
+
 ## Wiring it into the server
 
 The routes, runtime, working copies and sweep are all built. `index.ts` does
@@ -83,16 +125,17 @@ const orchestrator = new Orchestrator({
   runtime: new CodexExecutionRuntime(new ContainerCodexRunner(config)),
   workingCopies: new DirectoryWorkingCopies({ root: path.join(config.dataDirectory, "runs"), sources }),
 });
+await orchestrator.recoverInterruptedRuns();   // before accepting requests
 startApprovalSweep(orchestrator);
 // createApp(..., { runEvents, runs: { orchestrator, snapshot, approval, currentUserId, canAccessWorkspace } })
 ```
 
 ## Still to do
 
-- **Restart recovery** for Runs that were active when the server stopped.
 - **Working-copy retention:** copies are kept after a Run for inspection;
   deleting old ones is a retention policy still to be decided.
-- **Reviewer/synthesis step** to replace the concatenated final output (Week 10).
+- **Nested delegation:** specialists cannot delegate yet, so the effective
+  depth is 1 whatever `maxDelegationDepth` allows.
 
 ## Tests
 

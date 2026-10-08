@@ -10,6 +10,7 @@ import {
   type Approval,
   type ApprovalDecision,
   type ApprovalStatus,
+  type AuditEventType,
   type ExecutionStatus,
   type JsonObject,
   type OrchestrationMode,
@@ -18,6 +19,7 @@ import {
   type RunStatus,
   type SecurityDecision,
   type Task,
+  type TaskDependency,
   type TaskStatus,
 } from "@launchpad/shared";
 import { HttpError, RunCancelledError, traceOf } from "../errors.js";
@@ -143,6 +145,8 @@ export class Orchestrator {
   private readonly waiters = new Map<string, (answer: Answer) => void>();
   /** Approvals being resolved right now, so a double submit gets a 409. */
   private readonly settling = new Set<string>();
+  /** Workspace of each Run seen, for audit events. */
+  private readonly workspaces = new Map<string, string>();
 
   constructor(options: OrchestratorOptions) {
     this.store = options.store;
@@ -195,6 +199,10 @@ export class Orchestrator {
       startedAt: null,
       completedAt: null,
     });
+    this.workspaces.set(run.id, run.workspaceId);
+    await this.audit(run.id, "run.created", { type: "user", id: input.createdByUserId }, {
+      metadata: { orchestrationMode: run.orchestrationMode, agentId },
+    });
 
     const state: RunState = {
       runId: run.id,
@@ -228,6 +236,25 @@ export class Orchestrator {
     return this.settleApproval(approvalId, "timed_out", null);
   }
 
+  /**
+   * Close the Runs a previous process left active. Their executions, and the
+   * containers running them, did not survive the restart, so they cannot be
+   * resumed: each is failed with the reason recorded, or cancelled if a cancel
+   * had been requested. Call once at startup, before accepting requests.
+   * Returns how many were closed.
+   */
+  async recoverInterruptedRuns(): Promise<number> {
+    let recovered = 0;
+    for (const run of await this.store.listActiveRuns()) {
+      if (this.active.has(run.id)) continue;
+      this.workspaces.set(run.id, run.workspaceId);
+      if (run.cancelRequestedAt !== null) await this.finishCancelled(run.id);
+      else await this.failRun(run.id, "The server restarted while this run was active; its work could not be resumed.");
+      recovered += 1;
+    }
+    return recovered;
+  }
+
   /** Time out every pending approval past its expiresAt. Returns how many were expired. */
   async expireDueApprovals(): Promise<number> {
     let expired = 0;
@@ -248,13 +275,17 @@ export class Orchestrator {
    * cancelled once its work has stopped. Repeating it is harmless. 409 only
    * for a Run that already completed or failed.
    */
-  async cancel(runId: string): Promise<Run> {
+  async cancel(runId: string, userId: string | null = null): Promise<Run> {
     const run = await this.store.getRun(runId);
     if (run === null) throw new HttpError(404, "Run not found");
     if (run.status === "cancelled") return run;
     if (isTerminalRunStatus(run.status)) throw new HttpError(409, `Run is already ${run.status}`);
 
-    const requested = run.cancelRequestedAt === null ? await this.store.updateRun(runId, { cancelRequestedAt: this.now() }) : run;
+    let requested = run;
+    if (run.cancelRequestedAt === null) {
+      requested = await this.store.updateRun(runId, { cancelRequestedAt: this.now() });
+      await this.audit(runId, "run.cancel_requested", userId === null ? { type: "system" } : { type: "user", id: userId });
+    }
     const state = this.active.get(runId);
     if (state === undefined) {
       // Nothing in this process is working on it (for example after a restart).
@@ -369,7 +400,7 @@ export class Orchestrator {
             parentTaskId: planTask.id,
             createdByExecutionId: launch.execution.id,
             status: "pending",
-          }, dependsOnTaskIds),
+          }, dependsOnTaskIds, supervisorId),
         );
       }
 
@@ -485,7 +516,8 @@ export class Orchestrator {
       });
       return;
     }
-    await this.moveRun(run.id, "completed", { finalOutput: finalOutputOf(run, tasks), completedAt: this.now() });
+    const dependencies = await this.store.listDependencies(run.id);
+    await this.moveRun(run.id, "completed", { finalOutput: finalOutputOf(run, tasks, dependencies), completedAt: this.now() });
   }
 
   // ---------------------------------------------------------------------------
@@ -650,6 +682,11 @@ export class Orchestrator {
       throw error;
     }
     const execution = await this.moveExecution(created.id, "running", { startedAt: this.now() });
+    await this.audit(run.id, "execution.started", { type: "agent", id: agentId }, {
+      taskId: task.id,
+      executionId: execution.id,
+      metadata: { attempt, capabilities: policy.capabilities, appliedPolicies: policy.appliedPolicies },
+    });
     const launch: Launch = { execution, task, guard, policy, gate: undefined as unknown as ActionGate, stopReason: null, refused: false };
     launch.gate = this.gateFor(state, launch);
     return launch;
@@ -659,12 +696,22 @@ export class Orchestrator {
     return {
       decide: async (action) => {
         this.throwIfCancelled(state);
+        if (action.type === "delegation") {
+          await this.auditFor(launch, "delegation.requested", { actionId: action.actionId, ...safeDetailsOf(action) });
+        }
         const decision = await launch.guard.evaluate(action);
         await this.recordFindings(launch, decision);
         const final = decision.outcome === "require_approval"
           ? await this.awaitApproval(state, launch, action, decision)
           : decision;
         noteDecision(launch, final);
+        await this.auditFor(launch, "security.decision", {
+          source: "evaluate",
+          actionType: action.type,
+          actionId: action.actionId,
+          requiredApproval: decision.outcome === "require_approval",
+          ...decisionSummary(final),
+        });
         return final;
       },
       observe: async (record) => {
@@ -672,6 +719,7 @@ export class Orchestrator {
         if (decision !== null) {
           await this.recordFindings(launch, decision);
           noteDecision(launch, decision);
+          await this.auditFor(launch, "security.decision", { source: "observe", traceSeq: record.seq, ...decisionSummary(decision) });
         }
         return decision;
       },
@@ -731,6 +779,12 @@ export class Orchestrator {
         resolvedAt: null,
         resolvedByUserId: null,
       });
+      await this.auditFor(launch, "approval.requested", {
+        approvalId,
+        actionType: action.type,
+        actionId: action.actionId,
+        reason: decision.approvalReason,
+      });
       await this.moveExecution(execution.id, "waiting_approval");
       await this.moveTask(task.id, "waiting_approval");
       const run = await this.requireRun(execution.runId);
@@ -762,6 +816,11 @@ export class Orchestrator {
     this.settling.add(approvalId);
     try {
       const resolved = await this.store.resolveApproval(approvalId, status, userId);
+      await this.audit(resolved.runId, "approval.resolved", userId === null ? { type: "system" } : { type: "user", id: userId }, {
+        taskId: resolved.taskId,
+        executionId: resolved.executionId,
+        metadata: { approvalId, status, actionType: resolved.actionType, actionId: resolved.actionId },
+      });
       this.waiters.get(approvalId)?.(status);
       this.waiters.delete(approvalId);
       return resolved;
@@ -816,13 +875,15 @@ export class Orchestrator {
   // Guarded writes
   // ---------------------------------------------------------------------------
 
+  /** `createdByAgentId` is the agent whose delegation created it; null for tasks the platform creates. */
   private async createTask(
     run: Run,
     fields: Pick<Task, "title" | "objective" | "assignedAgentId" | "parentTaskId" | "createdByExecutionId" | "status">,
     dependsOnTaskIds: string[],
+    createdByAgentId: string | null = null,
   ): Promise<Task> {
     const now = this.now();
-    return this.store.createTask({
+    const task = await this.store.createTask({
       id: this.newId(),
       runId: run.id,
       ...fields,
@@ -833,6 +894,12 @@ export class Orchestrator {
       startedAt: null,
       completedAt: null,
     }, dependsOnTaskIds);
+    await this.audit(run.id, "task.created", createdByAgentId === null ? { type: "system" } : { type: "agent", id: createdByAgentId }, {
+      taskId: task.id,
+      executionId: task.createdByExecutionId,
+      metadata: { title: task.title, assignedAgentId: task.assignedAgentId, parentTaskId: task.parentTaskId, dependsOnTaskIds },
+    });
+    return task;
   }
 
   private async moveRun(runId: string, to: RunStatus, changes: Partial<Run> = {}): Promise<Run> {
@@ -840,7 +907,13 @@ export class Orchestrator {
     if (run.status !== to && !canTransitionRun(run.status, to)) {
       throw new Error(`Illegal run transition ${run.status} -> ${to} for run ${runId}`);
     }
-    return this.store.updateRun(runId, { ...changes, status: to });
+    const updated = await this.store.updateRun(runId, { ...changes, status: to });
+    if (run.status !== to) {
+      await this.audit(runId, "run.status_changed", { type: "system" }, {
+        metadata: { from: run.status, to, ...(updated.error === null ? {} : { error: safeText(updated.error) }) },
+      });
+    }
+    return updated;
   }
 
   private async moveTask(taskId: string, to: TaskStatus, changes: Partial<Task> = {}): Promise<Task> {
@@ -848,7 +921,14 @@ export class Orchestrator {
     if (task.status !== to && !canTransitionTask(task.status, to)) {
       throw new Error(`Illegal task transition ${task.status} -> ${to} for task ${taskId}`);
     }
-    return this.store.updateTask(taskId, { ...changes, status: to });
+    const updated = await this.store.updateTask(taskId, { ...changes, status: to });
+    if (task.status !== to) {
+      await this.audit(task.runId, "task.status_changed", { type: "system" }, {
+        taskId,
+        metadata: { from: task.status, to, ...(updated.error === null ? {} : { error: safeText(updated.error) }) },
+      });
+    }
+    return updated;
   }
 
   private async moveExecution(
@@ -861,7 +941,66 @@ export class Orchestrator {
     if (execution.status !== to && !canTransitionExecution(execution.status, to)) {
       throw new Error(`Illegal execution transition ${execution.status} -> ${to} for execution ${executionId}`);
     }
-    return this.store.updateExecution(executionId, { ...changes, status: to });
+    const updated = await this.store.updateExecution(executionId, { ...changes, status: to });
+    if (execution.status !== to && isTerminalExecutionStatus(to)) {
+      await this.audit(execution.runId, "execution.finished", { type: "agent", id: execution.agentId }, {
+        taskId: execution.taskId,
+        executionId,
+        metadata: {
+          status: to,
+          attempt: execution.attempt,
+          ...(updated.error === null ? {} : { error: safeText(updated.error) }),
+          ...(updated.tracePath === null ? {} : { tracePath: updated.tracePath }),
+        },
+      });
+    }
+    return updated;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Audit
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Append one audit event for a Run. Metadata carries identifiers, statuses
+   * and redacted, bounded summaries only: never raw commands, file contents
+   * or results, which stay in the trace and the entities themselves.
+   */
+  private async audit(
+    runId: string,
+    eventType: AuditEventType,
+    actor: { type: "user" | "agent"; id: string } | { type: "system" },
+    fields: { taskId?: string | null; executionId?: string | null; metadata?: JsonObject } = {},
+  ): Promise<void> {
+    await this.store.appendAudit({
+      id: this.newId(),
+      workspaceId: await this.workspaceOf(runId),
+      actorType: actor.type,
+      actorId: actor.type === "system" ? null : actor.id,
+      eventType,
+      runId,
+      taskId: fields.taskId ?? null,
+      executionId: fields.executionId ?? null,
+      metadata: fields.metadata ?? null,
+      createdAt: this.now(),
+    });
+  }
+
+  /** An event caused by the agent acting in this execution. */
+  private auditFor(launch: Launch, eventType: AuditEventType, metadata: JsonObject): Promise<void> {
+    return this.audit(launch.execution.runId, eventType, { type: "agent", id: launch.execution.agentId }, {
+      taskId: launch.task.id,
+      executionId: launch.execution.id,
+      metadata,
+    });
+  }
+
+  private async workspaceOf(runId: string): Promise<string> {
+    const known = this.workspaces.get(runId);
+    if (known !== undefined) return known;
+    const { workspaceId } = await this.requireRun(runId);
+    this.workspaces.set(runId, workspaceId);
+    return workspaceId;
   }
 
   private async requireRun(runId: string): Promise<Run> {
@@ -931,11 +1070,33 @@ function noteDecision(launch: Launch, decision: SecurityDecision): void {
 }
 
 /** What the Run reports as its result. A reviewer/synthesis step replaces this in Week 10. */
-function finalOutputOf(run: Run, tasks: readonly Task[]): string {
+/**
+ * The Run's result: what its final tasks produced, the ones no other task
+ * depends on. Earlier results already flowed into those tasks as inputs, so a
+ * plan that ends with a review task reports exactly that review. No extra
+ * model call summarises anything: that would cost tokens and give agent output
+ * one more place to steer what the user is told.
+ */
+function finalOutputOf(run: Run, tasks: readonly Task[], dependencies: readonly TaskDependency[]): string {
   if (run.orchestrationMode === "single") return tasks[0]?.result ?? "";
-  const work = tasks.filter((task) => task.parentTaskId !== null && task.status === "completed");
-  if (work.length === 0) return "The supervisor delegated no tasks.";
-  return work.map((task) => `## ${task.title}\n${task.result ?? ""}`).join("\n\n");
+  const completed = tasks.filter((task) => task.parentTaskId !== null && task.status === "completed");
+  if (completed.length === 0) return "The supervisor delegated no tasks.";
+  const dependedOn = new Set(dependencies.map((edge) => edge.dependsOnTaskId));
+  const final = completed.filter((task) => !dependedOn.has(task.id));
+  if (final.length === 1) return final[0]!.result ?? "";
+  return final.map((task) => `## ${task.title}\n${task.result ?? ""}`).join("\n\n");
+}
+
+/** What an audit record keeps of a decision: the outcome and why, not the evidence. */
+function decisionSummary(decision: SecurityDecision): JsonObject {
+  return {
+    outcome: decision.outcome,
+    severity: decision.severity,
+    reason: safeText(decision.reason),
+    ...(decision.outcome === "block" ? { stop: decision.stop } : {}),
+    findingCodes: decision.findings.map((finding) => `${finding.layer}:${finding.code}`),
+    appliedPolicies: decision.appliedPolicies,
+  };
 }
 
 /** Redacted, bounded details an approver can safely see. */
@@ -954,6 +1115,11 @@ function safeDetailsOf(action: ProposedAction): JsonObject {
     case "context_handoff":
       return { fromTaskId: action.fromTaskId, toTaskId: action.toTaskId, characters: action.content.length };
   }
+}
+
+/** Free text for audit metadata, such as an error that may quote a container's stderr. */
+function safeText(text: string): string {
+  return bounded(redactSensitiveText(text), 500);
 }
 
 function titleFrom(prompt: string): string {

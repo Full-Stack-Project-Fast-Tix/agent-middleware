@@ -3,6 +3,7 @@ import type {
   AgentExecution,
   Approval,
   ApprovalStatus,
+  AuditEvent,
   ExecutionUsage,
   OrchestrationMode,
   ProposedAction,
@@ -37,6 +38,15 @@ export interface RunStore {
   createRun(run: Run): Promise<Run>;
   getRun(runId: string): Promise<Run | null>;
   updateRun(runId: string, changes: Partial<Run>): Promise<Run>;
+  /** Runs not yet completed, failed or cancelled. For restart recovery. */
+  listActiveRuns(): Promise<Run[]>;
+
+  /**
+   * Append one audit event. Append-only: never updated or deleted. A database
+   * implementation should write it in the same transaction as the state
+   * change it describes, where there is one.
+   */
+  appendAudit(event: AuditEvent): Promise<void>;
 
   getTask(taskId: string): Promise<Task | null>;
   /** Tasks in creation order. */

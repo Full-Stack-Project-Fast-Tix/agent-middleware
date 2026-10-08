@@ -1,13 +1,16 @@
-import type {
-  AgentExecution,
-  Approval,
-  ApprovalStatus,
-  Run,
-  RunEventDraft,
-  RunSnapshot,
-  SecurityFinding,
-  Task,
-  TaskDependency,
+import {
+  auditEventSchema,
+  isTerminalRunStatus,
+  type AgentExecution,
+  type Approval,
+  type ApprovalStatus,
+  type AuditEvent,
+  type Run,
+  type RunEventDraft,
+  type RunSnapshot,
+  type SecurityFinding,
+  type Task,
+  type TaskDependency,
 } from "@launchpad/shared";
 import type { RunEventHub } from "../run-events.js";
 import type { RunStore } from "./ports.js";
@@ -27,6 +30,7 @@ export class InMemoryRunStore implements RunStore {
   private readonly findings = new Map<string, SecurityFinding>();
   private readonly approvals = new Map<string, Approval>();
   private readonly lastEventSeq = new Map<string, number>();
+  private readonly audit: AuditEvent[] = [];
 
   constructor(
     private readonly hub: RunEventHub,
@@ -41,6 +45,20 @@ export class InMemoryRunStore implements RunStore {
 
   async getRun(runId: string): Promise<Run | null> {
     return this.runs.get(runId) ?? null;
+  }
+
+  async listActiveRuns(): Promise<Run[]> {
+    return [...this.runs.values()].filter((run) => !isTerminalRunStatus(run.status));
+  }
+
+  async appendAudit(event: AuditEvent): Promise<void> {
+    // Validated here so a malformed event fails where it was produced.
+    this.audit.push(Object.freeze(auditEventSchema.parse(event)));
+  }
+
+  /** Audit events in the order they were appended, optionally for one run. Not part of RunStore. */
+  auditEvents(runId?: string): AuditEvent[] {
+    return runId === undefined ? [...this.audit] : this.audit.filter((event) => event.runId === runId);
   }
 
   async updateRun(runId: string, changes: Partial<Run>): Promise<Run> {

@@ -71,7 +71,7 @@ export function registerRunRoutes(app: FastifyInstance, options: RunRoutesOption
   app.post("/api/runs/:runId/cancel", async (request, reply) => {
     const { runId } = runParams.parse(request.params);
     await readableSnapshot(request, runId);
-    return reply.code(202).send({ run: await options.orchestrator.cancel(runId) });
+    return reply.code(202).send({ run: await options.orchestrator.cancel(runId, options.currentUserId(request)) });
   });
 
   app.post("/api/approvals/:approvalId/resolve", async (request) => {

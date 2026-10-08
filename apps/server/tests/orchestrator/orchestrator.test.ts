@@ -114,7 +114,8 @@ describe("auto mode", () => {
     const snapshot = await settle(run.id, events);
 
     expect(snapshot.run.status).toBe("completed");
-    expect(snapshot.run.finalOutput).toContain("## Add validation");
+    // The final task's result; the analysis reached it as an input instead.
+    expect(snapshot.run.finalOutput).toBe("Add validation: done");
     expect(snapshot.tasks.map((task) => [task.title, task.status])).toEqual([
       ["Plan", "completed"],
       ["Find missing validation", "completed"],

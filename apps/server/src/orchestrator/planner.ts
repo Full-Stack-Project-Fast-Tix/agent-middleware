@@ -99,6 +99,7 @@ export function plannerPrompt(request: PlanRequest): string {
     "- dependsOn lists the keys of tasks that must finish first. No cycles. Tasks without a dependency may run in parallel.",
     "- An agent sees only its own objective and the results of the tasks it depends on, so make each objective self-contained.",
     "- Do not add work the user did not ask for, and do not relax any constraint the user stated.",
+    "- The user is shown the results of the final tasks, the ones nothing depends on. For multi-step work, end with one task that depends on the others and reports the outcome.",
     "",
     'Return only one JSON object: {"tasks":[{"key":"...","title":"...","objective":"...","agentId":"...","dependsOn":["..."]}]}',
     "",
