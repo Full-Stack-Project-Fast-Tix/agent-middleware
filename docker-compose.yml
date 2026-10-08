@@ -19,6 +19,7 @@ services:
       AGENT_WORKSPACE_ROOT: /app/workspaces
       CODEX_HOME: /app/codex-home
       CODEX_SANDBOX_MODE: ${CODEX_SANDBOX_MODE:-workspace-write}
+      DATABASE_URL: postgres://${POSTGRES_USER:-launchpad}:${POSTGRES_PASSWORD:-launchpad}@postgres:5432/${POSTGRES_DB:-launchpad}
     ports:
       - "${PUBLIC_PORT:-3000}:3000"
     volumes:
@@ -33,3 +34,24 @@ services:
     pids_limit: 512
     mem_limit: 4g
     cpus: 2
+
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-launchpad}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-launchpad}
+      POSTGRES_DB: ${POSTGRES_DB:-launchpad}
+    # Loopback only, for migrations and tests from the host.
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5433}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres-data:
