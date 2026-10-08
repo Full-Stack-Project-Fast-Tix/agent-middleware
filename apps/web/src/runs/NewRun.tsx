@@ -90,7 +90,7 @@ export function NewRun() {
         {workspaces !== null && workspaces.length > 1 && (
           <label>
             Workspace
-            <select value={workspaceId} onChange={(event) => setWorkspaceId(event.target.value)}>
+            <select aria-label="Workspace" value={workspaceId} onChange={(event) => setWorkspaceId(event.target.value)}>
               {workspaces.map((workspace) => (
                 <option key={workspace.id} value={workspace.id}>{workspace.name}</option>
               ))}
@@ -119,7 +119,12 @@ export function NewRun() {
 
         <label>
           {mode === "auto" ? "Supervisor" : "Agent"}
-          <select value={agentId} onChange={(event) => setAgentId(event.target.value)} disabled={usable.length === 0}>
+          <select
+            aria-label={mode === "auto" ? "Supervisor" : "Agent"}
+            value={agentId}
+            onChange={(event) => setAgentId(event.target.value)}
+            disabled={usable.length === 0}
+          >
             <option value="">Workspace default</option>
             {usable.map((agent) => (
               <option key={agent.id} value={agent.id}>
@@ -132,6 +137,7 @@ export function NewRun() {
         <label>
           Task
           <textarea
+            aria-label="Task"
             value={prompt}
             onChange={(event) => setPrompt(event.target.value)}
             placeholder="What should the agents do?"

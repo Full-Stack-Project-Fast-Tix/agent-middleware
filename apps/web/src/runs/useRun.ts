@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { ApiError } from "../api";
+import { forgetRun } from "./routes";
 import { runsApi } from "./runs-api";
 import { applyRunEvent, viewFromSnapshot, type RunView } from "./run-view";
 
@@ -42,7 +44,13 @@ export function useRun(runId: string): { view: RunView | null; error: string | n
           controller.signal,
         );
       } catch (reason) {
-        if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : String(reason));
+        if (controller.signal.aborted) return;
+        if (reason instanceof ApiError && reason.status === 404) {
+          forgetRun(runId);
+          setError("This run no longer exists. If the server was restarted, runs kept only in memory are gone.");
+          return;
+        }
+        setError(reason instanceof Error ? reason.message : String(reason));
       }
     })();
 

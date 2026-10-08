@@ -43,6 +43,17 @@
   white-space: nowrap;
 }
 
+.cancel-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  max-width: 420px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
 .runs-header .run-prompt {
   max-width: 900px;
   font-size: 22px;
@@ -463,12 +474,24 @@
   font-size: 12px;
 }
 
+/* One line, clipped if it must be: a <button> centres its content vertically,
+   so a wrapped second line would push the title out of the card's top. */
+.task-node {
+  overflow: hidden;
+}
+
 .task-node-meta {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   gap: 6px;
+  min-width: 0;
   margin-top: 4px;
+  overflow: hidden;
+}
+
+.task-node-meta > * {
+  flex-shrink: 0;
 }
 
 .task-node-flag {

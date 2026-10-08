@@ -1,7 +1,7 @@
 import { highestSeverity, type Agent } from "@launchpad/shared";
 import { agentName, SeverityBadge, StatusBadge } from "./format";
 import { layoutTaskGraph } from "./graph-layout";
-import { approvalsOf, executionsOf, findingsOf, type RunView } from "./run-view";
+import { executionsOf, findingsOf, type RunView } from "./run-view";
 
 // Drawn top to bottom: a layout column (dependency depth) is a band down the
 // page, and tasks that can run side by side sit side by side. Plans grow in
@@ -40,6 +40,13 @@ export function TaskGraph({
   const height = top(layout.columns) - DOWN_GAP + PAD;
 
   return (
+    <>
+    {layout.edges.length > 0 && (
+      <div className="run-graph-legend">
+        <span><i className="legend-dependency" /> waits for</span>
+        <span><i className="legend-delegation" /> delegated by the plan</span>
+      </div>
+    )}
     <div className="task-graph-scroll">
       <div className="task-graph" style={{ width, height }}>
         <svg className="task-graph-edges" width={width} height={height} aria-hidden="true">
@@ -65,7 +72,6 @@ export function TaskGraph({
           const node = at.get(task.id)!;
           const attempts = executionsOf(view, task.id).length;
           const findings = findingsOf(view, task.id);
-          const waiting = approvalsOf(view, task.id).some((approval) => approval.status === "pending");
           const acted = findings.filter((finding) => finding.intervened).length;
           return (
             <button
@@ -79,8 +85,8 @@ export function TaskGraph({
               <span className="task-node-title">{task.title}</span>
               <span className="task-node-agent">{agentName(agents, task.assignedAgentId)}</span>
               <span className="task-node-meta">
+                {/* "Waiting approval" is the status itself; no separate flag. */}
                 <StatusBadge status={task.status} />
-                {waiting && <span className="task-node-flag">Needs approval</span>}
                 {attempts > 1 && <span className="task-node-flag">{attempts} attempts</span>}
                 {findings.length > 0 && (
                   <span className="task-node-findings" title={`${findings.length} findings, ${acted} acted on`}>
@@ -94,5 +100,6 @@ export function TaskGraph({
         })}
       </div>
     </div>
+    </>
   );
 }

@@ -56,6 +56,15 @@ export function readRecentRuns(): RecentRun[] {
   }
 }
 
+/** Drop a run the server no longer knows, so its link does not stay as a dead end. */
+export function forgetRun(runId: string): void {
+  try {
+    window.localStorage.setItem(RECENT_KEY, JSON.stringify(readRecentRuns().filter((item) => item.id !== runId)));
+  } catch {
+    // Storage unavailable: nothing to forget.
+  }
+}
+
 export function rememberRun(run: RecentRun): void {
   try {
     const next = [run, ...readRecentRuns().filter((item) => item.id !== run.id)].slice(0, 10);

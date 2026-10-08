@@ -20,6 +20,7 @@ export function RunDetail({ runId }: { runId: string }) {
   const [picked, setPicked] = useState<string | null>(null);
   const [resolvingApprovalId, setResolvingApprovalId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [confirmingCancel, setConfirmingCancel] = useState(false);
   const workspaceId = view?.run.workspaceId ?? null;
 
   useEffect(() => {
@@ -67,7 +68,7 @@ export function RunDetail({ runId }: { runId: string }) {
   };
 
   const cancel = async () => {
-    if (!window.confirm("Cancel this run? Running work is stopped and pending approvals are cancelled.")) return;
+    setConfirmingCancel(false);
     setActionError(null);
     try {
       await runsApi.cancel(run.id);
@@ -92,10 +93,17 @@ export function RunDetail({ runId }: { runId: string }) {
         </div>
         <div className="header-actions">
           <a className="button button-ghost" href={NEW_RUN_HASH}>New run</a>
-          {active && (
-            <button className="button button-danger" onClick={() => void cancel()} disabled={run.cancelRequestedAt !== null}>
+          {active && !confirmingCancel && (
+            <button className="button button-danger" onClick={() => setConfirmingCancel(true)} disabled={run.cancelRequestedAt !== null}>
               Cancel run
             </button>
+          )}
+          {active && confirmingCancel && (
+            <span className="cancel-confirm" role="group" aria-label="Confirm cancelling this run">
+              <span>Stop running work and cancel pending approvals?</span>
+              <button className="button button-ghost" onClick={() => setConfirmingCancel(false)}>Keep running</button>
+              <button className="button button-danger" onClick={() => void cancel()}>Cancel run</button>
+            </span>
           )}
         </div>
       </header>
@@ -120,10 +128,6 @@ export function RunDetail({ runId }: { runId: string }) {
 
       <section className="run-body">
         <div className="run-graph-panel">
-          <div className="run-graph-legend">
-            <span><i className="legend-dependency" /> waits for</span>
-            <span><i className="legend-delegation" /> delegated by the plan</span>
-          </div>
           <TaskGraph view={view} agents={agents} selectedTaskId={selectedTask?.id ?? null} onSelect={setPicked} />
 
           {run.status === "completed" && run.finalOutput !== null && (
