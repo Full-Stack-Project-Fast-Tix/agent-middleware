@@ -243,6 +243,22 @@ describe("auto mode", () => {
     expect(prompt).toContain("Platform note: Work from the objective alone.");
     expect(findingsOf(snapshot, "Add validation")).toEqual([["deterministic", "handoff-secret", true]]);
   });
+
+  it("does not leave the run waiting once an instant answer settles the approval", async () => {
+    const { run, events } = await start("auto");
+    // Answer the moment the approval is published, while the orchestrator is still announcing it.
+    harness.hub.subscribe(run.id, events.at(-1)?.seq ?? 0, {
+      onEvent: (event) => {
+        if (event.type === "approval.requested") void harness.orchestrator.resolveApproval(event.payload.approval.id, "approve", USER_ID);
+      },
+      onResync: () => {
+        throw new Error("unexpected resync");
+      },
+    });
+    const snapshot = await settle(run.id, events);
+    expect(snapshot.run.status).toBe("completed");
+    expect(snapshot.approvals.map((approval) => approval.status)).toEqual(["approved"]);
+  });
 });
 
 describe("retries and failures", () => {
