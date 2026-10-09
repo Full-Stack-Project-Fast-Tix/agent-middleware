@@ -54,14 +54,23 @@ export function fromRow(row: Row): Row {
   return entity;
 }
 
-export async function insertRow(client: Queryable, table: string, entity: object): Promise<Row> {
+function insertQuery(table: string, entity: object, suffix: string): pg.QueryConfig {
   const row = toRow(entity);
   const columns = Object.keys(row);
-  const { rows } = await client.query(
-    `INSERT INTO ${table} (${columns.join(", ")}) VALUES (${columns.map((_, i) => `$${i + 1}`).join(", ")}) RETURNING *`,
-    Object.values(row),
-  );
+  return {
+    text: `INSERT INTO ${table} (${columns.join(", ")}) VALUES (${columns.map((_, i) => `$${i + 1}`).join(", ")}) ${suffix}`,
+    values: Object.values(row),
+  };
+}
+
+export async function insertRow(client: Queryable, table: string, entity: object): Promise<Row> {
+  const { rows } = await client.query(insertQuery(table, entity, "RETURNING *"));
   return rows[0] as Row;
+}
+
+/** Inserts the row unless one with the same key already exists. For seed data. */
+export async function ensureRow(client: Queryable, table: string, entity: object): Promise<void> {
+  await client.query(insertQuery(table, entity, "ON CONFLICT DO NOTHING"));
 }
 
 /** Sets the given fields on one row by id. Throws when the row does not exist. */
