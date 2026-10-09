@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import pg from "pg";
@@ -177,6 +177,26 @@ describe.skipIf(!url)("migration 001", () => {
     await expect(event({ run_id: runA.id, task_id: foreignTask.id })).rejects.toThrow(/foreign key/);
   });
 
+  it("keeps the agents on tasks, executions, findings and approvals inside the run's workspace", async () => {
+    const u = await user();
+    const [home, other] = [await workspace(u.id), await workspace(u.id)];
+    const ownAgent = await agent(home.id, (await profile(home.id)).id, u.id);
+    const foreignAgent = await agent(other.id, (await profile(other.id)).id, u.id);
+    const r = await run(home.id, u.id);
+    const assigned = (agentId: unknown) =>
+      insert("tasks", { id: randomUUID(), run_id: r.id, title: "t", objective: "o", status: "pending", assigned_agent_id: agentId, ...stamps });
+    await expect(assigned(foreignAgent.id)).rejects.toThrow(/is not an agent of run/);
+    const t = await assigned(ownAgent.id);
+    await expect(db.query("UPDATE tasks SET assigned_agent_id = $2 WHERE id = $1", [t.id, foreignAgent.id])).rejects.toThrow(/is not an agent of run/);
+    const finding = (agentId: unknown) =>
+      insert("security_findings", {
+        id: randomUUID(), run_id: r.id, agent_id: agentId, layer: "policy", check_name: "c", code: "x",
+        severity: "info", message: "m", intervened: false, created_at: now,
+      });
+    await expect(finding(foreignAgent.id)).rejects.toThrow(/is not an agent of run/);
+    await expect(finding(null)).resolves.toBeDefined();
+  });
+
   describe("runner", () => {
     let dir: string;
     beforeAll(async () => {
@@ -193,6 +213,19 @@ describe.skipIf(!url)("migration 001", () => {
         await expect(migrate(db, dir)).rejects.toThrow(/has changed since it was applied/);
       } finally {
         await rm(path.join(dir, first!.name));
+      }
+    });
+
+    it("treats a CRLF checkout of an applied migration as unchanged", async () => {
+      const { rows } = await db.query<{ name: string }>("SELECT name FROM schema_migrations ORDER BY name");
+      for (const { name } of rows) {
+        const sql = await readFile(path.join(MIGRATIONS_DIR, name), "utf8");
+        await writeFile(path.join(dir, name), sql.replaceAll("\n", "\r\n"));
+      }
+      try {
+        expect(await migrate(db, dir)).toEqual([]);
+      } finally {
+        for (const { name } of rows) await rm(path.join(dir, name));
       }
     });
 
