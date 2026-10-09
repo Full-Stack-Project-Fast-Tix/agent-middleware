@@ -113,15 +113,22 @@ exist now, alongside the single-agent path above:
   Events. Each frame is redacted, and clients resume or resync by seq.
 - **Security middleware interface**
   ([`security-middleware.ts`](../apps/server/src/security-middleware.ts)): one
-  stateful guard per AgentExecution. The existing guards will sit behind it.
+  stateful guard per AgentExecution. The concrete implementation
+  ([`security-middleware-impl.ts`](../apps/server/src/security-middleware-impl.ts))
+  adapts the current deterministic checks and semantic controller. Policy
+  resolution ([`security-policy-resolver.ts`](../apps/server/src/security-policy-resolver.ts))
+  combines platform and workspace capability ceilings with an agent profile.
+  These components currently require a trusted data-source adapter and are not
+  yet wired to a multi-agent orchestrator or durable multi-agent persistence.
 - **Integration harness**
   ([`apps/server/tests/integration`](../apps/server/tests/integration)): drives
   Runs through the public API and checks the invariants every Run must
   satisfy. For now it runs against stand-ins for persistence, orchestration
   and the middleware.
 
-Not built yet: PostgreSQL persistence, identity and RBAC, the orchestrator, the
-middleware implementation and the new console UI.
+Not built yet: identity and RBAC, the orchestrator, durable multi-agent policy
+and execution repositories, and the new console UI. Policy rule payloads beyond
+capability ceilings are rejected until a versioned rules engine exists.
 
 ## Deployment profiles
 

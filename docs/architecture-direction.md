@@ -23,6 +23,11 @@ The current single-agent runtime remains supported during this transition. Its e
   durable per-run sequence numbers.
 - The security decision interface is defined in
   [`apps/server/src/security-middleware.ts`](../apps/server/src/security-middleware.ts).
+- A server implementation now resolves capability ceilings and opens
+  per-execution guards around the current deterministic checks and semantic
+  controller (`security-middleware-impl.ts` and `security-policy-resolver.ts`).
+  It still needs trusted persistence adapters and orchestrator wiring; policy
+  rule payloads beyond typed capability ceilings are not yet supported.
 - An end-to-end integration harness
   ([`apps/server/tests/integration`](../apps/server/tests/integration/README.md))
   checks Gate 1 scenarios and Run invariants. For now it runs against stand-ins
