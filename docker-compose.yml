@@ -9,6 +9,9 @@ services:
         DEBIAN_SECURITY_MIRROR: ${CONTAINER_APT_SECURITY_MIRROR:-}
     image: volc-agent-launchpad:local
     restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
     env_file:
       - ${LAUNCHPAD_ENV_FILE:-.env}
     environment:

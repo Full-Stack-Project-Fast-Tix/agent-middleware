@@ -1,4 +1,7 @@
 import { randomUUID } from "node:crypto";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
@@ -16,7 +19,7 @@ import {
   TASK_STATUSES,
   WORKSPACE_ROLES,
 } from "@launchpad/shared";
-import { migrate } from "../../src/db/migrate.js";
+import { MIGRATIONS_DIR, migrate } from "../../src/db/migrate.js";
 
 // Needs a Postgres the tests may create schemas in, e.g.
 // TEST_DATABASE_URL=postgres://launchpad:launchpad@127.0.0.1:5433/launchpad
@@ -154,5 +157,61 @@ describe.skipIf(!url)("migration 001", () => {
     await expect(db.query("DELETE FROM audit_events WHERE id = $1", [event.id])).rejects.toThrow(/append-only/);
     await expect(db.query("TRUNCATE audit_events")).rejects.toThrow(/append-only/);
     await expect(insert("audit_events", { id: randomUUID(), actor_type: "user", event_type: "run.created", created_at: now })).rejects.toThrow(/check constraint/);
+  });
+
+  it("keeps findings and approvals pointing at tasks of their own run", async () => {
+    const u = await user();
+    const ws = await workspace(u.id);
+    const [runA, runB] = [await run(ws.id, u.id), await run(ws.id, u.id)];
+    const foreignTask = await task(runB.id);
+    const finding = (taskId: unknown) =>
+      insert("security_findings", {
+        id: randomUUID(), run_id: runA.id, task_id: taskId, layer: "policy", check_name: "c", code: "x",
+        severity: "info", message: "m", intervened: false, created_at: now,
+      });
+    await expect(finding(foreignTask.id)).rejects.toThrow(/foreign key/);
+    await expect(finding((await task(runA.id)).id)).resolves.toBeDefined();
+    const event = (row: Record<string, unknown>) =>
+      insert("audit_events", { id: randomUUID(), actor_type: "system", event_type: "run.updated", created_at: now, ...row });
+    await expect(event({ task_id: foreignTask.id })).rejects.toThrow(/check constraint/);
+    await expect(event({ run_id: runA.id, task_id: foreignTask.id })).rejects.toThrow(/foreign key/);
+  });
+
+  describe("runner", () => {
+    let dir: string;
+    beforeAll(async () => {
+      dir = await mkdtemp(path.join(tmpdir(), "migrations-"));
+    });
+    afterAll(async () => {
+      await rm(dir, { recursive: true, force: true });
+    });
+
+    it("refuses to run when an applied migration has changed", async () => {
+      const [first] = (await db.query<{ name: string }>("SELECT name FROM schema_migrations ORDER BY name")).rows;
+      await writeFile(path.join(dir, first!.name), "-- edited after it was applied\n");
+      try {
+        await expect(migrate(db, dir)).rejects.toThrow(/has changed since it was applied/);
+      } finally {
+        await rm(path.join(dir, first!.name));
+      }
+    });
+
+    it("rolls back a failed migration and does not record it", async () => {
+      await writeFile(path.join(dir, "999_broken.sql"), "CREATE TABLE broken_probe (id int);\nSELECT 1 / 0;\n");
+      try {
+        await expect(migrate(db, dir)).rejects.toThrow(/Migration 999_broken.sql failed: division by zero/);
+      } finally {
+        await rm(path.join(dir, "999_broken.sql"));
+      }
+      const { rows } = await db.query("SELECT to_regclass('broken_probe') AS probe, (SELECT count(*) FROM schema_migrations WHERE name = '999_broken.sql')::int AS recorded");
+      expect(rows[0]).toEqual({ probe: null, recorded: 0 });
+    });
+
+    it("records checksums for migrations applied before checksums existed", async () => {
+      await db.query("UPDATE schema_migrations SET checksum = NULL");
+      expect(await migrate(db, MIGRATIONS_DIR)).toEqual([]);
+      const { rows } = await db.query("SELECT count(*)::int AS missing FROM schema_migrations WHERE checksum IS NULL");
+      expect(rows[0]).toEqual({ missing: 0 });
+    });
   });
 });
