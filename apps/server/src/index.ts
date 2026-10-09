@@ -56,6 +56,7 @@ const app = await createApp(config, service, {
   runEvents: {
     hub: runEvents,
     canReadRun: async (runId) => (demoRuns === null ? runEvents.has(runId) : (await demoRuns.store.getRun(runId)) !== null),
+    lastEventSeq: async (runId) => (await demoRuns?.store.snapshot(runId))?.lastEventSeq ?? 0,
   },
   ...(demoRuns === null ? {} : { runs: demoRuns.routes }),
 });

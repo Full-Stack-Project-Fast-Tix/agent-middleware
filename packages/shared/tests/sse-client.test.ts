@@ -116,6 +116,24 @@ describe("followRunEvents", () => {
     expect(requests.map((request) => request.headers["last-event-id"])).toEqual(["50", "10"]);
   });
 
+  it("waits before reconnecting when a resync leaves it where it was", async () => {
+    const controller = new AbortController();
+    const { impl, requests } = fakeFetch([stream(encodeResyncFrame()), stream(encodeResyncFrame())]);
+    const following = followRunEvents({
+      url: "/api/runs/x/events",
+      afterSeq: 50,
+      retryMs: 60_000,
+      fetch: impl,
+      signal: controller.signal,
+      onResync: async () => 50,
+      onEvent: () => undefined,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(requests).toHaveLength(1);
+    controller.abort();
+    await expect(following).resolves.toBeUndefined();
+  });
+
   it("gives up on a refused stream instead of retrying", async () => {
     const { impl } = fakeFetch([new Response('{"error":"Run not found"}', { status: 404 })]);
     await expect(
