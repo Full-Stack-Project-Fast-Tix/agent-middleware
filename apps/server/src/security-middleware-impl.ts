@@ -57,23 +57,20 @@ export class DefaultSecurityMiddleware implements SecurityMiddleware {
   async resolvePolicy(workspaceId: string, agentId: string): Promise<ResolvedPolicy> {
     const resolved = await resolveAgentPolicy(this.options.source, workspaceId, agentId);
     const runtime = resolveTurnSecurityPolicy(this.options.config);
-    const readOnly = !resolved.capabilities.write;
-    const needsPreExecutionGate = !resolved.capabilities.write || !resolved.capabilities.shell || !resolved.capabilities.network;
     return {
       capabilities: resolved.capabilities,
       appliedPolicies: resolved.appliedPolicies,
-      runtime: needsPreExecutionGate
-        ? {
-            ...runtime,
-            ...(readOnly ? { sandboxMode: "read-only" as const } : {}),
-            denyNetwork: runtime.denyNetwork || !resolved.capabilities.network,
-            approvalPolicy: "untrusted",
-            effectGating: true,
-          }
-        : {
-            ...runtime,
-            denyNetwork: runtime.denyNetwork || !resolved.capabilities.network,
-          },
+      // Every consequential action must reach this middleware before it runs,
+      // even when the profile grants every capability. Capabilities decide
+      // whether the middleware allows the proposal; they must not disable the
+      // interception point itself.
+      runtime: {
+        ...runtime,
+        sandboxMode: "read-only",
+        denyNetwork: runtime.denyNetwork || !resolved.capabilities.network,
+        approvalPolicy: "untrusted",
+        effectGating: true,
+      },
     };
   }
 

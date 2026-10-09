@@ -63,6 +63,10 @@ sources are untrusted is security logic, and it belongs with P1.
 
 - `SecurityMiddleware.resolvePolicy(workspaceId, agentId)` returns
   `{capabilities, appliedPolicies, runtime}`.
+- For middleware-managed multi-agent executions, `runtime` always uses the
+  read-only sandbox and `untrusted` approval policy. Every consequential action
+  therefore reaches the guard before execution; capabilities determine whether
+  the guard allows it, not whether the gate is enabled.
 - P2 calls it once per execution. It configures the runtime from `runtime`,
   serialises work on `capabilities.write`, and stores `capabilities` on the
   new `AgentExecution.capabilities` field.
