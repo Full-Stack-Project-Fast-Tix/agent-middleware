@@ -338,6 +338,16 @@ describe.skipIf(!url)("PostgresRunStore only", () => {
     expect(await store.updateTask(task.id, { status: "running", error: undefined })).toMatchObject({ status: "running", error: "boom" });
   });
 
+  it("stores NUL characters, which Postgres refuses, as U+FFFD in text and JSON", async () => {
+    const store = new PostgresRunStore(pool!, new RunEventHub());
+    const run = await store.createRun(makeRun());
+    const task = await store.createTask(makeTask(run.id, { result: "a\u0000b" }), []);
+    const execution = await store.createExecution(makeExecution(task, AGENTS.analyst));
+    const finding = await store.addFinding(makeFinding(execution, { message: "m\u0000", evidence: { "k\u0000": ["x\u0000"] } }));
+    expect(task.result).toBe("a\uFFFDb");
+    expect(finding).toMatchObject({ message: "m\uFFFD", evidence: { "k\uFFFD": ["x\uFFFD"] } });
+  });
+
   it("continues a run's seqs after a restart", async () => {
     const run = await new PostgresRunStore(pool!, new RunEventHub()).createRun(makeRun());
     const hub = new RunEventHub();

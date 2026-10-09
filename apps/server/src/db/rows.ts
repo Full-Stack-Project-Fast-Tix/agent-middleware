@@ -12,12 +12,22 @@ type Queryable = Pick<pg.Pool, "query">;
 const snake = (key: string) => key.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
 const camel = (column: string) => column.replace(/_([a-z])/g, (_, letter: string) => letter.toUpperCase());
 
+/** Postgres refuses NUL in text and jsonb, and agent output can carry one, so it becomes U+FFFD. */
+function withoutNul(value: unknown): unknown {
+  if (typeof value === "string") return value.replaceAll("\u0000", "\uFFFD");
+  if (Array.isArray(value)) return value.map(withoutNul);
+  if (value !== null && typeof value === "object" && !(value instanceof Date)) {
+    return Object.fromEntries(Object.entries(value).map(([key, inner]) => [key.replaceAll("\u0000", "\uFFFD"), withoutNul(inner)]));
+  }
+  return value;
+}
+
 export function toRow(entity: object): Row {
   const row: Row = {};
   const set = (column: string, value: unknown) => {
     // Column names are interpolated into SQL, so only plain identifiers pass.
     if (!/^[a-z][a-z0-9_]*$/.test(column)) throw new Error(`Invalid column name: ${column}`);
-    row[column] = value;
+    row[column] = withoutNul(value);
   };
   for (const [key, value] of Object.entries(entity)) {
     // pg would send undefined as NULL; an absent field leaves the column alone.

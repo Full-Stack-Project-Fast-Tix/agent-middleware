@@ -23,6 +23,9 @@ import type { RunStore } from "../orchestrator/ports.js";
 import type { RunEventHub } from "../run-events.js";
 import { fromRow, insertRow, updateRow } from "./rows.js";
 
+const DEPENDENCIES =
+  "SELECT d.* FROM task_dependencies d JOIN tasks t ON t.id = d.task_id WHERE d.run_id = $1 ORDER BY t.created_seq, d.depends_on_task_id";
+
 type Uncommitted = RunEventDraft extends infer D ? (D extends RunEventDraft ? Omit<D, "seq"> : never) : never;
 type OutboxEntry = { event: RunEventDraft; committed: boolean };
 
@@ -81,11 +84,7 @@ export class PostgresRunStore implements RunStore {
   }
 
   async listDependencies(runId: string): Promise<TaskDependency[]> {
-    return this.many(
-      "SELECT d.* FROM task_dependencies d JOIN tasks t ON t.id = d.task_id WHERE d.run_id = $1 ORDER BY t.created_seq, d.depends_on_task_id",
-      [runId],
-      taskDependencySchema,
-    );
+    return this.many(DEPENDENCIES, [runId], taskDependencySchema);
   }
 
   async createTask(task: Task, dependsOnTaskIds: string[]): Promise<Task> {
@@ -191,7 +190,7 @@ export class PostgresRunStore implements RunStore {
           : {
               run: runSchema.parse(fromRow(rows[0])),
               tasks: await this.many("SELECT * FROM tasks WHERE run_id = $1 ORDER BY created_seq", [runId], taskSchema, db),
-              dependencies: await this.many("SELECT * FROM task_dependencies WHERE run_id = $1", [runId], taskDependencySchema, db),
+              dependencies: await this.many(DEPENDENCIES, [runId], taskDependencySchema, db),
               executions: await this.many("SELECT * FROM agent_executions WHERE run_id = $1 ORDER BY created_seq", [runId], agentExecutionSchema, db),
               findings: await this.many("SELECT * FROM security_findings WHERE run_id = $1 ORDER BY created_seq", [runId], securityFindingSchema, db),
               approvals: await this.many("SELECT * FROM approvals WHERE run_id = $1 ORDER BY created_seq", [runId], approvalSchema, db),
