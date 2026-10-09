@@ -100,7 +100,7 @@ export const agentExecutionSchema = z.object({
   error: z.string().nullable(),
   usage: executionUsageSchema.nullable(),
   tracePath: z.string().nullable(),
-  /** True when the trace hit its size cap and later records were dropped. */
+  /** True when older trace records were evicted to retain the newest window. */
   traceTruncated: z.boolean(),
   ...lifecycleTimestampsShape,
 });

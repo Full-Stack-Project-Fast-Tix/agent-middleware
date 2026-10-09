@@ -109,7 +109,7 @@ export interface RunTrace {
   path: string;
   events: number;
   bytes: number;
-  /** True when the size cap was reached and later events were dropped. */
+  /** True when older events were evicted to retain the newest window. */
   truncated: boolean;
 }
 

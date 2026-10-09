@@ -39,8 +39,14 @@ export function resolveTurnSecurityPolicy(config: AppConfig): TurnSecurityPolicy
   }
 
   return {
-    sandboxMode: config.codexSandboxMode,
-    denyNetwork: false,
+    // Codex's full-access profile cannot also deny network. When network is
+    // not explicitly enabled, cap that profile at workspace-write so the
+    // sandbox can enforce networkAccess=false.
+    sandboxMode:
+      !config.codexNetworkAccess && config.codexSandboxMode === "danger-full-access"
+        ? "workspace-write"
+        : config.codexSandboxMode,
+    denyNetwork: !config.codexNetworkAccess,
     semanticEnforcement: false,
     effectGating: false,
   };

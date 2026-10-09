@@ -1,20 +1,18 @@
-// Append-only raw trace of one agent run.
+// Bounded rolling raw trace of one agent run.
 //
-// Every message that crosses the wire between us and the agent runtime is
-// written here verbatim, in order, with nothing removed and nothing derived.
-// Interpretation happens later, from a separate pass over this file, and can
-// never overwrite the original.
+// Messages are captured verbatim and in order while the run is active. The
+// file retains only the newest events that fit within the byte budget, with a
+// marker when older events have rolled off. Security checks consume the live
+// protocol stream separately and do not depend on this bounded file.
 //
 // Traces are NOT stored in the JSON database. That store rewrites the entire
 // file on every mutation (see store.ts), so appending a few hundred events per
-// run would rewrite every agent, message and past run a few hundred times. A
-// log wants append-only; the store is the wrong shape for one.
+// run would rewrite every agent, message and past run a few hundred times.
 //
 // Format is JSON Lines: one JSON object per line, readable with jq, Python, or
 // anything that can split on newlines. No parser of ours sits in the way.
 
-import { createWriteStream, type WriteStream } from "node:fs";
-import { mkdir } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 /** Direction of travel: `in` from the agent runtime, `out` from us. */
@@ -24,7 +22,7 @@ export interface TraceSummary {
   path: string;
   events: number;
   bytes: number;
-  /** True when the size cap was hit and later events were dropped. */
+  /** True when older events were evicted to keep the newest events within the size cap. */
   truncated: boolean;
 }
 
@@ -35,7 +33,7 @@ export interface TraceRecord {
   dir: TraceDirection;
   /** JSON-RPC method when the message has one, else null. */
   method: string | null;
-  /** The untouched message. Never edited, never filtered. */
+  /** The untouched message, unless the whole event is larger than the trace budget. */
   payload: unknown;
 }
 
@@ -71,31 +69,31 @@ function toJsonLine(record: TraceRecord): string {
 }
 
 export class TraceWriter {
-  private stream: WriteStream | null = null;
+  private opened = false;
   private seq = 0;
   private bytes = 0;
   private truncated = false;
+  private readonly lines: string[] = [];
+  private firstLine = 0;
+  private marker: string | null = null;
 
   constructor(
     private readonly filePath: string,
-    /** Stop appending past this size rather than silently dropping the middle. */
+    /** Keep the newest trace events within this size. */
     private readonly maxBytes = 16 * 1024 * 1024,
   ) {}
 
   async open(): Promise<void> {
     await mkdir(path.dirname(this.filePath), { recursive: true });
-    this.stream = createWriteStream(this.filePath, { flags: "a", mode: 0o600 });
+    this.opened = true;
   }
 
   /**
-   * Record one message. Synchronous and non-throwing on purpose: this sits on
-   * the hot path between the agent and the rest of the system, and a tracing
-   * failure must never change what the agent is allowed to do.
+   * Record one message in a bounded in-memory rolling window. This is
+   * synchronous and non-throwing because it sits on the protocol hot path.
    */
   record(dir: TraceDirection, message: unknown): void {
-    if (this.stream === null) return;
-    if (this.truncated) return;
-
+    if (!this.opened) return;
     this.seq += 1;
 
     const record: TraceRecord = {
@@ -108,37 +106,63 @@ export class TraceWriter {
 
     const line = toJsonLine(record);
 
-    if (this.bytes + line.length > this.maxBytes) {
+    const lineBytes = Buffer.byteLength(line, "utf8");
+
+    if (lineBytes > this.maxBytes) {
       this.truncated = true;
-      this.stream.write(this.truncationNotice());
+      this.marker ??= this.truncationNotice();
+      while (this.bytes + this.markerBytes() > this.maxBytes) {
+        const oldest = this.lines[this.firstLine++];
+        if (oldest === undefined) break;
+        this.bytes -= Buffer.byteLength(oldest, "utf8");
+      }
       return;
     }
 
-    this.bytes += line.length;
-    this.stream.write(line);
+    this.lines.push(line);
+    this.bytes += lineBytes;
+    while (this.bytes + this.markerBytes() > this.maxBytes) {
+      const oldest = this.lines[this.firstLine++];
+      if (oldest === undefined) break;
+      this.bytes -= Buffer.byteLength(oldest, "utf8");
+      this.truncated = true;
+      this.marker ??= this.truncationNotice();
+    }
+
+    // Release evicted strings periodically instead of retaining them in the
+    // backing array until the run ends.
+    if (this.firstLine > 1024 && this.firstLine * 2 > this.lines.length) {
+      this.lines.splice(0, this.firstLine);
+      this.firstLine = 0;
+    }
+  }
+
+  private markerBytes(): number {
+    return this.marker === null ? 0 : Buffer.byteLength(this.marker, "utf8");
   }
 
   private truncationNotice(): string {
     const notice: TraceRecord = {
-      seq: this.seq,
+      seq: 0,
       at: new Date().toISOString(),
       dir: "out",
-      method: "trace/truncated",
-      payload: { reason: "maxBytes exceeded", maxBytes: this.maxBytes },
+      method: "trace/rolled",
+      payload: {
+        reason: "events omitted to retain the newest window",
+        maxBytes: this.maxBytes,
+      },
     };
     return JSON.stringify(notice) + "\n";
   }
 
   async close(): Promise<TraceSummary> {
-    const stream = this.stream;
-    this.stream = null;
-    if (stream) {
-      await new Promise<void>((resolve) => stream.end(() => resolve()));
-    }
+    const retained = this.lines.slice(this.firstLine);
+    const contents = (this.marker ?? "") + retained.join("");
+    await writeFile(this.filePath, contents, { encoding: "utf8", mode: 0o600 });
     return {
       path: this.filePath,
       events: this.seq,
-      bytes: this.bytes,
+      bytes: Buffer.byteLength(contents, "utf8"),
       truncated: this.truncated,
     };
   }

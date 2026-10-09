@@ -75,22 +75,24 @@ describe("recording", () => {
   });
 });
 
-describe("size cap", () => {
-  it("stops appending and says so, rather than dropping the middle silently", async () => {
+describe("rolling size cap", () => {
+  it("keeps the newest events and marks that older events were evicted", async () => {
     const filePath = await newTraceFile();
-    const writer = new TraceWriter(filePath, 200);
+    const writer = new TraceWriter(filePath, 500);
     await writer.open();
 
-    writer.record("in", { method: "small", params: {} });
-    writer.record("in", { method: "big", params: { blob: "x".repeat(500) } });
-    writer.record("in", { method: "after", params: {} });
+    for (let index = 1; index <= 5; index += 1) {
+      writer.record("in", { method: `event-${index}`, params: { blob: "x".repeat(80) } });
+    }
 
     const summary = await writer.close();
     const records = await readTrace(filePath);
 
     expect(summary.truncated).toBe(true);
-    expect(records.some((record) => record.method === "trace/truncated")).toBe(true);
-    expect(records.some((record) => record.method === "after")).toBe(false);
+    expect(summary.bytes).toBeLessThanOrEqual(500);
+    expect(records[0]?.method).toBe("trace/rolled");
+    expect(records.some((record) => record.method === "event-1")).toBe(false);
+    expect(records.some((record) => record.method === "event-5")).toBe(true);
   });
 });
 

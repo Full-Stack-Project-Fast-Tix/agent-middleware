@@ -47,6 +47,9 @@ export function buildContainerRunArgs(
   return [
     "run",
     "--rm",
+    // Keep the image filesystem immutable. The task workspace and Codex home
+    // remain explicit writable mounts; HOME points at the bounded tmpfs below.
+    "--read-only",
     "--init",
     // app-server speaks JSON-RPC over stdio, so the container needs stdin.
     "--interactive",
@@ -63,6 +66,8 @@ export function buildContainerRunArgs(
     "bridge",
     "--security-opt",
     "no-new-privileges",
+    "--tmpfs",
+    "/tmp:rw,nosuid,nodev,size=256m",
     "--cap-drop",
     "ALL",
     "--cpus",
@@ -246,9 +251,8 @@ export class ContainerCodexRunner implements AgentRunner {
       if (stderr.length > 16_384) stderr = stderr.slice(-16_384);
     });
 
-    // Every message in either direction is written to the run's trace file
-    // before anything else looks at it. Tracing never blocks or alters the
-    // exchange.
+    // Every message in either direction enters the bounded trace window before
+    // anything else looks at it. Tracing never blocks or alters the exchange.
     const trace = new TraceWriter(
       traceFilePath(this.config.dataDirectory, request.runId ?? randomUUID()),
     );

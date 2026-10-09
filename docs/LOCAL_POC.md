@@ -32,12 +32,26 @@ Persistent state defaults to:
 Set `LOCAL_POC_DATA_ROOT` to use another directory.
 
 Each turn mounts only the selected Agent workspace and Codex session directory.
+The container image filesystem is read-only; `/tmp` is a 256 MiB writable
+tmpfs, while the workspace and Codex session directory remain writable mounts.
+Each run's raw trace keeps a rolling 16 MiB window of the newest events. Once
+older events are evicted, the trace begins with a `trace/rolled` marker and
+the run continues. This bounds trace-file storage, but a rolled trace is not a
+complete audit history. Live security checks continue to observe the protocol
+stream independently of the retained trace window.
 Default limits are 2 CPUs, 2 GiB memory, 256 processes, dropped capabilities,
 and `no-new-privileges`.
 
 Codex requests `workspace-write`. If the Linux kernel lacks Landlock, startup
 warns and disables only the inner Codex sandbox. The outer container limits
 remain active, but this fallback is not tenant isolation.
+
+Agent tool commands and built-in web search have network access denied by
+default. Set `CODEX_NETWORK_ACCESS=true` for unguarded container tasks that
+require network access. Egress, semantic, and HITL guarded turns continue to
+deny it. This uses Codex's inner sandbox and tool configuration; the outer
+container still uses bridged networking, and the setting does not replace
+host-level egress filtering.
 
 ## Rootless Podman on Linux
 

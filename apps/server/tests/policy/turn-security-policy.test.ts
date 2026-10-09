@@ -5,7 +5,11 @@ import { resolveTurnSecurityPolicy } from "../../src/turn-security-policy.js";
 describe("turn security policy", () => {
   it("leaves an unguarded turn at the configured sandbox default", () => {
     const policy = resolveTurnSecurityPolicy(
-      loadConfig({ NODE_ENV: "test", CODEX_SANDBOX_MODE: "danger-full-access" }),
+      loadConfig({
+        NODE_ENV: "test",
+        CODEX_SANDBOX_MODE: "danger-full-access",
+        CODEX_NETWORK_ACCESS: "true",
+      }),
     );
 
     expect(policy).toEqual({

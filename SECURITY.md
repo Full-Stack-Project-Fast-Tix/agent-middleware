@@ -15,7 +15,11 @@ credentials, personal data, or exploit details in an issue.
 - No CSRF protection
 - No per-Agent container boundary in ECS mode
 - Ordinary local containers, not hardened multi-tenant sandboxes
-- Broad outbound network access
+- The runtime container has bridged network connectivity. Agent tool commands
+  and built-in web search are denied network access by default where supported;
+  `CODEX_NETWORK_ACCESS=true` opts into broad access on unguarded container turns;
+  egress, semantic, and HITL guarded turns still deny it.
+  This is not host-level egress filtering.
 - Prompt-triggered command and file execution
 - Ark key available to the server and active Runtime container
 - Ark key stored in Terraform POC state
@@ -31,4 +35,11 @@ credentials, personal data, or exploit details in an issue.
 
 Codex uses `workspace-write` when Landlock is available. On unsupported kernels,
 startup warns and relies on the outer Docker or rootless Podman boundary. This
-fallback is not tenant isolation.
+fallback is not tenant isolation. Runtime containers use a read-only image
+filesystem, but their selected Agent workspace and Codex session directory are
+writable bind mounts, and `/tmp` is a bounded writable tmpfs. This narrows
+writable locations; it does not make the container a hardened boundary. Raw
+traces use a 16 MiB rolling window. When the window fills, older events are
+evicted and a `trace/rolled` marker indicates that the retained trace is
+incomplete; the runtime continues. Security checks still observe the live
+protocol stream independently of what remains in the bounded trace file.
