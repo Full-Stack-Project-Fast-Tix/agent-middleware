@@ -10,7 +10,8 @@ export const MIGRATIONS_DIR = fileURLToPath(new URL("../../migrations/", import.
 /** Arbitrary constant: two servers starting at once take turns instead of racing. */
 const MIGRATION_LOCK = 464_001;
 
-const checksumOf = (sql: string) => createHash("sha256").update(sql).digest("hex");
+// Line endings are normalised so a Windows (CRLF) checkout hashes the same as a Unix one.
+const checksumOf = (sql: string) => createHash("sha256").update(sql.replaceAll("\r\n", "\n")).digest("hex");
 
 /**
  * Applies every `*.sql` file in `dir` not yet recorded in schema_migrations, in
