@@ -142,15 +142,27 @@ class StatefulExecutionGuard implements ExecutionGuard {
     }
 
     let semanticResult: IntentControllerResult | undefined;
-    if (this.semantic && (parsed.type === "command" || parsed.type === "file_change")) {
+    if (
+      this.semantic &&
+      (parsed.type === "command" || parsed.type === "file_change" || parsed.type === "context_handoff")
+    ) {
       semanticResult = await this.semantic.reviewAction(
         [...this.trace, ...records],
         parsed.type === "command"
           ? { type: "command", seq: records[0]!.seq, itemId: parsed.actionId, command: parsed.command }
-          : {
-              type: "file_change", seq: records[0]!.seq, itemId: parsed.actionId,
-              changes: parsed.changes.map((change) => ({ ...change, diff: change.diff ?? "" })),
-            },
+          : parsed.type === "file_change"
+            ? {
+                type: "file_change", seq: records[0]!.seq, itemId: parsed.actionId,
+                changes: parsed.changes.map((change) => ({ ...change, diff: change.diff ?? "" })),
+              }
+            : {
+                type: "context_handoff",
+                seq: (this.trace.at(-1)?.seq ?? 0) + 1,
+                itemId: parsed.actionId,
+                fromTaskId: parsed.fromTaskId,
+                toTaskId: parsed.toTaskId,
+                content: parsed.content,
+              },
       );
       if (semanticResult.decision === "decline" || semanticResult.decision === "interrupt") {
         return this.blockAction(

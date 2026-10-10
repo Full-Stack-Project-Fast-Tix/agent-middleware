@@ -38,7 +38,7 @@ export interface SemanticReasoningEntry {
 
 export interface SemanticActionSummary {
   seq: number;
-  type: "command" | "file_change" | "tool_output";
+  type: "command" | "file_change" | "tool_output" | "context_handoff";
   summary: string;
 }
 
@@ -60,6 +60,14 @@ export type SemanticProposedAction =
       seq: number;
       itemId: string;
       changes: Array<{ path: string; kind: string; diff: string }>;
+    }
+  | {
+      type: "context_handoff";
+      seq: number;
+      itemId: string;
+      fromTaskId: string;
+      toTaskId: string;
+      content: string;
     };
 
 export interface SemanticAssessment {
@@ -73,7 +81,7 @@ export interface SemanticAssessment {
 }
 
 export interface SemanticMonitorInput {
-  checkpoint: "reasoning" | "command" | "file_change";
+  checkpoint: "reasoning" | "command" | "file_change" | "context_handoff";
   trustedTask: TrustedTaskContext;
   recentReasoning: SemanticReasoningEntry[];
   recentActions: SemanticActionSummary[];

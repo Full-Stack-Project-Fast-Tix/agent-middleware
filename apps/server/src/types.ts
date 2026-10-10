@@ -12,7 +12,7 @@ export type HumanApprovalReason =
   | "high_consequence"
   | "semantic_uncertainty"
   | "semantic_unavailable";
-export type HumanApprovalActionType = "command" | "file_change";
+export type HumanApprovalActionType = "command" | "file_change" | "context_handoff";
 export type HumanApprovalDecision = "approve" | "deny";
 export type HumanApprovalOutcome = "approved" | "denied" | "timed_out" | "cancelled";
 

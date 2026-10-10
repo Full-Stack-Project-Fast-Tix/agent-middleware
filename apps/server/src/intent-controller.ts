@@ -77,6 +77,7 @@ export class IntentController {
   shouldReviewAction(action: SemanticProposedAction): boolean {
     if (this.state.currentRisk() >= SEMANTIC_RISK_ELEVATED) return true;
     if (action.type === "command") return isHighConsequenceCommand(action.command);
+    if (action.type === "context_handoff") return true;
     return isConsequentialFileChange(action);
   }
 
@@ -173,7 +174,7 @@ function isConsequentialFileChange(action: Extract<SemanticProposedAction, { typ
 function findingFor(
   assessment: SemanticAssessment,
   seq: number,
-  checkpoint: "reasoning" | "command" | "file_change",
+  checkpoint: "reasoning" | "command" | "file_change" | "context_handoff",
   decision: IntentDecision,
   steer?: string,
 ): Finding {
@@ -213,7 +214,7 @@ function neutralFinding(): IntentControllerResult {
 
 function monitorFailure(
   seq: number,
-  checkpoint: "reasoning" | "command" | "file_change",
+  checkpoint: "reasoning" | "command" | "file_change" | "context_handoff",
   error: unknown,
   required: boolean,
   originalUserTask = "the delegated task",

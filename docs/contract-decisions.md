@@ -160,7 +160,12 @@ eligibility unchanged.
 
 **Why:** Plan Pillar A requires context passing "without bypassing the
 external middleware", and no action covered it. Results can carry secrets or
-injected instructions from one agent to the next.
+injected instructions from one agent to the next. The middleware validates
+same-run/workspace task identity and blocks detected sensitive values before
+handoff. When the semantic monitor is configured, it also reviews each handoff
+as untrusted evidence against the trusted task; a high-confidence conflict is
+declined and an uncertain conflict requires human approval. This is a best-effort
+semantic safeguard, not a guarantee that all prompt injection is detected.
 
 ## 8. Lifecycle rules
 

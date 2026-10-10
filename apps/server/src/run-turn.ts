@@ -767,6 +767,9 @@ function humanActionIdentity(action: SemanticProposedAction): string {
   if (action.type === "command") {
     return `command:${action.command.replace(/\s+/g, " ").trim()}`;
   }
+  if (action.type === "context_handoff") {
+    return `context_handoff:${action.fromTaskId}:${action.toTaskId}:${action.content}`;
+  }
   return `file_change:${JSON.stringify(action.changes)}`;
 }
 
@@ -782,6 +785,16 @@ function humanApprovalDraft(
       actionId: action.itemId || `seq:${action.seq}`,
       summary: boundedSafeText(`Run: ${action.command.replace(/\s+/g, " ").trim()}`, 240),
       safeDetails: command,
+    };
+  }
+
+  if (action.type === "context_handoff") {
+    return {
+      reason,
+      actionType: "context_handoff",
+      actionId: action.itemId || `seq:${action.seq}`,
+      summary: boundedSafeText(`Pass context from task ${action.fromTaskId} to task ${action.toTaskId}`, 240),
+      safeDetails: boundedSafeText(action.content, 2_000),
     };
   }
 
