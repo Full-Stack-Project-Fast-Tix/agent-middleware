@@ -167,6 +167,32 @@ as untrusted evidence against the trusted task; a high-confidence conflict is
 declined and an uncertain conflict requires human approval. This is a best-effort
 semantic safeguard, not a guarantee that all prompt injection is detected.
 
+### 7.1 Periodic reasoning reviews check task alignment
+
+**Decision:** With semantic monitoring enabled, review the first completed
+reasoning item and then every third completed item. A deterministic intent
+warning triggers an immediate review between checkpoints. Review the bounded
+recent trajectory against the trusted task, not only the current wording. A
+moderate-confidence task conflict may steer the agent back on task; reasoning
+alone does not block an action.
+
+**Why:** Agents can drift from the user's goal without using obviously
+suspicious language. Periodic review catches this while limiting model calls;
+consequential actions and handoffs still have their own pre-action checks.
+
+### 7.2 A failed reasoning review raises scrutiny on the next action
+
+**Decision:** Reasoning review remains advisory: it may steer the agent, but does
+not block execution by itself. If semantic review of a reasoning checkpoint is
+unavailable, the next proposed action must receive semantic review even if it
+would not normally qualify; if that review is also unavailable, require human
+approval. Redacted semantic-review input is capped at 48,000 characters; an
+oversized review is treated as unavailable and follows the same approval path.
+
+**Why:** Reasoning is evidence about intent, not an action to authorize. But a
+failed review should not silently make the next action less scrutinized. The
+action remains the point where enforcement blocks or waits for approval.
+
 ## 8. Lifecycle rules
 
 **Decision:** Two Run edges were added: `planning → waiting_approval` and

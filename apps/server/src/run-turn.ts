@@ -220,6 +220,7 @@ export async function runTurn(options: TurnOptions): Promise<TurnOutcome> {
 
   function queueReasoningReview(seq: number, cheapIntentSignal: boolean): void {
     if (intentController === undefined) return;
+    if (!intentController.shouldReviewReasoning(cheapIntentSignal)) return;
     const traceAtCheckpoint = [...records];
     semanticQueue = semanticQueue.then(async () => {
       const result = await intentController.observeReasoning(

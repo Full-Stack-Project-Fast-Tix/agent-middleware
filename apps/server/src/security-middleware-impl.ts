@@ -201,8 +201,8 @@ class StatefulExecutionGuard implements ExecutionGuard {
     if (this.semantic && reasoningOf([record]).length > 0) {
       const reasoning = reasoningOf([record])[0]!;
       const cheapSignal = findings.some((finding) => finding.check === "agent-intent" && finding.seq === reasoning.seq);
-      if (cheapSignal) {
-        const result = await this.semantic.observeReasoning(this.trace, reasoning.seq, true);
+      if (this.semantic.shouldReviewReasoning(cheapSignal)) {
+        const result = await this.semantic.observeReasoning(this.trace, reasoning.seq, cheapSignal);
         if (result.finding) findings.push(result.finding);
         if (result.decision === "steer" && result.steer) return this.decision("steer", findings, { steer: result.steer });
       }

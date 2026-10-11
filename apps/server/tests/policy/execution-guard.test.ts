@@ -191,6 +191,19 @@ function commandEvent(seq: number, itemId: string, command: string): TraceRecord
   };
 }
 
+function reasoningEvent(seq: number, text: string): TraceRecord {
+  return {
+    seq,
+    at: NOW,
+    dir: "in",
+    method: "item/completed",
+    payload: {
+      method: "item/completed",
+      params: { item: { id: `reasoning-${seq}`, type: "reasoning", text } },
+    },
+  };
+}
+
 describe("ExecutionGuard capability enforcement", () => {
   it("denies a non-safe shell command when shell capability is absent", async () => {
     const guard = await openGuard({
@@ -266,6 +279,117 @@ describe("ExecutionGuard capability enforcement", () => {
 });
 
 describe("ExecutionGuard trace and approvals", () => {
+  it("checks task alignment at the first and every third reasoning checkpoint", async () => {
+    const reviewedInputs: import("../../src/semantic-intent-monitor.js").SemanticMonitorInput[] = [];
+    const semanticMonitor: SemanticIntentMonitor = {
+      async assess(input) {
+        reviewedInputs.push(input);
+        const drifted = reviewedInputs.length === 2;
+        return {
+          riskScore: drifted ? 0.65 : 0.1,
+          confidence: 0.85,
+          classification: drifted ? "scope_expansion" : "aligned",
+          apparentObjective: drifted ? "Work on an unrelated feature" : "Implement the requested feature",
+          conflictsWithTask: drifted,
+          evidenceSeqs: drifted ? [4] : [1],
+          rationale: drifted ? "The work has moved beyond the user's requested task." : "The work remains on task.",
+        };
+      },
+    };
+    const guard = await openGuard({ semanticMonitor });
+
+    expect(await guard.observe(reasoningEvent(1, "I will inspect the requested feature."))).toMatchObject({ outcome: "allow" });
+    expect(await guard.observe(reasoningEvent(2, "I will check its tests."))).toBeNull();
+    expect(await guard.observe(reasoningEvent(3, "I will read the related implementation."))).toBeNull();
+    const drift = await guard.observe(reasoningEvent(4, "I might also build an unrelated feature."));
+
+    expect(reviewedInputs).toHaveLength(2);
+    expect(reviewedInputs[0]?.cheapIntentSignal).toBe(false);
+    expect(reviewedInputs[1]?.recentReasoning).toHaveLength(4);
+    expect(drift).toMatchObject({ outcome: "steer" });
+    expect(drift?.findings.map(({ code }) => code)).toContain("semantic-scope_expansion");
+  });
+
+  it("checks suspicious reasoning against trusted task context and steers without blocking", async () => {
+    let reviewedInput: import("../../src/semantic-intent-monitor.js").SemanticMonitorInput | undefined;
+    const intentCheck: Check = {
+      name: "agent-intent",
+      run: (trace) => trace.some((record) => record.seq === 1)
+        ? [{
+            check: "agent-intent",
+            code: "stated-guard-evasion",
+            severity: "warn",
+            seq: 1,
+            evidence: [1],
+            message: "Reasoning states an intent to bypass a guard.",
+          }]
+        : [],
+    };
+    const semanticMonitor: SemanticIntentMonitor = {
+      async assess(input) {
+        reviewedInput = input;
+        return {
+          riskScore: 0.9,
+          confidence: 0.9,
+          classification: "oversight_evasion",
+          apparentObjective: "Bypass a guard",
+          conflictsWithTask: true,
+          evidenceSeqs: [1],
+          rationale: "The reasoning proposes bypassing a security check.",
+        };
+      },
+    };
+    const guard = await openGuard({ checks: [intentCheck], semanticMonitor });
+
+    const decision = await guard.observe(reasoningEvent(1, "I will bypass the guard."));
+
+    expect(decision).toMatchObject({ outcome: "steer" });
+    expect(reviewedInput).toMatchObject({
+      checkpoint: "reasoning",
+      trustedTask: {
+        userPrompt: "Add a safe feature.\n\nAuthorized task objective: Implement the feature without weakening security.",
+        agentInstructions: "Implement the requested task.",
+      },
+      recentReasoning: [{ seq: 1, text: "I will bypass the guard." }],
+      cheapIntentSignal: true,
+    });
+  });
+
+  it("requires review of the next action if suspicious reasoning could not be reviewed", async () => {
+    const intentCheck: Check = {
+      name: "agent-intent",
+      run: (trace) => trace.some((record) => record.seq === 1)
+        ? [{
+            check: "agent-intent",
+            code: "stated-guard-evasion",
+            severity: "warn",
+            seq: 1,
+            evidence: [1],
+            message: "Reasoning states an intent to bypass a guard.",
+          }]
+        : [],
+    };
+    const semanticMonitor: SemanticIntentMonitor = {
+      async assess() {
+        throw new Error("monitor unavailable");
+      },
+    };
+    const guard = await openGuard({ checks: [intentCheck], semanticMonitor });
+
+    await guard.observe(reasoningEvent(1, "I will bypass the guard."));
+    const decision = await guard.evaluate({
+      type: "command",
+      actionId: "safe-looking-after-suspicion",
+      command: "pwd",
+      cwd: null,
+    });
+
+    expect(decision).toMatchObject({
+      outcome: "require_approval",
+      approvalReason: "semantic_unavailable",
+    });
+  });
+
   it("carries sensitive-read evidence forward and blocks later egress", async () => {
     const guard = await openGuard({ checks: [sensitiveEgressCheck()] });
 
@@ -457,6 +581,39 @@ describe("ExecutionGuard context handoffs", () => {
       approvalReason: "semantic_unavailable",
     });
     expect(decision.findings.map(({ code }) => code)).toContain("semantic-monitor-unavailable");
+  });
+
+  it("requires approval instead of sending an oversized handoff to semantic review", async () => {
+    let monitorCalled = false;
+    const semanticMonitor: SemanticIntentMonitor = {
+      async assess() {
+        monitorCalled = true;
+        return {
+          riskScore: 0,
+          confidence: 1,
+          classification: "aligned",
+          apparentObjective: "Pass along the task summary",
+          conflictsWithTask: false,
+          evidenceSeqs: [],
+          rationale: "No conflict found.",
+        };
+      },
+    };
+    const guard = await openGuard({ semanticMonitor });
+
+    const decision = await guard.evaluate({
+      type: "context_handoff",
+      actionId: "oversized-handoff",
+      fromTaskId: TASK_ID,
+      toTaskId: NEXT_TASK_ID,
+      content: "ordinary handoff text. ".repeat(2_500),
+    });
+
+    expect(monitorCalled).toBe(false);
+    expect(decision).toMatchObject({
+      outcome: "require_approval",
+      approvalReason: "semantic_unavailable",
+    });
   });
 
   it("rejects a handoff whose receiving task is outside the verified run", async () => {
