@@ -18,7 +18,8 @@ async function readTrace(filePath: string): Promise<TraceRecord[]> {
 
 describe("trace file layout", () => {
   it("puts each run in its own file under the data directory", () => {
-    expect(traceFilePath("/tmp/data", "run-1")).toBe("/tmp/data/traces/run-1.jsonl");
+    // Built with the platform's own separator, so this holds on Windows too.
+    expect(traceFilePath("/tmp/data", "run-1")).toBe(path.join("/tmp/data", "traces", "run-1.jsonl"));
   });
 });
 

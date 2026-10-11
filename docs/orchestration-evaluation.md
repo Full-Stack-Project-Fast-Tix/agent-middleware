@@ -15,9 +15,10 @@ in-memory store and the event hub. Each seed draws:
   stopped by an observation, or needing approval;
 - crashes on some attempts, before or after acting;
 - results that the middleware withholds from the next task;
-- `maxParallel` 1–3, `maxAttempts` 1–3, and approval timeouts of 1 ms or 60 s;
-- a person who answers approvals at a random rate, approves or denies, and a
-  timeout sweep;
+- `maxParallel` 1–3 and `maxAttempts` 1–3;
+- an approver who is *prompt* (answers at a random rate, 60 s timeout),
+  *absent* (never answers, so every approval times out through the sweep), or
+  *racing* (answers at random against a 1 ms timeout);
 - a cancel at a random moment, the moment an approval is pending, or while the
   middleware is still deciding that an action needs one.
 
@@ -48,8 +49,17 @@ Random pauses make parallel work interleave differently on every seed.
 
 | Seeds | Passed | Completed / failed / cancelled runs | Approved / denied / timed out / cancelled approvals | Stopped executions | Retries | Runs with parallel work | Skipped tasks | Withheld handoffs |
 | ---: | ---: | --- | --- | ---: | ---: | ---: | ---: | ---: |
-| 250 (default) | 250 | 54 / 141 / 55 | 112 / 50 / 5 / 26 | 65 | 105 | 69 | 152 | 9 |
-| 2,000 | 2,000 | 463 / 1,181 / 356 | 836 / 470 / 49 / 109 | 514 | 890 | 530 | 1,358 | 57 |
+| 250 (default) | 250 | 51 / 143 / 56 | 77 / 42 / 23 / 24 | 64 | 102 | 62 | 154 | 11 |
+| 2,000 | 2,000 | 465 / 1,168 / 367 | 704 / 392 / 175 / 122 | 494 | 856 | 511 | 1,328 | 65 |
+
+A seed fixes what happens, not when: pauses, answers and the timeout sweep
+run on real timers, so counts vary slightly between runs and machines. An
+earlier version made timeouts depend on whether the simulated person answered
+before a 1 ms deadline. That race came out differently on a faster CI machine
+(2 timeouts in 250 seeds), so the coverage check failed there. Approvers are
+now *prompt*, *absent* (never answers, so every approval times out) or
+*racing* (the race, kept for its own sake), and the coverage check counts only
+situations a scenario forces.
 
 Reproduce with `FUZZ_RUNS=2000 FUZZ_REPORT=coverage.json npm run test:fuzz -w @launchpad/server`.
 A single failing seed reruns with `FUZZ_SEED=<n>`.

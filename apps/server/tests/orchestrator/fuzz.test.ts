@@ -25,6 +25,14 @@ import { AGENTS, FakeDirectory, StaticPlanner, USER_ID, WORKSPACE_ID } from "./f
 // differently every time. Every run must then satisfy the integration harness
 // invariants and the safety properties below. A failure names its seed:
 // rerun one with FUZZ_SEED=<n>.
+//
+// A seed fixes what happens, not when: pauses, approval answers and the
+// timeout sweep run on real timers, so interleavings differ between machines
+// and a rerun is not guaranteed to replay exactly. The safety properties must
+// hold for every interleaving anyway. The coverage check at the end therefore
+// counts only situations a scenario forces whatever the timing (for example
+// the "absent" approver makes timeouts certain), never ones that need a race
+// to go a particular way.
 
 const RUNS = Number(process.env.FUZZ_RUNS ?? 250);
 const FIRST_SEED = Number(process.env.FUZZ_SEED ?? 1);
@@ -259,16 +267,24 @@ function scenario(seed: number) {
       output: random.chance(0.1) ? `result with SECRET ${index}` : `result ${index}`,
     });
   }
+  // Who answers approvals. Timeouts must not depend on wall-clock luck, or the
+  // coverage check below passes on one machine and fails on a faster one:
+  //   prompt  answers; a timeout is effectively impossible (60 s)
+  //   absent  never answers; the sweep expires every approval, on any machine
+  //   racing  answers at random against a 1 ms deadline: the answer/timeout race
+  const approverRoll = random.next();
+  const approver: "prompt" | "absent" | "racing" = approverRoll < 0.7 ? "prompt" : approverRoll < 0.85 ? "absent" : "racing";
   return {
     random,
     mode,
     plan: { tasks },
     scripts,
     gateDelegations: random.chance(0.3),
+    approver,
     limits: {
       maxParallel: random.int(1, 3),
       maxAttempts: random.int(1, 3),
-      approvalTtlMs: random.chance(0.2) ? 1 : 60_000,
+      approvalTtlMs: approver === "prompt" ? 60_000 : 1,
     },
     cancelAfterMs: random.chance(0.15) ? random.int(0, 15) : null,
     /** Cancel the moment an approval is waiting: the race between a cancel and an answer. */
@@ -334,11 +350,13 @@ async function play(seed: number) {
           await orchestrator.cancel(run.id, USER_ID).catch(() => undefined);
           break;
         }
-        if (!setup.random.chance(setup.answerRate)) continue;
+        if (setup.approver === "absent" || !setup.random.chance(setup.answerRate)) continue;
         const answer = setup.random.chance(0.62) ? "approve" : "deny";
         await orchestrator.resolveApproval(approval.id, answer, USER_ID).catch(() => undefined);
       }
-      if (setup.random.chance(0.3)) await orchestrator.expireDueApprovals().catch(() => undefined);
+      if (setup.approver === "absent" || setup.random.chance(0.3)) {
+        await orchestrator.expireDueApprovals().catch(() => undefined);
+      }
     }
   })();
   const canceller =
