@@ -97,12 +97,11 @@ ungated. A completed file change without its expected approval is recorded as
 an enforcement-boundary violation and interrupts the turn, but cannot undo an
 already-completed change.
 
-### Multi-agent foundation (in progress)
+### Multi-agent runs
 
-The next phase replaces the single Agent → Run model with
-Run → Task → AgentExecution (see
-[architecture-direction.md](architecture-direction.md)). These parts of it
-exist now, alongside the single-agent path above:
+The multi-agent model is Run → Task → AgentExecution (see
+[architecture-direction.md](architecture-direction.md)). It runs alongside the
+single-agent path above, which is unchanged. These parts exist:
 
 - **Shared contracts** ([`packages/shared`](../packages/shared)): Zod schemas
   for the domain model, the security contract, run events and API shapes, used
@@ -114,14 +113,83 @@ exist now, alongside the single-agent path above:
 - **Security middleware interface**
   ([`security-middleware.ts`](../apps/server/src/security-middleware.ts)): one
   stateful guard per AgentExecution. The existing guards will sit behind it.
+- **Orchestrator**
+  ([`apps/server/src/orchestrator`](../apps/server/src/orchestrator/README.md)):
+  - plans with a tool-less supervisor call, validates the plan, and delegates
+    each task through the middleware;
+  - schedules tasks in dependency order, with limited parallelism and one
+    write-capable execution at a time;
+  - handles retries, approvals, cancellation and restart recovery, and writes
+    the audit trail.
+- **Run routes** ([`run-routes.ts`](../apps/server/src/run-routes.ts)): create,
+  snapshot, cancel and resolve-approval, as specified in `packages/shared/src/api.ts`.
+- **Gated Codex runtime**
+  ([`gated-turn.ts`](../apps/server/src/gated-turn.ts),
+  [`codex-execution-runtime.ts`](../apps/server/src/orchestrator/codex-execution-runtime.ts)):
+  one container per execution, on the Run's own working copy. Every approval
+  request goes to the middleware, and it fails closed.
+- **Runs UI** ([`apps/web/src/runs`](../apps/web/src/runs)): New Run, and a
+  live Run Detail with the task graph, task drill-down and approvals, driven by
+  the event stream.
 - **Integration harness**
   ([`apps/server/tests/integration`](../apps/server/tests/integration)): drives
   Runs through the public API and checks the invariants every Run must
-  satisfy. For now it runs against stand-ins for persistence, orchestration
-  and the middleware.
+  satisfy, against the real orchestrator and routes. Persistence and the
+  middleware are still stand-ins.
 
-Not built yet: PostgreSQL persistence, identity and RBAC, the orchestrator, the
-middleware implementation and the new console UI.
+One `auto` Run, end to end. Every arrow into the middleware is a decision that
+can allow, steer, block or require approval:
+
+```mermaid
+sequenceDiagram
+    actor Dev as Developer (browser)
+    participant API as Run routes
+    participant O as Orchestrator
+    participant P as Supervisor planner
+    participant M as Security middleware (P1)
+    participant R as Codex runtime (container)
+    participant S as RunStore + RunEventHub
+
+    Dev->>API: POST /api/workspaces/:id/runs
+    API->>O: createRun
+    O->>S: Run queued, then planning
+    S-->>Dev: run.updated (SSE)
+    O->>P: user request + agent list (no workspace content)
+    P-->>O: plan as JSON, then schema + validatePlan
+    loop each planned task
+        O->>M: delegation
+        M-->>O: allow / block / require_approval
+        O->>S: task.created (only if allowed)
+    end
+    loop each ready task (dependency order, one writer at a time)
+        O->>M: resolvePolicy, then openExecution
+        O->>M: context_handoff for each dependency's result
+        O->>R: execute(prompt, working copy, gate)
+        R->>M: every approval request (command, file change)
+        M-->>R: accept / decline / interrupt
+        opt require_approval
+            O->>S: approval.requested
+            S-->>Dev: approval.requested (SSE)
+            Dev->>API: POST /api/approvals/:id/resolve
+            API->>O: resolveApproval
+        end
+        R-->>O: result, trace path
+        O->>S: execution and task completed
+    end
+    O->>S: Run completed: the final tasks' results
+    S-->>Dev: run.updated (SSE)
+```
+
+Not built yet, by owner:
+- **P1:** the real `SecurityMiddleware`. Until it exists, `index.ts` mounts the
+  run routes only in development demo mode (`npm run dev:demo`), with a
+  simulated runtime and rules.
+- **P3:** PostgreSQL persistence, identity and RBAC, and workspace and agent
+  listing APIs.
+- **P4:** the app shell, Dashboard and the full Run Detail composition.
+
+Orchestration test and load results are in
+[orchestration-evaluation.md](orchestration-evaluation.md).
 
 ## Deployment profiles
 

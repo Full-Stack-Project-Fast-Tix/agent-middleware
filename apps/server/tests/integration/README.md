@@ -9,7 +9,7 @@ stored snapshot.
 | --- | --- |
 | `harness/client.ts` | `HarnessClient` validates every response (error bodies too) against `@launchpad/shared`. `RunRecorder` keeps the full event log and the view a UI would build from it. |
 | `harness/invariants.ts` | `checkRunInvariants`: rules every Run must satisfy, whatever produced it. |
-| `harness/stand-in.ts` | Temporary stand-ins for persistence (P3), orchestration (P2) and the security middleware (P1), on top of the real HTTP app and `RunEventHub`. |
+| `harness/stand-in.ts` | The real HTTP app, run routes, `RunEventHub` and `Orchestrator`, with temporary stand-ins for persistence (P3), the security middleware (P1), the supervisor's model call and the Codex runtime. |
 | `secure-run.test.ts` | Gate 1 scenarios: approve, deny, a gated delegation approved and denied while planning, cancel, and error shapes. |
 | `invariants.test.ts` | Proves each invariant catches the violation it names. |
 
@@ -37,11 +37,13 @@ stored snapshot.
 
 As each subsystem lands, have `startStandIn` use the real piece instead:
 
-- **P3 persistence:** swap `StandInStore` for the repositories, and point the
-  snapshot route and `canReadRun` at them. The repositories assign event seqs
-  in the write's transaction, as `StandInStore.commit` does.
-- **P2 orchestrator:** register the real Run routes and orchestrator in place
-  of `ScriptedOrchestrator`.
+- **P3 persistence:** swap `InMemoryRunStore` for the repositories, and point
+  the run routes' `snapshot`/`approval` and `canReadRun` at them. The
+  repositories assign event seqs in the write's transaction, as
+  `InMemoryRunStore` does.
+- **P2 orchestrator:** done. The real `Orchestrator` and run routes
+  (`src/run-routes.ts`) are in use. Only its planner and runtime are
+  stand-ins, so the scenarios stay deterministic and need no model or Docker.
 - **P1 middleware:** pass the real `SecurityMiddleware` in place of
   `ScriptedMiddleware`. To keep the scenarios deterministic, give it a
   workspace policy that requires approval for file changes (and, for the

@@ -178,6 +178,7 @@ async function runOne(args: {
   try {
     const result = await args.runner.run({
       agentId,
+      executionId: runId,
       workspacePath: workspaceDir,
       prompt: scenario.prompt,
       taskContext: { userPrompt: scenario.prompt, agentInstructions: "" },

@@ -7,6 +7,8 @@ import { Trajectory } from "./Trajectory";
 import { Workspace } from "./Workspace";
 import { Admin, AgentSafetyDetails } from "./Admin";
 import { parseTrace, toSteps, type TraceRecord, type TraceStep } from "./trace";
+import { navigate, NEW_RUN_HASH } from "./runs/routes";
+import { RunsPage } from "./runs/RunsPage";
 
 const starterPrompts = [
   "Create a small TypeScript CLI that prints a weather summary from sample JSON.",
@@ -65,7 +67,9 @@ export default function App() {
   const [authRequired, setAuthRequired] = useState<boolean | null>(null);
   const [authInput, setAuthInput] = useState("");
   const [resolvingApprovalId, setResolvingApprovalId] = useState<string | null>(null);
-  const [surface, setSurface] = useState<"playground" | "admin">("playground");
+  const [surface, setSurface] = useState<"playground" | "admin" | "runs">(() =>
+    window.location.hash.startsWith("#/runs") ? "runs" : "playground",
+  );
   const [adminOverview, setAdminOverview] = useState<AdminOverview | null>(null);
   const [adminAgentId, setAdminAgentId] = useState<string | null>(null);
   const [showSafetyPanel, setShowSafetyPanel] = useState(false);
@@ -145,6 +149,15 @@ export default function App() {
       .then(setAdminOverview)
       .catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)));
   };
+
+  // A shared #/runs/<id> link opens the Runs surface wherever the user was.
+  useEffect(() => {
+    const follow = () => {
+      if (window.location.hash.startsWith("#/runs")) setSurface("runs");
+    };
+    window.addEventListener("hashchange", follow);
+    return () => window.removeEventListener("hashchange", follow);
+  }, []);
 
   useEffect(() => {
     if (!showSafetyPanel) return;
@@ -442,6 +455,15 @@ export default function App() {
           >
             Playground
           </button>
+          <button
+            className={surface === "runs" ? "selected" : ""}
+            onClick={() => {
+              setSurface("runs");
+              if (!window.location.hash.startsWith("#/runs")) navigate(NEW_RUN_HASH);
+            }}
+          >
+            Runs
+          </button>
           <button className={surface === "admin" ? "selected" : ""} onClick={() => openAdmin()}>
             Admin
           </button>
@@ -495,7 +517,9 @@ export default function App() {
       </aside>
 
       <main className="main">
-        {surface === "admin" ? (
+        {surface === "runs" ? (
+          <RunsPage />
+        ) : surface === "admin" ? (
           <Admin
             overview={adminOverview}
             agents={agents}
