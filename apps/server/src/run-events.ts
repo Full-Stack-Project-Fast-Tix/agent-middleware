@@ -117,11 +117,17 @@ export class RunEventHub {
    * Replay buffered events after `afterSeq`, then deliver live ones. Replay
    * and registration happen in the same tick, so nothing published in between
    * is missed.
+   *
+   * `durableSeq` is the Run's last committed seq, from persistence. When this
+   * process has published nothing for the Run (it restarted, or forgot a
+   * finished Run), the channel starts there, so a client that is up to date
+   * waits for new events instead of being told to resync forever.
    */
-  subscribe(runId: string, afterSeq: number, listener: RunEventListener): RunEventSubscription {
+  subscribe(runId: string, afterSeq: number, listener: RunEventListener, durableSeq = 0): RunEventSubscription {
     this.sweep();
     const existing = this.channels.get(runId);
-    const lastSeq = existing?.lastSeq ?? 0;
+    const published = (existing?.buffer.length ?? 0) > 0;
+    const lastSeq = published ? existing!.lastSeq : Math.max(existing?.lastSeq ?? 0, durableSeq);
     const oldestSeq = existing?.buffer[0]?.seq ?? lastSeq + 1;
     // Ahead of the hub: the client saw events this process never published
     // (it restarted and nothing new has happened yet, or the client is wrong).
@@ -129,6 +135,7 @@ export class RunEventHub {
     if (afterSeq > lastSeq || afterSeq < oldestSeq - 1) return { status: "resync" };
 
     const channel = existing ?? this.channelFor(runId);
+    channel.lastSeq = lastSeq;
     for (const event of channel.buffer) {
       if (event.seq > afterSeq) listener.onEvent(event);
     }
@@ -137,15 +144,15 @@ export class RunEventHub {
       status: "subscribed",
       unsubscribe: () => {
         channel.listeners.delete(listener);
-        // A channel opened by a subscriber for a Run that never published anything.
-        if (channel.listeners.size === 0 && channel.lastSeq === 0) this.channels.delete(runId);
+        // A channel opened by a subscriber for a Run that never published anything here.
+        if (channel.listeners.size === 0 && channel.buffer.length === 0) this.channels.delete(runId);
       },
     };
   }
 
   /** Whether this process has published any event for the Run. */
   has(runId: string): boolean {
-    return (this.channels.get(runId)?.lastSeq ?? 0) > 0;
+    return (this.channels.get(runId)?.buffer.length ?? 0) > 0;
   }
 
   /** The last seq published in this process; 0 if none. Snapshots read theirs from the database. */
