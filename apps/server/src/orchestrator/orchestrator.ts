@@ -228,12 +228,12 @@ export class Orchestrator {
 
   /** A person's answer to a pending approval. 404 if unknown, 409 if already answered. */
   async resolveApproval(approvalId: string, decision: ApprovalDecision, userId: string): Promise<Approval> {
-    return this.settleApproval(approvalId, decision === "approve" ? "approved" : "denied", userId);
+    return this.answerApproval(approvalId, decision === "approve" ? "approved" : "denied", userId);
   }
 
   /** Time out one pending approval: the action is declined and the execution carries on. */
   async expireApproval(approvalId: string): Promise<Approval> {
-    return this.settleApproval(approvalId, "timed_out", null);
+    return this.answerApproval(approvalId, "timed_out", null);
   }
 
   /**
@@ -805,6 +805,18 @@ export class Orchestrator {
       if (run.status === "waiting_approval" && pending.length === 0) await this.moveRun(run.id, state.phase);
     });
     return final;
+  }
+
+  /**
+   * An answer from outside the Run's work waits until the approval has been
+   * fully announced, so Run.waiting_approval never outlives the last pending
+   * approval when the answer comes back faster than the announcement.
+   */
+  private async answerApproval(approvalId: string, status: Answer, userId: string | null): Promise<Approval> {
+    const approval = await this.store.getApproval(approvalId);
+    const state = approval === null ? undefined : this.active.get(approval.runId);
+    const settle = () => this.settleApproval(approvalId, status, userId);
+    return state === undefined ? settle() : this.locked(state, settle);
   }
 
   private async settleApproval(approvalId: string, status: Answer, userId: string | null): Promise<Approval> {
