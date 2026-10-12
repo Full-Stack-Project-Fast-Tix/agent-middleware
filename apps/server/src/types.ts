@@ -177,6 +177,12 @@ export interface RunnerResult {
 
 export interface RunnerRequest {
   agentId: string;
+  /**
+   * The one attempt this request runs. Runners key their active processes,
+   * container names and cancel() by it, because one Agent may have several
+   * executions at once (one per Task it is assigned in a multi-agent Run).
+   */
+  executionId: string;
   workspacePath: string;
   prompt: string;
   /** Trusted authority context for task-aware monitoring. */
@@ -192,6 +198,7 @@ export interface RunnerRequest {
 
 export interface AgentRunner {
   run(request: RunnerRequest): Promise<RunnerResult>;
-  cancel(agentId: string): Promise<boolean>;
+  /** Stop the execution started with this `RunnerRequest.executionId`. */
+  cancel(executionId: string): Promise<boolean>;
   isAvailable(): Promise<boolean>;
 }

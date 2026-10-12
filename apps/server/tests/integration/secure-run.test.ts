@@ -36,7 +36,7 @@ describe("secure multi-agent run", () => {
     return { client, run, recorder: client.record(run.id) };
   }
 
-  const executedActions = () => target.orchestrator.executed.map(({ action }) => action.type);
+  const executedActions = () => target.runtime.executed.map(({ action }) => action.type);
 
   it("plans, delegates, blocks exfiltration, pauses for approval and completes", async () => {
     const { client, run, recorder } = await startRun();
@@ -81,8 +81,10 @@ describe("secure multi-agent run", () => {
     expect(capabilitiesOf(AGENTS.analyst)).toMatchObject({ write: false });
     expect(capabilitiesOf(AGENTS.developer)).toMatchObject({ write: true });
 
-    // Delegations went through the middleware on the supervisor's execution;
-    // every other action on the execution that proposed it.
+    // Delegations went through the middleware on the supervisor's execution.
+    // The analysis result reached the implementer only as an evaluated
+    // context_handoff (contract decision 7), on the receiving execution; every
+    // other action on the execution that proposed it.
     const executionFor = (taskId: string) => snapshot.executions.find((execution) => execution.taskId === taskId)!.id;
     expect(
       target.middleware.evaluations.map(({ context, action }) => [action.type, context.executionId]),
@@ -90,6 +92,7 @@ describe("secure multi-agent run", () => {
       ["delegation", executionFor(plan!.id)],
       ["delegation", executionFor(plan!.id)],
       ["command", executionFor(analyse!.id)],
+      ["context_handoff", executionFor(implement!.id)],
       ["command", executionFor(implement!.id)],
       ["file_change", executionFor(implement!.id)],
     ]);

@@ -1,0 +1,177 @@
+// Measures the orchestration layer the way a browser uses it: real HTTP
+// routes, the real RunEventHub and SSE stream, the real Orchestrator, with the
+// demo's simulated planner, runtime and middleware (src/dev/demo-runs.ts).
+// Nothing executes, so the numbers are the platform's own cost, not an
+// agent's or a model's.
+//
+// For each concurrency level it starts that many Runs at once. Each client
+// follows its Run over SSE from seq 0, approves every approval through
+// POST /api/approvals/:id/resolve as soon as it arrives, and stops at the
+// terminal run.updated.
+//
+//   npx tsx --conditions=development scripts/measure-orchestration.ts \
+//     [--runs 1,10,50,100] [--pause 0] [--out results.json]
+//
+// --pause scales the demo's simulated thinking time: 0 measures pure
+// orchestration overhead, 1 is the pace you see in the browser demo.
+
+import { writeFileSync } from "node:fs";
+import type { AddressInfo } from "node:net";
+import {
+  apiPaths,
+  followRunEvents,
+  isTerminalRunStatus,
+  runResponseSchema,
+  runSnapshotResponseSchema,
+  type RunEvent,
+} from "@launchpad/shared";
+import type { AgentService } from "../src/agent-service.js";
+import { createApp } from "../src/app.js";
+import { loadConfig } from "../src/config.js";
+import { createDemoRuns, DEMO_WORKSPACE } from "../src/dev/demo-runs.js";
+import { RunEventHub } from "../src/run-events.js";
+
+function argument(name: string, fallback: string): string {
+  const index = process.argv.indexOf(`--${name}`);
+  return index >= 0 && process.argv[index + 1] !== undefined ? process.argv[index + 1]! : fallback;
+}
+
+const LEVELS = argument("runs", "1,10,50,100").split(",").map(Number).filter((value) => value > 0);
+const PAUSE = Number(argument("pause", "0"));
+const OUT = argument("out", "");
+
+interface RunSample {
+  status: string;
+  createMs: number;
+  durationMs: number;
+  snapshotMs: number;
+  resolveMs: number[];
+  eventLagMs: number[];
+  events: number;
+  decisions: number;
+}
+
+async function timed<T>(work: () => Promise<T>): Promise<[T, number]> {
+  const start = performance.now();
+  const result = await work();
+  return [result, performance.now() - start];
+}
+
+async function measureLevel(concurrency: number) {
+  const hub = new RunEventHub({ bufferSize: 10_000 });
+  const demo = createDemoRuns(hub, { pauseScale: PAUSE });
+  const app = await createApp(loadConfig({ NODE_ENV: "test", LOG_LEVEL: "silent" }), {} as AgentService, {
+    runEvents: { hub, canReadRun: (runId) => demo.store.snapshot(runId) !== null },
+    runs: demo.routes,
+  });
+  await app.listen({ host: "127.0.0.1", port: 0 });
+  const base = `http://127.0.0.1:${(app.server.address() as AddressInfo).port}`;
+  const post = (path: string, body?: unknown) =>
+    fetch(base + path, {
+      method: "POST",
+      headers: body === undefined ? {} : { "content-type": "application/json" },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+
+  const one = async (index: number): Promise<RunSample> => {
+    const started = performance.now();
+    const [response, createMs] = await timed(() =>
+      post(apiPaths.runs(DEMO_WORKSPACE.id), { userPrompt: `Load run ${index}`, orchestrationMode: "auto" }),
+    );
+    if (response.status !== 201) throw new Error(`create returned ${response.status}`);
+    const { run } = runResponseSchema.parse(await response.json());
+
+    const resolveMs: number[] = [];
+    const eventLagMs: number[] = [];
+    let events = 0;
+    let status = run.status as string;
+    const controller = new AbortController();
+    const answering: Array<Promise<void>> = [];
+    await followRunEvents({
+      url: base + apiPaths.runEvents(run.id),
+      afterSeq: 0,
+      signal: controller.signal,
+      onEvent: (event: RunEvent) => {
+        events += 1;
+        eventLagMs.push(Date.now() - Date.parse(event.timestamp));
+        if (event.type === "approval.requested") {
+          answering.push(
+            timed(() => post(apiPaths.resolveApproval(event.payload.approval.id), { decision: "approve" })).then(([, ms]) => {
+              resolveMs.push(ms);
+            }),
+          );
+        }
+        if (event.type === "run.updated" && isTerminalRunStatus(event.payload.run.status)) {
+          status = event.payload.run.status;
+          controller.abort();
+        }
+      },
+      onResync: async () => {
+        throw new Error("unexpected resync");
+      },
+    }).catch((error: unknown) => {
+      if (!controller.signal.aborted) throw error;
+    });
+    await Promise.all(answering);
+    const durationMs = performance.now() - started;
+
+    const [snapshotResponse, snapshotMs] = await timed(() => fetch(base + apiPaths.runSnapshot(run.id)));
+    runSnapshotResponseSchema.parse(await snapshotResponse.json());
+    const decisions = demo.store.auditEvents(run.id).filter((event) => event.eventType === "security.decision").length;
+    return { status, createMs, durationMs, snapshotMs, resolveMs, eventLagMs, events, decisions };
+  };
+
+  const [samples, wallMs] = await timed(() => Promise.all(Array.from({ length: concurrency }, (_, index) => one(index))));
+  await app.close();
+  return { concurrency, wallMs, samples };
+}
+
+function percentile(values: number[], p: number): number {
+  if (values.length === 0) return Number.NaN;
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[Math.min(sorted.length - 1, Math.ceil((p / 100) * sorted.length) - 1)]!;
+}
+
+const ms = (value: number) => (Number.isNaN(value) ? "—" : value < 10 ? value.toFixed(1) : Math.round(value).toString());
+
+async function main() {
+  const results = [];
+  // One small warm-up so JIT and module loading do not count against level 1.
+  await measureLevel(2);
+  for (const level of LEVELS) {
+    const { concurrency, wallMs, samples } = await measureLevel(level);
+    const completed = samples.filter((sample) => sample.status === "completed").length;
+    const all = (pick: (sample: RunSample) => number[]) => samples.flatMap(pick);
+    const row = {
+      concurrency,
+      completed,
+      wallMs,
+      runsPerSecond: (concurrency / wallMs) * 1000,
+      eventsPerSecond: (all((sample) => [sample.events]).reduce((a, b) => a + b, 0) / wallMs) * 1000,
+      createP50: percentile(all((sample) => [sample.createMs]), 50),
+      createP95: percentile(all((sample) => [sample.createMs]), 95),
+      resolveP50: percentile(all((sample) => sample.resolveMs), 50),
+      resolveP95: percentile(all((sample) => sample.resolveMs), 95),
+      snapshotP95: percentile(all((sample) => [sample.snapshotMs]), 95),
+      eventLagP95: percentile(all((sample) => sample.eventLagMs), 95),
+      eventLagMax: Math.max(...all((sample) => sample.eventLagMs)),
+      runP50: percentile(all((sample) => [sample.durationMs]), 50),
+      runP95: percentile(all((sample) => [sample.durationMs]), 95),
+      perDecisionMs: percentile(all((sample) => [sample.durationMs / Math.max(1, sample.decisions)]), 50),
+    };
+    results.push(row);
+  }
+
+  console.log(`\nOrchestration over HTTP + SSE, simulated agents, pause scale ${PAUSE}. Times in ms.\n`);
+  console.log("| Runs at once | Completed | Create p50 / p95 | Approve p50 / p95 | Snapshot p95 | Event lag p95 / max | Run p50 / p95 | Per decision* | Runs/s | Events/s |");
+  console.log("| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |");
+  for (const row of results) {
+    console.log(
+      `| ${row.concurrency} | ${row.completed}/${row.concurrency} | ${ms(row.createP50)} / ${ms(row.createP95)} | ${ms(row.resolveP50)} / ${ms(row.resolveP95)} | ${ms(row.snapshotP95)} | ${ms(row.eventLagP95)} / ${ms(row.eventLagMax)} | ${ms(row.runP50)} / ${ms(row.runP95)} | ${ms(row.perDecisionMs)} | ${row.runsPerSecond.toFixed(1)} | ${Math.round(row.eventsPerSecond)} |`,
+    );
+  }
+  console.log("\n* Run duration divided by the security decisions in it: orchestration cost per gated action, including the approval round trip.");
+  if (OUT) writeFileSync(OUT, JSON.stringify({ pauseScale: PAUSE, node: process.version, results }, null, 2));
+}
+
+await main();

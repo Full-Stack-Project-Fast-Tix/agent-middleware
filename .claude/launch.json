@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "demo-api",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "set HOST=127.0.0.1&& npx tsx --conditions=development apps/server/src/index.ts --runs-demo"],
+      "port": 3000
+    },
+    {
+      "name": "web",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev:local", "-w", "@launchpad/web", "--", "--port", "5174", "--strictPort"],
+      "port": 5174
+    }
+  ]
+}

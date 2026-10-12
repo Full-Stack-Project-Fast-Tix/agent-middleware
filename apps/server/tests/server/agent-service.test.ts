@@ -226,6 +226,7 @@ describe("Agent lifecycle", () => {
 
   it("resolves a pending waiter when the Agent is stopped", async () => {
     let cancelled = false;
+    let cancelledExecutionId: string | null = null;
     let resolution: HumanApprovalResolution | null = null;
     const service = await makeService(
       {
@@ -239,8 +240,9 @@ describe("Agent lifecycle", () => {
           if (cancelled) throw new RunCancelledError();
           return { output: "continued", threadId: "thread", usage: null };
         },
-        cancel: async () => {
+        cancel: async (executionId) => {
           cancelled = true;
+          cancelledExecutionId = executionId;
           return true;
         },
         isAvailable: async () => true,
@@ -253,6 +255,8 @@ describe("Agent lifecycle", () => {
 
     await service.stopAgent(agent.id);
 
+    // The runner is cancelled by execution, not by Agent; a legacy run is one execution.
+    expect(cancelledExecutionId).toBe(run.id);
     expect(resolution).toEqual({ decision: "deny", outcome: "cancelled" });
     expect(service.getRun(run.id).pendingApproval).toBeNull();
     expect(service.getAgent(agent.id).status).toBe("stopped");

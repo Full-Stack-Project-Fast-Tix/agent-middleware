@@ -856,7 +856,10 @@ function humanApprovalFinding(
  * ({ type: "workspaceWrite" }). They are different types on adjacent calls and
  * sending the wrong one fails at runtime.
  */
-async function openThread(rpc: JsonRpcConnection, options: TurnOptions): Promise<string | null> {
+export async function openThread(
+  rpc: JsonRpcConnection,
+  options: Pick<TurnOptions, "threadId" | "sandboxMode" | "approvalPolicy">,
+): Promise<string | null> {
   const method = options.threadId === null ? "thread/start" : "thread/resume";
 
   const params: Record<string, unknown> = {
@@ -879,7 +882,7 @@ async function openThread(rpc: JsonRpcConnection, options: TurnOptions): Promise
  * in depth. Approval behavior is controlled separately by approvalPolicy;
  * network denial by itself does not guarantee a pre-execution request.
  */
-function buildSandboxPolicy(
+export function buildSandboxPolicy(
   mode: TurnOptions["sandboxMode"],
   denyNetwork: boolean,
 ): Record<string, unknown> {
@@ -903,7 +906,7 @@ function buildSandboxPolicy(
   };
 }
 
-function readUsage(params: Record<string, unknown>): RunUsage | null {
+export function readUsage(params: Record<string, unknown>): RunUsage | null {
   const totals = (params.usage ?? params) as Record<string, unknown>;
   const input = totals.inputTokens ?? totals.input_tokens;
   const output = totals.outputTokens ?? totals.output_tokens;
@@ -916,7 +919,7 @@ function readUsage(params: Record<string, unknown>): RunUsage | null {
   return usage;
 }
 
-function readTurnError(finalTurn: Record<string, unknown>): string | null {
+export function readTurnError(finalTurn: Record<string, unknown>): string | null {
   const turn = finalTurn.turn as Record<string, unknown> | undefined;
   if (turn === undefined) return null;
 

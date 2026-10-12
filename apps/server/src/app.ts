@@ -17,6 +17,7 @@ import {
 } from "./workspace-files.js";
 import type { AgentService } from "./agent-service.js";
 import { registerRunEventStream, type RunEventStreamOptions } from "./run-events-route.js";
+import { registerRunRoutes, type RunRoutesOptions } from "./run-routes.js";
 
 /**
  * Response bodies the outbound redactor runs over. Anything else — static
@@ -51,6 +52,8 @@ const workspaceFileBody = z.object({
 export interface AppExtensions {
   /** Live RunEvent stream. Omitted, the route is not registered. */
   runEvents?: RunEventStreamOptions;
+  /** Run, snapshot, cancel and approval routes for the multi-agent model. Omitted, not registered. */
+  runs?: RunRoutesOptions;
 }
 
 export async function createApp(
@@ -282,6 +285,9 @@ export async function createApp(
 
   if (extensions.runEvents) {
     registerRunEventStream(app, extensions.runEvents);
+  }
+  if (extensions.runs) {
+    registerRunRoutes(app, extensions.runs);
   }
 
   if (config.nodeEnv === "production") {

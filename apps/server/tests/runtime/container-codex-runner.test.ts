@@ -1,3 +1,4 @@
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { loadConfig } from "../../src/config.js";
 import {
@@ -21,7 +22,8 @@ describe("Container Codex runner", () => {
     });
     const args = buildContainerRunArgs(
       {
-        agentId: "agent/unsafe",
+        agentId: "agent-1",
+        executionId: "execution/unsafe",
         workspacePath: "/tmp/agent-workspace",
         prompt: "write a small program",
         threadId: null,
@@ -29,12 +31,19 @@ describe("Container Codex runner", () => {
       config,
     );
 
-    expect(containerName("agent/unsafe", "test-instance")).toBe(
-      "launchpad-test-instance-agent-unsafe",
+    // Named per execution, so one Agent can run several Tasks at once.
+    expect(containerName("execution/unsafe", "test-instance")).toBe(
+      "launchpad-test-instance-execution-unsafe",
     );
+    expect(args).toContain("launchpad-test-instance-execution-unsafe");
+    expect(args).toContain("io.codejam.agent-id=agent-1");
+    expect(args).toContain("io.codejam.execution-id=execution/unsafe");
     expect(args).toContain("runtime:test");
     expect(args).toContain("type=bind,src=/tmp/agent-workspace,dst=/workspace");
-    expect(args).toContain("type=bind,src=/tmp/codex-home,dst=/codex-home");
+    // loadConfig resolves CODEX_HOME for this platform (C:\tmp\codex-home on
+    // Windows), and that resolved path is what must be mounted.
+    expect(args).toContain("type=bind,src=" + config.codexHome + ",dst=/codex-home");
+    expect(config.codexHome).toBe(path.resolve("/tmp/codex-home"));
     expect(args).toContain("501:20");
     expect(args).toContain("/workspace");
     expect(args).toContain("io.codejam.instance-id=test-instance");
@@ -51,6 +60,7 @@ describe("Container Codex runner", () => {
     const args = buildContainerRunArgs(
       {
         agentId: "agent",
+        executionId: "execution",
         workspacePath: "/tmp/workspace",
         prompt: "continue",
         threadId: "thread-123",

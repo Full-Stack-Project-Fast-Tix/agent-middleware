@@ -1,0 +1,86 @@
+import { afterEach, describe, expect, it } from "vitest";
+import type { FastifyInstance } from "fastify";
+import type { Approval, RunSnapshot } from "@launchpad/shared";
+import type { AgentService } from "../../src/agent-service.js";
+import { createApp } from "../../src/app.js";
+import { loadConfig } from "../../src/config.js";
+import type { RunRoutesOptions } from "../../src/run-routes.js";
+
+// Authorisation in the run routes. A run or approval in a workspace the caller
+// may not access must look exactly like one that does not exist, and must not
+// reach the orchestrator.
+
+const MINE = "00000000-0000-4000-8000-00000000000a";
+const THEIRS = "00000000-0000-4000-8000-00000000000b";
+const RUN = "00000000-0000-4000-8000-0000000000c1";
+const APPROVAL = "00000000-0000-4000-8000-0000000000d1";
+
+let app: FastifyInstance;
+afterEach(async () => {
+  await app.close();
+});
+
+async function start(runWorkspace: string) {
+  const calls: string[] = [];
+  const options: RunRoutesOptions = {
+    orchestrator: {
+      createRun: async (input) => {
+        calls.push("createRun");
+        return { id: RUN, workspaceId: input.workspaceId } as never;
+      },
+      cancel: async () => {
+        calls.push("cancel");
+        return { id: RUN } as never;
+      },
+      resolveApproval: async () => {
+        calls.push("resolveApproval");
+        return { id: APPROVAL } as never;
+      },
+    },
+    snapshot: async (runId) => (runId === RUN ? ({ run: { id: RUN, workspaceId: runWorkspace } } as RunSnapshot) : null),
+    approval: async (approvalId) => (approvalId === APPROVAL ? ({ id: APPROVAL, runId: RUN } as Approval) : null),
+    currentUserId: () => "00000000-0000-4000-8000-0000000000ee",
+    canAccessWorkspace: async (workspaceId) => workspaceId === MINE,
+  };
+  app = await createApp(loadConfig({ NODE_ENV: "test" }), {} as AgentService, { runs: options });
+  return calls;
+}
+
+const inject = (method: "GET" | "POST", url: string, payload?: object) =>
+  app.inject({ method, url, ...(payload === undefined ? {} : { payload }) });
+
+describe("run routes", () => {
+  it("serves runs and approvals in the caller's own workspace", async () => {
+    const calls = await start(MINE);
+    expect((await inject("POST", `/api/workspaces/${MINE}/runs`, { userPrompt: "Add validation" })).statusCode).toBe(201);
+    expect((await inject("GET", `/api/runs/${RUN}/snapshot`)).statusCode).toBe(200);
+    expect((await inject("POST", `/api/runs/${RUN}/cancel`)).statusCode).toBe(202);
+    expect((await inject("POST", `/api/approvals/${APPROVAL}/resolve`, { decision: "approve" })).statusCode).toBe(200);
+    expect(calls).toEqual(["createRun", "cancel", "resolveApproval"]);
+  });
+
+  it("answers 404 for another workspace's runs and approvals, without acting on them", async () => {
+    const calls = await start(THEIRS);
+    const responses = [
+      await inject("POST", `/api/workspaces/${THEIRS}/runs`, { userPrompt: "Add validation" }),
+      await inject("GET", `/api/runs/${RUN}/snapshot`),
+      await inject("POST", `/api/runs/${RUN}/cancel`),
+      await inject("POST", `/api/approvals/${APPROVAL}/resolve`, { decision: "approve" }),
+    ];
+    expect(responses.map((response) => response.statusCode)).toEqual([404, 404, 404, 404]);
+    expect(responses.map((response) => response.json().error)).toEqual([
+      "Workspace not found",
+      "Run not found",
+      "Run not found",
+      "Approval not found",
+    ]);
+    expect(calls).toEqual([]);
+  });
+
+  it("validates ids and bodies", async () => {
+    await start(MINE);
+    expect((await inject("GET", "/api/runs/not-an-id/snapshot")).statusCode).toBe(400);
+    expect((await inject("POST", `/api/workspaces/${MINE}/runs`, { userPrompt: "  " })).statusCode).toBe(400);
+    expect((await inject("POST", `/api/approvals/${APPROVAL}/resolve`, { decision: "maybe" })).statusCode).toBe(400);
+  });
+});

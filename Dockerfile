@@ -37,6 +37,7 @@ RUN if [ -n "$DEBIAN_SECURITY_MIRROR" ]; then \
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/apps/server/package.json ./apps/server/package.json
 COPY --from=build /app/apps/server/dist ./apps/server/dist
+COPY --from=build /app/apps/server/migrations ./apps/server/migrations
 COPY --from=build /app/apps/web/dist ./apps/web/dist
 COPY --from=build /app/packages/shared/package.json ./packages/shared/package.json
 COPY --from=build /app/packages/shared/dist ./packages/shared/dist

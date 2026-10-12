@@ -17,7 +17,7 @@ import {
   createSemanticIntentMonitor,
   type SemanticIntentMonitor,
 } from "./semantic-intent-monitor.js";
-import { TraceWriter, traceFilePath, type TraceRecord } from "./trace.js";
+import { TraceWriter, traceFilePath, type TraceRecord, type TraceSummary } from "./trace.js";
 import type { AgentRunner, RunnerRequest, RunnerResult } from "./types.js";
 
 const execFileAsync = promisify(execFile);
@@ -32,24 +32,45 @@ interface ActiveContainer {
   termination: Promise<void> | null;
 }
 
-export function containerName(agentId: string, instanceId = "default"): string {
+/** One container per execution, so one Agent can run several Tasks at once. */
+export function containerName(executionId: string, instanceId = "default"): string {
   const safeInstance = instanceId.replace(/[^a-zA-Z0-9_.-]/g, "-").slice(0, 32);
-  const safeAgent = agentId.replace(/[^a-zA-Z0-9_.-]/g, "-").slice(0, 48);
-  return "launchpad-" + safeInstance + "-" + safeAgent;
+  const safeExecution = executionId.replace(/[^a-zA-Z0-9_.-]/g, "-").slice(0, 48);
+  return "launchpad-" + safeInstance + "-" + safeExecution;
+}
+
+export interface RuntimeSessionRequest {
+  agentId: string;
+  /** Names the container and keys cancel(). */
+  executionId: string;
+  /** Mounted at /workspace. */
+  workspacePath: string;
+  /** Names the trace file: the legacy run id, or the AgentExecution id. */
+  traceId: string;
+}
+
+export interface RuntimeSession {
+  rpc: JsonRpcConnection;
+  /** The trace so far, appended as each message crosses the wire. */
+  records: TraceRecord[];
+  /** Called with each new record, in order, after `records` already holds it. */
+  onRecord(listener: (record: TraceRecord) => void): void;
+  /**
+   * Rejects when the container exits. A turn waiting on a notification (such
+   * as turn/completed) must race this, or a killed container leaves it hanging.
+   */
+  exited: Promise<never>;
 }
 
 export function buildContainerRunArgs(
-  request: RunnerRequest,
+  request: Pick<RunnerRequest, "agentId" | "executionId" | "workspacePath">,
   config: AppConfig,
 ): string[] {
-  const name = containerName(request.agentId, config.runtimeInstanceId);
+  const name = containerName(request.executionId, config.runtimeInstanceId);
   const engineName = config.containerEngine.split(/[\\/]/).at(-1)?.toLowerCase();
   return [
     "run",
     "--rm",
-    // Keep the image filesystem immutable. The task workspace and Codex home
-    // remain explicit writable mounts; HOME points at the bounded tmpfs below.
-    "--read-only",
     "--init",
     // app-server speaks JSON-RPC over stdio, so the container needs stdin.
     "--interactive",
@@ -60,14 +81,14 @@ export function buildContainerRunArgs(
     "--label",
     "io.codejam.agent-id=" + request.agentId,
     "--label",
+    "io.codejam.execution-id=" + request.executionId,
+    "--label",
     "io.codejam.instance-id=" + config.runtimeInstanceId,
     ...(engineName === "podman" ? ["--userns", "keep-id"] : []),
     "--network",
     "bridge",
     "--security-opt",
     "no-new-privileges",
-    "--tmpfs",
-    "/tmp:rw,nosuid,nodev,size=256m",
     "--cap-drop",
     "ALL",
     "--cpus",
@@ -178,8 +199,8 @@ export class ContainerCodexRunner implements AgentRunner {
     }
   }
 
-  async cancel(agentId: string): Promise<boolean> {
-    const active = this.active.get(agentId);
+  async cancel(executionId: string): Promise<boolean> {
+    const active = this.active.get(executionId);
     if (!active) return false;
 
     active.cancelled = true;
@@ -205,9 +226,98 @@ export class ContainerCodexRunner implements AgentRunner {
     return active.termination;
   }
 
+  /** The legacy single-agent turn: the guards run here, inside runTurn. */
   async run(request: RunnerRequest): Promise<RunnerResult> {
-    if (this.active.has(request.agentId)) {
-      throw new Error("Agent already has an active Runtime container");
+    const reflections = request.reflections ?? [];
+    const { result: outcome, trace, records } = await this.session(
+      {
+        agentId: request.agentId,
+        executionId: request.executionId,
+        workspacePath: request.workspacePath,
+        traceId: request.runId ?? randomUUID(),
+      },
+      async ({ rpc, records }) => {
+        const checks = buildGuardChecks(this.config, reflections);
+        const intentController =
+          this.semanticMonitor === null
+            ? undefined
+            : new IntentController(this.semanticMonitor, request.taskContext);
+        const securityPolicy = resolveTurnSecurityPolicy(this.config);
+        const outcome = await runTurn({
+          rpc: rpc,
+          prompt: request.prompt,
+          threadId: request.threadId,
+          // Resolve enforcement once: semantic turns use a verified read-only
+          // barrier; egress-only turns retain their configured guarded sandbox.
+          sandboxMode: securityPolicy.sandboxMode,
+          checks: checks,
+          ...(intentController === undefined ? {} : { intentController }),
+          trace: records,
+          // Keep the sandbox networkless as defence in depth. The pre-execution
+          // hook itself comes from approvalPolicy=untrusted; on-request alone can
+          // attempt a network command in the sandbox without asking first.
+          denyNetwork: securityPolicy.denyNetwork,
+          ...(securityPolicy.approvalPolicy === undefined
+            ? {}
+            : { approvalPolicy: securityPolicy.approvalPolicy }),
+          ...(securityPolicy.semanticEnforcement ? { semanticEnforcement: true } : {}),
+          ...(securityPolicy.effectGating ? { effectGating: true } : {}),
+          ...(this.config.hitlEnabled && request.requestHumanApproval !== undefined
+            ? { requestHumanApproval: request.requestHumanApproval }
+            : {}),
+          // Used only when no verified approval boundary is active.
+          onViolation: "interrupt",
+        });
+        // A guard interrupt leaves no agent message; that is expected, not a failure.
+        if (!outcome.output && !outcome.intervened) {
+          throw new Error("Codex completed without an agent message");
+        }
+        return outcome;
+      },
+    );
+
+    // Carry this run's findings into the Agent's later runs. Runs once, at
+    // the end of the turn, so it adds nothing to the per-event cost of the
+    // guards. `now` is passed in to keep learnFrom itself replayable.
+    const learned = this.config.reflectionGuardEnabled
+      ? learnFrom({
+          reflections: reflections,
+          findings: outcome.findings,
+          trace: records,
+          runId: request.runId ?? request.agentId,
+          prompt: request.prompt,
+          now: new Date().toISOString(),
+          // The resolved thread, not request.threadId — the first turn of a
+          // conversation starts with null and Codex assigns one. Without this
+          // nothing ever becomes `recurring` outside a test.
+          threadId: outcome.threadId,
+          ...(this.config.guardrailSensitiveMarkers.length > 0
+            ? { markers: this.config.guardrailSensitiveMarkers }
+            : {}),
+        }).reflections
+      : undefined;
+
+    return {
+      ...outcome,
+      trace,
+      ...(learned !== undefined ? { reflections: learned } : {}),
+    };
+  }
+
+  /**
+   * One disposable container for one execution: start it, trace every message
+   * in both directions, enforce the timeout and output cap, and remove it
+   * afterwards. `drive` speaks JSON-RPC to the app-server inside.
+   *
+   * Throws RunCancelledError after cancel(executionId), and otherwise the
+   * clearest error available, with the trace pointer attached (attachTrace).
+   */
+  async session<T>(
+    request: RuntimeSessionRequest,
+    drive: (session: RuntimeSession) => Promise<T>,
+  ): Promise<{ result: T; trace: TraceSummary; records: TraceRecord[] }> {
+    if (this.active.has(request.executionId)) {
+      throw new Error("Execution already has an active Runtime container");
     }
 
     const child = spawn(
@@ -226,14 +336,14 @@ export class ContainerCodexRunner implements AgentRunner {
     });
     const active: ActiveContainer = {
       child,
-      containerName: containerName(request.agentId, this.config.runtimeInstanceId),
+      containerName: containerName(request.executionId, this.config.runtimeInstanceId),
       cancelled: false,
       timedOut: false,
       outputExceeded: false,
       settled,
       termination: null,
     };
-    this.active.set(request.agentId, active);
+    this.active.set(request.executionId, active);
 
     // Byte cap and stderr tail are the runtime's baseline safety net. They
     // stay as a crash guard and should never fire during a normal run.
@@ -251,16 +361,16 @@ export class ContainerCodexRunner implements AgentRunner {
       if (stderr.length > 16_384) stderr = stderr.slice(-16_384);
     });
 
-    // Every message in either direction enters the bounded trace window before
-    // anything else looks at it. Tracing never blocks or alters the exchange.
-    const trace = new TraceWriter(
-      traceFilePath(this.config.dataDirectory, request.runId ?? randomUUID()),
-    );
+    // Every message in either direction is written to the run's trace file
+    // before anything else looks at it. Tracing never blocks or alters the
+    // exchange.
+    const trace = new TraceWriter(traceFilePath(this.config.dataDirectory, request.traceId));
     await trace.open();
 
     // The same messages go two places: to disk as the permanent record, and to
     // an in-memory list the checks read while the run is still going.
     const records: TraceRecord[] = [];
+    const listeners: Array<(record: TraceRecord) => void> = [];
     let seq = 0;
 
     const rpc = new JsonRpcConnection(
@@ -268,18 +378,33 @@ export class ContainerCodexRunner implements AgentRunner {
       (direction, message) => {
         trace.record(direction, message);
         seq += 1;
-        records.push({
+        const record: TraceRecord = {
           seq,
           at: new Date().toISOString(),
           dir: direction,
           method: methodOf(message),
           payload: message,
-        });
+        };
+        records.push(record);
+        for (const listener of listeners) {
+          try {
+            listener(record);
+          } catch {
+            // A listener must never change what reaches the trace or the agent.
+          }
+        }
       },
     );
     // A container killed mid-turn must reject in-flight requests, or the turn
     // promise hangs until the process-level timeout instead of failing cleanly.
-    child.once("close", () => rpc.fail(new Error("Runtime container exited")));
+    const exited = new Promise<never>((_resolve, reject) => {
+      child.once("close", () => {
+        const error = new Error("Runtime container exited");
+        rpc.fail(error);
+        reject(error);
+      });
+    });
+    exited.catch(() => undefined);
 
     const timeout = setTimeout(() => {
       active.timedOut = true;
@@ -288,37 +413,11 @@ export class ContainerCodexRunner implements AgentRunner {
     timeout.unref();
 
     try {
-      const reflections = request.reflections ?? [];
-      const checks = buildGuardChecks(this.config, reflections);
-      const intentController =
-        this.semanticMonitor === null
-          ? undefined
-          : new IntentController(this.semanticMonitor, request.taskContext);
-      const securityPolicy = resolveTurnSecurityPolicy(this.config);
-      const outcome = await runTurn({
-        rpc: rpc,
-        prompt: request.prompt,
-        threadId: request.threadId,
-        // Resolve enforcement once: semantic turns use a verified read-only
-        // barrier; egress-only turns retain their configured guarded sandbox.
-        sandboxMode: securityPolicy.sandboxMode,
-        checks: checks,
-        ...(intentController === undefined ? {} : { intentController }),
-        trace: records,
-        // Keep the sandbox networkless as defence in depth. The pre-execution
-        // hook itself comes from approvalPolicy=untrusted; on-request alone can
-        // attempt a network command in the sandbox without asking first.
-        denyNetwork: securityPolicy.denyNetwork,
-        ...(securityPolicy.approvalPolicy === undefined
-          ? {}
-          : { approvalPolicy: securityPolicy.approvalPolicy }),
-        ...(securityPolicy.semanticEnforcement ? { semanticEnforcement: true } : {}),
-        ...(securityPolicy.effectGating ? { effectGating: true } : {}),
-        ...(this.config.hitlEnabled && request.requestHumanApproval !== undefined
-          ? { requestHumanApproval: request.requestHumanApproval }
-          : {}),
-        // Used only when no verified approval boundary is active.
-        onViolation: "interrupt",
+      const result = await drive({
+        rpc,
+        records,
+        onRecord: (listener) => listeners.push(listener),
+        exited,
       });
 
       if (active.cancelled) throw new RunCancelledError();
@@ -328,36 +427,7 @@ export class ContainerCodexRunner implements AgentRunner {
       if (active.outputExceeded) {
         throw new Error("Codex output exceeded CODEX_MAX_OUTPUT_BYTES");
       }
-      // A guard interrupt leaves no agent message; that is expected, not a failure.
-      if (!outcome.output && !outcome.intervened) {
-        throw new Error("Codex completed without an agent message");
-      }
-      // Carry this run's findings into the Agent's later runs. Runs once, at
-      // the end of the turn, so it adds nothing to the per-event cost of the
-      // guards. `now` is passed in to keep learnFrom itself replayable.
-      const learned = this.config.reflectionGuardEnabled
-        ? learnFrom({
-            reflections: reflections,
-            findings: outcome.findings,
-            trace: records,
-            runId: request.runId ?? request.agentId,
-            prompt: request.prompt,
-            now: new Date().toISOString(),
-            // The resolved thread, not request.threadId — the first turn of a
-            // conversation starts with null and Codex assigns one. Without this
-            // nothing ever becomes `recurring` outside a test.
-            threadId: outcome.threadId,
-            ...(this.config.guardrailSensitiveMarkers.length > 0
-              ? { markers: this.config.guardrailSensitiveMarkers }
-              : {}),
-          }).reflections
-        : undefined;
-
-      return {
-        ...outcome,
-        trace: await trace.close(),
-        ...(learned !== undefined ? { reflections: learned } : {}),
-      };
+      return { result, trace: await trace.close(), records };
     } catch (error) {
       // The trace pointer travels out on the error too. A failed run is the one
       // you most want the evidence for.
@@ -365,7 +435,7 @@ export class ContainerCodexRunner implements AgentRunner {
     } finally {
       clearTimeout(timeout);
       void this.removeContainer(active);
-      this.active.delete(request.agentId);
+      this.active.delete(request.executionId);
     }
   }
 
