@@ -361,3 +361,11 @@ function actionSchemaParse(action: ProposedAction): ProposedAction {
   return proposedActionSchema.parse(action);
 }
 
+/**
+ * Composition boundary for the host application. The host supplies trusted
+ * persistence adapters; policy resolution and execution guarding stay inside
+ * this middleware rather than in the orchestrator.
+ */
+export function createSecurityMiddleware(options: SecurityMiddlewareOptions): SecurityMiddleware {
+  return new DefaultSecurityMiddleware(options);
+}

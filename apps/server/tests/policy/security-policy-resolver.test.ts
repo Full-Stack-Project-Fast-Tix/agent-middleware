@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Agent, AgentProfile, SecurityContext, SecurityPolicy } from "@launchpad/shared";
 import { loadConfig } from "../../src/config.js";
 import {
+  createSecurityMiddleware,
   DefaultSecurityMiddleware,
   type SecurityExecutionSource,
 } from "../../src/security-middleware-impl.js";
@@ -277,5 +278,21 @@ describe("DefaultSecurityMiddleware.resolvePolicy", () => {
     expect(resolved.runtime.denyNetwork).toBe(true);
     expect(resolved.runtime.approvalPolicy).toBe("untrusted");
     expect(resolved.runtime.effectGating).toBe(true);
+  });
+
+  it("exposes the same trusted-source boundary through the host factory", async () => {
+    const middleware = createSecurityMiddleware({
+      config: loadConfig({ NODE_ENV: "test" }),
+      source: source({
+        policies: [
+          policy(PLATFORM_POLICY_ID, "platform", null, { write: false }),
+        ],
+      }),
+    });
+
+    const resolved = await middleware.resolvePolicy(WORKSPACE_ID, AGENT_ID);
+
+    expect(resolved.capabilities.write).toBe(false);
+    expect(resolved.appliedPolicies).toEqual([{ policyId: PLATFORM_POLICY_ID, version: 1 }]);
   });
 });
