@@ -98,7 +98,8 @@ export class DefaultSecurityMiddleware implements SecurityMiddleware {
     const checks = this.checkFactory(facts.reflections ?? []);
     const semantic = this.options.semanticMonitor
       ? new IntentController(this.options.semanticMonitor, {
-          userPrompt: `${facts.userPrompt}\n\nAuthorized task objective: ${facts.taskObjective}`,
+          // Only the original user request is trusted task authority.
+          userPrompt: facts.userPrompt,
           agentInstructions: facts.agentInstructions,
         })
       : undefined;
@@ -114,6 +115,9 @@ class StatefulExecutionGuard implements ExecutionGuard {
   private readonly seenFindings = new Set<string>();
   private readonly pending = new Map<string, ProposedAction>();
   private readonly deniedActions = new Set<string>();
+  private semanticQueue: Promise<void> = Promise.resolve();
+  private deferredFindings: Finding[] = [];
+  private deferredSteer: string | null = null;
   private closed = false;
 
   constructor(
@@ -127,6 +131,10 @@ class StatefulExecutionGuard implements ExecutionGuard {
 
   async evaluate(action: ProposedAction): Promise<SecurityDecision> {
     this.assertOpen();
+    await this.semanticQueue;
+    const deferredFindings = this.deferredFindings.splice(0);
+    const deferredSteer = this.deferredSteer;
+    this.deferredSteer = null;
     const parsed = actionSchemaParse(action);
     const capabilityFinding = await this.capabilityFinding(parsed);
     if (capabilityFinding !== null) return this.blockAction(parsed.actionId, [capabilityFinding]);
@@ -180,7 +188,10 @@ class StatefulExecutionGuard implements ExecutionGuard {
       }
     }
 
-    const warnings = [...actionFindings, ...(semanticResult?.finding ? [semanticResult.finding] : [])];
+    const warnings = [...deferredFindings, ...actionFindings, ...(semanticResult?.finding ? [semanticResult.finding] : [])];
+    if (deferredSteer !== null) {
+      return this.decision("steer", warnings, { steer: deferredSteer });
+    }
     return warnings.length > 0 && warnings.some((finding) => finding.severity !== "info")
       ? this.decision("steer", warnings, { steer: warnings.find((finding) => finding.steer)?.steer ?? "Continue only with actions that serve the original task and respect the active policy." })
       : this.decision("allow", warnings);
@@ -202,9 +213,13 @@ class StatefulExecutionGuard implements ExecutionGuard {
       const reasoning = reasoningOf([record])[0]!;
       const cheapSignal = findings.some((finding) => finding.check === "agent-intent" && finding.seq === reasoning.seq);
       if (this.semantic.shouldReviewReasoning(cheapSignal)) {
-        const result = await this.semantic.observeReasoning(this.trace, reasoning.seq, cheapSignal);
-        if (result.finding) findings.push(result.finding);
-        if (result.decision === "steer" && result.steer) return this.decision("steer", findings, { steer: result.steer });
+        const snapshot = [...this.trace];
+        const seq = reasoning.seq;
+        this.semanticQueue = this.semanticQueue.then(async () => {
+          const result = await this.semantic!.observeReasoning(snapshot, seq, cheapSignal);
+          if (result.finding) this.deferredFindings.push(result.finding);
+          if (result.decision === "steer" && result.steer) this.deferredSteer = result.steer;
+        }).catch(() => undefined);
       }
     }
     return findings.length === 0 ? null : this.decision("allow", findings);
@@ -226,6 +241,7 @@ class StatefulExecutionGuard implements ExecutionGuard {
   async close(): Promise<void> {
     if (this.closed) return;
     this.closed = true;
+    await this.semanticQueue;
     this.pending.clear();
   }
 

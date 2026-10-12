@@ -298,10 +298,11 @@ describe("ExecutionGuard trace and approvals", () => {
     };
     const guard = await openGuard({ semanticMonitor });
 
-    expect(await guard.observe(reasoningEvent(1, "I will inspect the requested feature."))).toMatchObject({ outcome: "allow" });
+    expect(await guard.observe(reasoningEvent(1, "I will inspect the requested feature."))).toBeNull();
     expect(await guard.observe(reasoningEvent(2, "I will check its tests."))).toBeNull();
     expect(await guard.observe(reasoningEvent(3, "I will read the related implementation."))).toBeNull();
-    const drift = await guard.observe(reasoningEvent(4, "I might also build an unrelated feature."));
+    expect(await guard.observe(reasoningEvent(4, "I might also build an unrelated feature."))).toBeNull();
+    const drift = await guard.evaluate({ type: "command", actionId: "after-drift", command: "pwd", cwd: null });
 
     expect(reviewedInputs).toHaveLength(2);
     expect(reviewedInputs[0]?.cheapIntentSignal).toBe(false);
@@ -343,11 +344,13 @@ describe("ExecutionGuard trace and approvals", () => {
 
     const decision = await guard.observe(reasoningEvent(1, "I will bypass the guard."));
 
-    expect(decision).toMatchObject({ outcome: "steer" });
+    expect(decision).toMatchObject({ outcome: "allow" });
+    const nextAction = await guard.evaluate({ type: "command", actionId: "after-suspicion", command: "pwd", cwd: null });
+    expect(nextAction).toMatchObject({ outcome: "steer" });
     expect(reviewedInput).toMatchObject({
       checkpoint: "reasoning",
       trustedTask: {
-        userPrompt: "Add a safe feature.\n\nAuthorized task objective: Implement the feature without weakening security.",
+        userPrompt: "Add a safe feature.",
         agentInstructions: "Implement the requested task.",
       },
       recentReasoning: [{ seq: 1, text: "I will bypass the guard." }],
