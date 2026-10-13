@@ -1,10 +1,12 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { apiErrorSchema, type RunSnapshot } from "@launchpad/shared";
+import { apiErrorSchema, type AgentProfile, type RunSnapshot, type SecurityContext, type SecurityPolicy } from "@launchpad/shared";
 import { ApiCallError, HarnessClient } from "./harness/client.js";
-import { AGENTS } from "./harness/factories.js";
+import { AGENTS, CAPABILITIES, timestamp, WORKSPACE_ID } from "./harness/factories.js";
 import { checkRunInvariants } from "./harness/invariants.js";
-import { startStandIn, type StandIn, type StandInOptions } from "./harness/stand-in.js";
+import { PROFILE_IDS, startStandIn, type StandIn, type StandInOptions } from "./harness/stand-in.js";
 import type { RunView } from "./harness/view.js";
+import { loadConfig } from "../../src/config.js";
+import { DefaultSecurityMiddleware } from "../../src/security-middleware-impl.js";
 
 // Gate 1 of the work plan: one multi-agent Run goes through security
 // evaluation, persists its state and emits events, observed only through the
@@ -37,6 +39,95 @@ describe("secure multi-agent run", () => {
   }
 
   const executedActions = () => target.runtime.executed.map(({ action }) => action.type);
+
+  it("runs the real policy resolver and execution guards through the orchestrator", async () => {
+    const options: StandInOptions = {
+      middlewareFactory: (store, agents) => {
+        const profiles = new Map<string, AgentProfile>();
+        for (const role of Object.keys(AGENTS) as Array<keyof typeof AGENTS>) {
+          profiles.set(PROFILE_IDS[role], {
+            id: PROFILE_IDS[role],
+            workspaceId: WORKSPACE_ID,
+            name: role,
+            description: null,
+            capabilities: CAPABILITIES[role],
+            version: 1,
+            archivedAt: null,
+            createdAt: timestamp(),
+            updatedAt: timestamp(),
+          });
+        }
+        const platformPolicy: SecurityPolicy = {
+          id: "00000000-0000-0000-0000-0000000000c1",
+          workspaceId: null,
+          name: "Fixture platform ceiling",
+          scope: "platform",
+          capabilityCeiling: { write: true, shell: true, network: true, delegate: true, maxDelegationDepth: 1 },
+          rules: {},
+          rulesSchemaVersion: 1,
+          locked: true,
+          version: 1,
+          archivedAt: null,
+          createdAt: timestamp(),
+          updatedAt: timestamp(),
+        };
+        return new DefaultSecurityMiddleware({
+          config: loadConfig({ NODE_ENV: "test" }),
+          checks: () => [],
+          source: {
+            getAgent: (agentId) => agents.getAgent(agentId),
+            getAgentProfile: async (profileId) => profiles.get(profileId) ?? null,
+            listSecurityPolicies: async (workspaceId) => workspaceId === WORKSPACE_ID ? [platformPolicy] : [],
+            getTaskIdentity: async (taskId) => {
+              const task = await store.getTask(taskId);
+              const run = task ? await store.getRun(task.runId) : null;
+              return task && run ? { runId: run.id, workspaceId: run.workspaceId } : null;
+            },
+            getExecutionFacts: async (context: SecurityContext) => {
+              const execution = await store.getExecution(context.executionId);
+              const task = await store.getTask(context.taskId);
+              const run = await store.getRun(context.runId);
+              const agent = await agents.getAgent(context.agentId);
+              if (!execution || !task || !run || !agent || execution.taskId !== task.id ||
+                  execution.runId !== run.id || execution.agentId !== agent.id || task.runId !== run.id ||
+                  task.assignedAgentId !== agent.id || run.workspaceId !== context.workspaceId) return null;
+              let delegationDepth = 0;
+              let parentTaskId = task.parentTaskId;
+              const visited = new Set([task.id]);
+              while (parentTaskId !== null) {
+                if (visited.has(parentTaskId)) return null;
+                visited.add(parentTaskId);
+                const parent = await store.getTask(parentTaskId);
+                if (!parent || parent.runId !== run.id) return null;
+                delegationDepth += 1;
+                parentTaskId = parent.parentTaskId;
+              }
+              return {
+                workspaceId: run.workspaceId,
+                runId: run.id,
+                taskId: task.id,
+                agentId: agent.id,
+                userPrompt: run.userPrompt,
+                taskObjective: task.objective,
+                agentInstructions: agent.instructions,
+                delegationDepth,
+              };
+            },
+          },
+        });
+      },
+    };
+    const { client, run, recorder } = await startRun(options);
+    await recorder.waitFor((view) => view.run?.status === "completed");
+    const snapshot = await client.getSnapshot(run.id);
+    await recorder.stop();
+
+    expect(checkRunInvariants(run.id, recorder.events, snapshot)).toEqual([]);
+    expect(snapshot.run.status).toBe("completed");
+    expect(snapshot.findings.map(({ code }) => code)).toContain("capability-network-denied");
+    expect(executedActions()).toEqual(["command", "file_change"]);
+    expect(snapshot.executions.every(({ capabilities }) => capabilities !== null)).toBe(true);
+  });
 
   it("plans, delegates, blocks exfiltration, pauses for approval and completes", async () => {
     const { client, run, recorder } = await startRun();

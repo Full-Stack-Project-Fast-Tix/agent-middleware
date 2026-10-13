@@ -24,18 +24,20 @@ import { redactSensitiveText } from "./redaction/index.js";
 import type { TraceRecord } from "./trace.js";
 
 /** Trusted execution facts loaded by IDs; callers cannot supply goal or policy text. */
+export interface SecurityExecutionFacts {
+  workspaceId: string;
+  runId: string;
+  taskId: string;
+  agentId: string;
+  userPrompt: string;
+  taskObjective: string;
+  agentInstructions: string;
+  delegationDepth: number;
+  reflections?: Reflection[];
+}
+
 export interface SecurityExecutionSource extends SecurityPolicySource {
-  getExecutionFacts(context: SecurityContext): Promise<{
-    workspaceId: string;
-    runId: string;
-    taskId: string;
-    agentId: string;
-    userPrompt: string;
-    taskObjective: string;
-    agentInstructions: string;
-    delegationDepth: number;
-    reflections?: Reflection[];
-  } | null>;
+  getExecutionFacts(context: SecurityContext): Promise<SecurityExecutionFacts | null>;
   getTaskIdentity(taskId: string): Promise<{ workspaceId: string; runId: string } | null>;
 }
 
@@ -279,7 +281,7 @@ class StatefulExecutionGuard implements ExecutionGuard {
         this.source.getTaskIdentity(action.toTaskId),
       ]);
       if (
-        action.fromTaskId !== this.context.taskId || from === null || to === null ||
+        action.toTaskId !== this.context.taskId || from === null || to === null ||
         from.runId !== this.context.runId || to.runId !== this.context.runId ||
         from.workspaceId !== this.context.workspaceId || to.workspaceId !== this.context.workspaceId
       ) {

@@ -140,6 +140,7 @@ class GuardSource implements SecurityExecutionSource {
 interface GuardOptions {
   capabilities?: AgentProfile["capabilities"];
   delegationDepth?: number;
+  contextTaskId?: string;
   taskIdentities?: Map<string, { workspaceId: string; runId: string }>;
   checks?: Check[];
   semanticMonitor?: SemanticIntentMonitor;
@@ -157,7 +158,7 @@ async function openGuard(options: GuardOptions = {}) {
     checks: () => options.checks ?? [],
     ...(options.semanticMonitor === undefined ? {} : { semanticMonitor: options.semanticMonitor }),
   });
-  return middleware.openExecution(CONTEXT);
+  return middleware.openExecution({ ...CONTEXT, taskId: options.contextTaskId ?? CONTEXT.taskId });
 }
 
 function event(seq: number, method: string): TraceRecord {
@@ -304,7 +305,9 @@ describe("ExecutionGuard trace and approvals", () => {
     expect(await guard.observe(reasoningEvent(4, "I might also build an unrelated feature."))).toBeNull();
     const drift = await guard.evaluate({ type: "command", actionId: "after-drift", command: "pwd", cwd: null });
 
-    expect(reviewedInputs).toHaveLength(2);
+    // The next evaluated action also receives semantic review because the
+    // reasoning checkpoint found elevated trajectory risk.
+    expect(reviewedInputs).toHaveLength(3);
     expect(reviewedInputs[0]?.cheapIntentSignal).toBe(false);
     expect(reviewedInputs[1]?.recentReasoning).toHaveLength(4);
     expect(drift).toMatchObject({ outcome: "steer" });
@@ -328,6 +331,17 @@ describe("ExecutionGuard trace and approvals", () => {
     };
     const semanticMonitor: SemanticIntentMonitor = {
       async assess(input) {
+        if (input.checkpoint !== "reasoning") {
+          return {
+            riskScore: 0.1,
+            confidence: 0.9,
+            classification: "aligned",
+            apparentObjective: "Implement the requested task",
+            conflictsWithTask: false,
+            evidenceSeqs: [1],
+            rationale: "The proposed read remains on task.",
+          };
+        }
         reviewedInput = input;
         return {
           riskScore: 0.9,
@@ -486,6 +500,21 @@ describe("ExecutionGuard trace and approvals", () => {
 });
 
 describe("ExecutionGuard context handoffs", () => {
+  it("requires the handoff receiver to match the guarded execution", async () => {
+    const guard = await openGuard();
+
+    const decision = await guard.evaluate({
+      type: "context_handoff",
+      actionId: "handoff-wrong-receiver",
+      fromTaskId: TASK_ID,
+      toTaskId: NEXT_TASK_ID,
+      content: "A safe project summary.",
+    });
+
+    expect(decision.outcome).toBe("block");
+    expect(decision.findings.map(({ code }) => code)).toContain("context-handoff-scope-denied");
+  });
+
   it("semantically reviews handoff content and declines a high-confidence task conflict", async () => {
     let reviewedInput: import("../../src/semantic-intent-monitor.js").SemanticMonitorInput | undefined;
     const semanticMonitor: SemanticIntentMonitor = {
@@ -502,7 +531,7 @@ describe("ExecutionGuard context handoffs", () => {
         };
       },
     };
-    const guard = await openGuard({ semanticMonitor });
+    const guard = await openGuard({ contextTaskId: NEXT_TASK_ID, semanticMonitor });
 
     const decision = await guard.evaluate({
       type: "context_handoff",
@@ -541,7 +570,7 @@ describe("ExecutionGuard context handoffs", () => {
         };
       },
     };
-    const guard = await openGuard({ semanticMonitor });
+    const guard = await openGuard({ contextTaskId: NEXT_TASK_ID, semanticMonitor });
     const handoff: ProposedAction = {
       type: "context_handoff",
       actionId: "handoff-uncertain",
@@ -569,7 +598,7 @@ describe("ExecutionGuard context handoffs", () => {
         throw new Error("monitor unavailable");
       },
     };
-    const guard = await openGuard({ semanticMonitor });
+    const guard = await openGuard({ contextTaskId: NEXT_TASK_ID, semanticMonitor });
 
     const decision = await guard.evaluate({
       type: "context_handoff",
@@ -602,7 +631,7 @@ describe("ExecutionGuard context handoffs", () => {
         };
       },
     };
-    const guard = await openGuard({ semanticMonitor });
+    const guard = await openGuard({ contextTaskId: NEXT_TASK_ID, semanticMonitor });
 
     const decision = await guard.evaluate({
       type: "context_handoff",
@@ -621,6 +650,7 @@ describe("ExecutionGuard context handoffs", () => {
 
   it("rejects a handoff whose receiving task is outside the verified run", async () => {
     const guard = await openGuard({
+      contextTaskId: NEXT_TASK_ID,
       taskIdentities: new Map([
         [TASK_ID, { workspaceId: WORKSPACE_ID, runId: RUN_ID }],
         [NEXT_TASK_ID, { workspaceId: WORKSPACE_ID, runId: OTHER_RUN_ID }],
@@ -640,7 +670,7 @@ describe("ExecutionGuard context handoffs", () => {
   });
 
   it("rejects sensitive values before they can be handed to another task", async () => {
-    const guard = await openGuard();
+    const guard = await openGuard({ contextTaskId: NEXT_TASK_ID });
 
     const decision = await guard.evaluate({
       type: "context_handoff",

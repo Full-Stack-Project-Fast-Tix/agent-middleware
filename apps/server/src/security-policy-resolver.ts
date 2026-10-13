@@ -13,7 +13,8 @@ import {
 export interface SecurityPolicySource {
   getAgent(agentId: string): Promise<unknown | null>;
   getAgentProfile(profileId: string): Promise<unknown | null>;
-  listSecurityPolicies(): Promise<unknown[]>;
+  /** Active platform policies plus policies scoped to this workspace only. */
+  listSecurityPolicies(workspaceId: string): Promise<unknown[]>;
 }
 
 export interface ResolvedAgentPolicy {
@@ -48,7 +49,7 @@ export async function resolveAgentPolicy(
     throw new Error("Security policy resolution failed: agent profile is unavailable in this workspace");
   }
 
-  const policies = (await source.listSecurityPolicies()).map((entry) => securityPolicySchema.parse(entry));
+  const policies = (await source.listSecurityPolicies(workspaceId)).map((entry) => securityPolicySchema.parse(entry));
   const active = policies.filter((policy) => policy.archivedAt === null);
   const platformPolicies = active.filter((policy) => policy.scope === "platform");
   const workspacePolicies = active.filter(
