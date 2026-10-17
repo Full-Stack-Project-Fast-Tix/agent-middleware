@@ -40,7 +40,7 @@ describe("secure multi-agent run", () => {
 
   const executedActions = () => target.runtime.executed.map(({ action }) => action.type);
 
-  it("runs the real policy resolver and execution guards through the orchestrator", async () => {
+  it("routes delegation, handoff, command and file actions through one real middleware instance", async () => {
     const options: StandInOptions = {
       middlewareFactory: (store, agents) => {
         const profiles = new Map<string, AgentProfile>();
@@ -127,6 +127,9 @@ describe("secure multi-agent run", () => {
     expect(snapshot.findings.map(({ code }) => code)).toContain("capability-network-denied");
     expect(executedActions()).toEqual(["command", "file_change"]);
     expect(snapshot.executions.every(({ capabilities }) => capabilities !== null)).toBe(true);
+    expect(target.middleware.evaluations.map(({ action }) => action.type)).toEqual([
+      "delegation", "delegation", "command", "context_handoff", "command", "file_change",
+    ]);
   });
 
   it("plans, delegates, blocks exfiltration, pauses for approval and completes", async () => {

@@ -12,7 +12,11 @@ import {
 } from "@launchpad/shared";
 import type { AppConfig } from "./config.js";
 import { runChecks, reasoningOf, type Check, type Finding } from "./checks.js";
-import { classifyEgress } from "./check-sensitive-egress.js";
+import {
+  classifyEgress,
+  harvestCredentialValues,
+  sensitiveReadSeqs,
+} from "./check-sensitive-egress.js";
 import { buildGuardChecks } from "./container-codex-runner.js";
 import { IntentController, type IntentControllerResult } from "./intent-controller.js";
 import { sharedSeverityOf, type ExecutionGuard, type ResolvedPolicy, type SecurityMiddleware } from "./security-middleware.js";
@@ -48,9 +52,24 @@ export interface SecurityMiddlewareOptions {
   checks?: (reflections: Reflection[]) => Check[];
 }
 
+interface RunTaintState {
+  readonly values: Set<string>;
+  activeExecutions: number;
+  sensitiveSourceRead: boolean;
+  taintIncomplete: boolean;
+  expiresAt: number;
+  touchedAt: number;
+}
+
+const RUN_TAINT_TTL_MS = 60 * 60 * 1_000;
+const MAX_TAINTED_RUNS = 1_000;
+const MAX_TAINT_VALUES_PER_RUN = 16;
+const MAX_TAINT_VALUE_CHARS = 4_096;
+
 /** Concrete Person 1 middleware. It is constructed with trusted persistence adapters by the host. */
 export class DefaultSecurityMiddleware implements SecurityMiddleware {
   private readonly checkFactory: (reflections: Reflection[]) => Check[];
+  private readonly runTaints = new Map<string, RunTaintState>();
 
   constructor(private readonly options: SecurityMiddlewareOptions) {
     this.checkFactory = options.checks ?? ((reflections) => buildGuardChecks(options.config, reflections));
@@ -98,6 +117,8 @@ export class DefaultSecurityMiddleware implements SecurityMiddleware {
     }
 
     const checks = this.checkFactory(facts.reflections ?? []);
+    const runTaint = this.getRunTaint(context.workspaceId, context.runId);
+    runTaint.activeExecutions += 1;
     const semantic = this.options.semanticMonitor
       ? new IntentController(this.options.semanticMonitor, {
           // Only the original user request is trusted task authority.
@@ -107,7 +128,35 @@ export class DefaultSecurityMiddleware implements SecurityMiddleware {
       : undefined;
     return new StatefulExecutionGuard(
       context, policy, facts.delegationDepth, checks, this.options.source, semantic,
+      this.options.config.guardrailSensitiveMarkers, runTaint,
     );
+  }
+
+  private getRunTaint(workspaceId: string, runId: string): RunTaintState {
+    const now = Date.now();
+    for (const [key, state] of this.runTaints) {
+      if (state.activeExecutions === 0 && state.expiresAt <= now) this.runTaints.delete(key);
+    }
+
+    const key = `${workspaceId}:${runId}`;
+    let state = this.runTaints.get(key);
+    if (state === undefined) {
+      if (this.runTaints.size >= MAX_TAINTED_RUNS) {
+        throw new Error("Run security taint capacity reached");
+      }
+      state = {
+        values: new Set(),
+        activeExecutions: 0,
+        sensitiveSourceRead: false,
+        taintIncomplete: false,
+        expiresAt: now + RUN_TAINT_TTL_MS,
+        touchedAt: now,
+      };
+      this.runTaints.set(key, state);
+    }
+    state.touchedAt = now;
+    state.expiresAt = now + RUN_TAINT_TTL_MS;
+    return state;
   }
 }
 
@@ -129,6 +178,8 @@ class StatefulExecutionGuard implements ExecutionGuard {
     private readonly checks: Check[],
     private readonly source: SecurityExecutionSource,
     private readonly semantic?: IntentController,
+    private readonly sensitiveMarkers: string[] = [],
+    private readonly runTaint?: RunTaintState,
   ) {}
 
   async evaluate(action: ProposedAction): Promise<SecurityDecision> {
@@ -139,7 +190,14 @@ class StatefulExecutionGuard implements ExecutionGuard {
     this.deferredSteer = null;
     const parsed = actionSchemaParse(action);
     const capabilityFinding = await this.capabilityFinding(parsed);
-    if (capabilityFinding !== null) return this.blockAction(parsed.actionId, [capabilityFinding]);
+    if (capabilityFinding !== null) {
+      return this.blockAction(parsed.actionId, [...deferredFindings, capabilityFinding], false, deferredSteer);
+    }
+
+    const taintFinding = this.runTaintFinding(parsed);
+    if (taintFinding !== null) {
+      return this.blockAction(parsed.actionId, [...deferredFindings, taintFinding], false, deferredSteer);
+    }
 
     const records = this.recordsFor(parsed);
     const deterministic = runChecks(this.checks, [...this.trace, ...records]);
@@ -148,7 +206,12 @@ class StatefulExecutionGuard implements ExecutionGuard {
       : deterministic.filter((finding) => finding.seq >= records[0]!.seq);
     const violation = actionFindings.find((finding) => finding.severity === "violation");
     if (violation !== undefined) {
-      return this.blockAction(parsed.actionId, actionFindings, violation.code.startsWith("ungated-"));
+      return this.blockAction(
+        parsed.actionId,
+        [...deferredFindings, ...actionFindings],
+        violation.code.startsWith("ungated-"),
+        deferredSteer,
+      );
     }
 
     let semanticResult: IntentControllerResult | undefined;
@@ -177,15 +240,16 @@ class StatefulExecutionGuard implements ExecutionGuard {
       if (semanticResult.decision === "decline" || semanticResult.decision === "interrupt") {
         return this.blockAction(
           parsed.actionId,
-          [...actionFindings, ...(semanticResult.finding ? [semanticResult.finding] : [])],
+          [...deferredFindings, ...actionFindings, ...(semanticResult.finding ? [semanticResult.finding] : [])],
           semanticResult.decision === "interrupt",
-          semanticResult.steer ?? null,
+          semanticResult.steer ?? deferredSteer,
         );
       }
       if (semanticResult.decision === "human_review") {
         this.pending.set(parsed.actionId, parsed);
-        return this.decision("require_approval", [...actionFindings, ...(semanticResult.finding ? [semanticResult.finding] : [])], {
+        return this.decision("require_approval", [...deferredFindings, ...actionFindings, ...(semanticResult.finding ? [semanticResult.finding] : [])], {
           approvalReason: semanticResult.humanReviewReason ?? "semantic_uncertainty",
+          ...(deferredSteer === null ? {} : { steer: deferredSteer }),
         });
       }
     }
@@ -205,6 +269,7 @@ class StatefulExecutionGuard implements ExecutionGuard {
       throw new Error("Execution trace records must arrive in increasing sequence order");
     }
     this.trace.push(record);
+    this.collectRunTaint(record);
     const findings = runChecks(this.checks, this.trace).filter((finding) => this.markFinding(finding));
     const violation = findings.find((finding) => finding.severity === "violation");
     if (violation !== undefined) {
@@ -245,6 +310,62 @@ class StatefulExecutionGuard implements ExecutionGuard {
     this.closed = true;
     await this.semanticQueue;
     this.pending.clear();
+    if (this.runTaint !== undefined && this.runTaint.activeExecutions > 0) {
+      this.runTaint.activeExecutions -= 1;
+      this.runTaint.touchedAt = Date.now();
+      this.runTaint.expiresAt = this.runTaint.touchedAt + RUN_TAINT_TTL_MS;
+    }
+  }
+
+  private collectRunTaint(record: TraceRecord): void {
+    if (this.runTaint === undefined) return;
+    const now = Date.now();
+    this.runTaint.touchedAt = now;
+    this.runTaint.expiresAt = now + RUN_TAINT_TTL_MS;
+    if (sensitiveReadSeqs([record], this.sensitiveMarkers).length > 0) {
+      this.runTaint.sensitiveSourceRead = true;
+    }
+    try {
+      const serialized = JSON.stringify(record);
+      for (const value of harvestCredentialValues(serialized)) {
+        if (this.runTaint.values.has(value)) continue;
+        if (value.length > MAX_TAINT_VALUE_CHARS || this.runTaint.values.size >= MAX_TAINT_VALUES_PER_RUN) {
+          this.runTaint.taintIncomplete = true;
+          continue;
+        }
+        this.runTaint.values.add(value);
+      }
+    } catch {
+      // Malformed trace evidence cannot contribute taint; ordinary checks still run.
+    }
+  }
+
+  private runTaintFinding(action: ProposedAction): SecurityFindingDraft | null {
+    if (this.runTaint === undefined) return null;
+    if (action.type === "command") {
+      const egress = classifyEgress(action.command, this.runTaint.sensitiveSourceRead).egress;
+      const carriesValue = [...this.runTaint.values].some((value) => action.command.includes(value));
+      if (egress && (this.runTaint.sensitiveSourceRead || this.runTaint.taintIncomplete || carriesValue)) {
+        return policyFinding(
+          "sensitive-egress-run-taint",
+          "The outbound command is linked to sensitive material observed earlier in this run.",
+          "high",
+          true,
+        );
+      }
+    }
+    if (
+      action.type === "context_handoff" &&
+      (this.runTaint.taintIncomplete || [...this.runTaint.values].some((value) => action.content.includes(value)))
+    ) {
+      return policyFinding(
+        "context-handoff-run-taint",
+        "The handoff contains a credential observed earlier in this run.",
+        "high",
+        true,
+      );
+    }
+    return null;
   }
 
   private async capabilityFinding(action: ProposedAction): Promise<SecurityFindingDraft | null> {
