@@ -111,8 +111,12 @@ single-agent path above, which is unchanged. These parts exist:
   durable seq, and `GET /api/runs/:id/events` streams them as Server-Sent
   Events. Each frame is redacted, and clients resume or resync by seq.
 - **Security middleware interface**
-  ([`security-middleware.ts`](../apps/server/src/security-middleware.ts)): one
-  stateful guard per AgentExecution. The existing guards will sit behind it.
+  ([`security-middleware.ts`](../apps/server/src/security-middleware.ts) and
+  [`security-middleware-impl.ts`](../apps/server/src/security-middleware-impl.ts)):
+  a concrete policy resolver and one stateful guard per AgentExecution,
+  including bounded in-memory run-scoped credential taint. The middleware is
+  exercised through the orchestrator integration harness, but is not composed
+  into normal server startup.
 - **Orchestrator**
   ([`apps/server/src/orchestrator`](../apps/server/src/orchestrator/README.md)):
   - plans with a tool-less supervisor call, validates the plan, and delegates
@@ -181,11 +185,12 @@ sequenceDiagram
 ```
 
 Not built yet, by owner:
-- **P1:** the real `SecurityMiddleware`. Until it exists, `index.ts` mounts the
-  run routes only in development demo mode (`npm run dev:demo`), with a
-  simulated runtime and rules.
-- **P3:** PostgreSQL persistence, identity and RBAC, and workspace and agent
-  listing APIs.
+- **P1/P3:** normal server startup is not yet composed with the orchestrator,
+  trusted PostgreSQL security source, durable run/agent adapters, and access
+  controls. `index.ts` still mounts multi-agent routes only in development demo
+  mode (`npm run dev:demo`), with simulated runtime and rules.
+- **P3:** identity and RBAC, workspace and agent listing APIs, and production
+  tenant isolation.
 - **P4:** the app shell, Dashboard and the full Run Detail composition.
 
 Orchestration test and load results are in

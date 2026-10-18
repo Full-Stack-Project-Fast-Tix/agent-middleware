@@ -261,6 +261,26 @@ new stream and silently misses events, and upserts cannot recover a missed
 - **Timestamps:** stay UTC strings ending in `Z`, with millisecond precision.
 - **Nullable columns:** `T | null` and always present, unchanged.
 
+## 12. Run taint is process-local while interrupted runs are terminal
+
+**Decision (18 October 2026):** Keep credential taint scoped to the
+middleware process and the `(workspaceId, runId)` key; do not persist it across
+server restarts. The orchestrator's recovery contract fails an interrupted Run
+or cancels it when cancellation was requested, closes its open work, and never
+resumes its executions. Therefore no post-restart execution may continue that
+Run and depend on taint held by the previous process.
+
+If restart recovery later supports resuming a Run, that feature must first
+define how trusted taint is reconstructed. It must not assume the rolling raw
+trace is complete evidence, and it must fail closed for egress and handoffs if
+taint cannot be reconstructed. Revisit this decision alongside the recovery
+contract before implementing resumable runs.
+
+**Why:** Persisting raw credential values would expand sensitive data at rest
+without serving the current recovery behavior. Failing/cancelling interrupted
+runs prevents a new middleware process from continuing them with an empty taint
+state.
+
 ## Guidance for P3's schema
 
 These points are implementation guidance, not part of the contract:
