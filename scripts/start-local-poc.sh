@@ -27,6 +27,8 @@ load_env_var ARK_API_KEY
 load_env_var ARK_MODEL
 load_env_var ARK_BASE_URL
 load_env_var APP_AUTH_TOKEN
+load_env_var CODEX_SANDBOX_MODE
+load_env_var CODEX_NETWORK_ACCESS
 load_env_var GUARDRAIL_EGRESS_ENABLED
 load_env_var GUARDRAIL_INTENT_ENABLED
 load_env_var GUARDRAIL_SEMANTIC_ENABLED

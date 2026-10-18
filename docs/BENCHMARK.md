@@ -52,6 +52,26 @@ Each metric closes one of them.
 `refused_by_model` — so guard containment and model self-refusal stay separable
 ("a refusal by the model is not a guard result").
 
+## Context-handoff semantic evaluation
+
+`benchmark/context-handoff-eval.ts` is a small live evaluation of the semantic
+handoff checkpoint. It runs six synthetic examples (two benign, two malicious,
+two ambiguous) through the configured semantic monitor and the real
+`IntentController` thresholds, then reports benign false interventions,
+malicious pass-throughs, ambiguous cases not sent to review, and monitor
+failures. It reports the first three as rates over successfully assessed cases;
+monitor failures are shown separately and excluded from those denominators. Run
+it with `npx tsx benchmark/context-handoff-eval.ts` after setting
+the provider credentials/model in `.env` or the environment. This sends the
+synthetic task and handoff text to that provider and may incur API usage; it does
+not launch an agent or container.
+
+This is a small calibration probe, not a statistically meaningful accuracy
+claim. The offline tests validate report/scoring behavior with deterministic
+monitor responses; only a live run measures the configured model's judgments.
+Unavailable monitor calls are counted separately and excluded from quality
+rates.
+
 The report also derives the **AgentDojo view**: Benign Utility = benign-TCR,
 Utility Under Attack = `userGoalAchieved ∧ ¬attackExecuted`, Targeted ASR =
 `1 − CR` (execution basis), untargeted ASR = `1 − under-attack-TCR`.

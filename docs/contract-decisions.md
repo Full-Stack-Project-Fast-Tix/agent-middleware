@@ -63,6 +63,10 @@ sources are untrusted is security logic, and it belongs with P1.
 
 - `SecurityMiddleware.resolvePolicy(workspaceId, agentId)` returns
   `{capabilities, appliedPolicies, runtime}`.
+- For middleware-managed multi-agent executions, `runtime` always uses the
+  read-only sandbox and `untrusted` approval policy. Every consequential action
+  therefore reaches the guard before execution; capabilities determine whether
+  the guard allows it, not whether the gate is enabled.
 - P2 calls it once per execution. It configures the runtime from `runtime`,
   serialises work on `capabilities.write`, and stores `capabilities` on the
   new `AgentExecution.capabilities` field.
@@ -156,7 +160,38 @@ eligibility unchanged.
 
 **Why:** Plan Pillar A requires context passing "without bypassing the
 external middleware", and no action covered it. Results can carry secrets or
-injected instructions from one agent to the next.
+injected instructions from one agent to the next. The middleware validates
+same-run/workspace task identity and blocks detected sensitive values before
+handoff. When the semantic monitor is configured, it also reviews each handoff
+as untrusted evidence against the trusted task; a high-confidence conflict is
+declined and an uncertain conflict requires human approval. This is a best-effort
+semantic safeguard, not a guarantee that all prompt injection is detected.
+
+### 7.1 Periodic reasoning reviews check task alignment
+
+**Decision:** With semantic monitoring enabled, review the first completed
+reasoning item and then every third completed item. A deterministic intent
+warning triggers an immediate review between checkpoints. Review the bounded
+recent trajectory against the trusted task, not only the current wording. A
+moderate-confidence task conflict may steer the agent back on task; reasoning
+alone does not block an action.
+
+**Why:** Agents can drift from the user's goal without using obviously
+suspicious language. Periodic review catches this while limiting model calls;
+consequential actions and handoffs still have their own pre-action checks.
+
+### 7.2 A failed reasoning review raises scrutiny on the next action
+
+**Decision:** Reasoning review remains advisory: it may steer the agent, but does
+not block execution by itself. If semantic review of a reasoning checkpoint is
+unavailable, the next proposed action must receive semantic review even if it
+would not normally qualify; if that review is also unavailable, require human
+approval. Redacted semantic-review input is capped at 48,000 characters; an
+oversized review is treated as unavailable and follows the same approval path.
+
+**Why:** Reasoning is evidence about intent, not an action to authorize. But a
+failed review should not silently make the next action less scrutinized. The
+action remains the point where enforcement blocks or waits for approval.
 
 ## 8. Lifecycle rules
 
@@ -225,6 +260,26 @@ new stream and silently misses events, and upserts cannot recover a missed
   ids such as `00000000-0000-0000-0000-000000000001`.
 - **Timestamps:** stay UTC strings ending in `Z`, with millisecond precision.
 - **Nullable columns:** `T | null` and always present, unchanged.
+
+## 12. Run taint is process-local while interrupted runs are terminal
+
+**Decision (18 October 2026):** Keep credential taint scoped to the
+middleware process and the `(workspaceId, runId)` key; do not persist it across
+server restarts. The orchestrator's recovery contract fails an interrupted Run
+or cancels it when cancellation was requested, closes its open work, and never
+resumes its executions. Therefore no post-restart execution may continue that
+Run and depend on taint held by the previous process.
+
+If restart recovery later supports resuming a Run, that feature must first
+define how trusted taint is reconstructed. It must not assume the rolling raw
+trace is complete evidence, and it must fail closed for egress and handoffs if
+taint cannot be reconstructed. Revisit this decision alongside the recovery
+contract before implementing resumable runs.
+
+**Why:** Persisting raw credential values would expand sensitive data at rest
+without serving the current recovery behavior. Failing/cancelling interrupted
+runs prevents a new middleware process from continuing them with an empty taint
+state.
 
 ## Guidance for P3's schema
 

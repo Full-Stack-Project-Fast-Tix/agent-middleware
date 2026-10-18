@@ -435,7 +435,7 @@ function looksLikeSecretValue(value: string): boolean {
 }
 
 /** Every credential-shaped raw value in `text`. Raw values, kept local only. */
-function harvestSecrets(text: string): Set<string> {
+export function harvestCredentialValues(text: string): Set<string> {
   const found = new Set<string>();
   const add = (value: string | undefined, min: number): void => {
     if (value !== undefined && value.length >= min && found.size < 64) found.add(value);
@@ -537,7 +537,7 @@ export function sensitiveEgressCheck(options: Partial<SensitiveEgressOptions> = 
         if (output === "") continue;
         const textNamesSecret = mentionsSensitive(command.command, markers) !== null;
         if (!textNamesSecret && !looksCredentialShaped(output)) continue;
-        for (const value of harvestSecrets(output)) {
+        for (const value of harvestCredentialValues(output)) {
           if (!leakedValues.has(value)) leakedValues.set(value, command.seq);
         }
       }

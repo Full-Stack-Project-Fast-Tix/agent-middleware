@@ -12,7 +12,7 @@ export type HumanApprovalReason =
   | "high_consequence"
   | "semantic_uncertainty"
   | "semantic_unavailable";
-export type HumanApprovalActionType = "command" | "file_change";
+export type HumanApprovalActionType = "command" | "file_change" | "context_handoff";
 export type HumanApprovalDecision = "approve" | "deny";
 export type HumanApprovalOutcome = "approved" | "denied" | "timed_out" | "cancelled";
 
@@ -109,7 +109,7 @@ export interface RunTrace {
   path: string;
   events: number;
   bytes: number;
-  /** True when the size cap was reached and later events were dropped. */
+  /** True when older events were evicted to retain the newest window. */
   truncated: boolean;
 }
 

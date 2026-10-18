@@ -9,8 +9,8 @@ stored snapshot.
 | --- | --- |
 | `harness/client.ts` | `HarnessClient` validates every response (error bodies too) against `@launchpad/shared`. `RunRecorder` keeps the full event log and the view a UI would build from it. |
 | `harness/invariants.ts` | `checkRunInvariants`: rules every Run must satisfy, whatever produced it. |
-| `harness/stand-in.ts` | The real HTTP app, run routes, `RunEventHub` and `Orchestrator`, with temporary stand-ins for persistence (P3), the security middleware (P1), the supervisor's model call and the Codex runtime. |
-| `secure-run.test.ts` | Gate 1 scenarios: approve, deny, a gated delegation approved and denied while planning, cancel, and error shapes. |
+| `harness/stand-in.ts` | The real HTTP app, run routes, `RunEventHub` and `Orchestrator`, with temporary stand-ins for persistence (P3), middleware by default, the supervisor's model call and the Codex runtime. |
+| `secure-run.test.ts` | Gate 1 scenarios, including a concrete `DefaultSecurityMiddleware` scenario routing delegation, handoff, command and file actions through one instance. |
 | `invariants.test.ts` | Proves each invariant catches the violation it names. |
 
 ## What the invariants check
@@ -44,10 +44,11 @@ As each subsystem lands, have `startStandIn` use the real piece instead:
 - **P2 orchestrator:** done. The real `Orchestrator` and run routes
   (`src/run-routes.ts`) are in use. Only its planner and runtime are
   stand-ins, so the scenarios stay deterministic and need no model or Docker.
-- **P1 middleware:** pass the real `SecurityMiddleware` in place of
-  `ScriptedMiddleware`. To keep the scenarios deterministic, give it a
-  workspace policy that requires approval for file changes (and, for the
-  gated-delegation scenarios, for delegating to write-capable agents).
+- **P1 middleware:** the concrete middleware is exercised by a focused
+  orchestrator integration scenario; broader scenarios still use
+  `ScriptedMiddleware` for deterministic approval outcomes. Production startup
+  is not composed with the multi-agent adapters yet, so this test is not proof
+  of a production end-to-end deployment.
 
 The scenarios and invariants should not need to change. If one does, that is
 a contract change: record it in

@@ -53,9 +53,16 @@ type Answer = Exclude<ApprovalStatus, "pending">;
 export interface StandInOptions {
   /** Require approval before the supervisor delegates to a write-capable agent. */
   gateWriteDelegations?: boolean;
+  /** Replace the scripted security stand-in while keeping the real orchestrator and API. */
+  middlewareFactory?: (store: InMemoryRunStore, agents: AgentDirectory) => SecurityMiddleware;
 }
 
 const PLATFORM_POLICY: AppliedPolicy = { policyId: "00000000-0000-0000-0000-000000000001", version: 1 };
+export const PROFILE_IDS: Record<keyof typeof AGENTS, string> = {
+  supervisor: "00000000-0000-0000-0000-0000000000b1",
+  analyst: "00000000-0000-0000-0000-0000000000b2",
+  developer: "00000000-0000-0000-0000-0000000000b3",
+};
 
 function roleOf(agentId: string): keyof typeof AGENTS {
   const role = (Object.keys(AGENTS) as Array<keyof typeof AGENTS>).find((key) => AGENTS[key] === agentId);
@@ -237,7 +244,7 @@ class StandInAgents implements AgentDirectory {
         name: role,
         description: null,
         instructions: "",
-        profileId: "00000000-0000-0000-0000-0000000000aa",
+        profileId: PROFILE_IDS[role],
         enabled: true,
         createdByUserId: USER_ID,
         version: 1,
@@ -304,13 +311,15 @@ const AUTH_TOKEN = "harness-token";
 export async function startStandIn(options: StandInOptions = {}): Promise<StandIn> {
   const hub = new RunEventHub();
   const store = new InMemoryRunStore(hub);
+  const agents = new StandInAgents();
   const middleware = new ScriptedMiddleware(options);
+  const activeMiddleware = options.middlewareFactory?.(store, agents) ?? middleware;
   const runtime = new StandInRuntime();
   const failures: unknown[] = [];
   const orchestrator = new Orchestrator({
     store,
-    agents: new StandInAgents(),
-    middleware,
+    agents,
+    middleware: activeMiddleware,
     planner: new StandInPlanner(),
     runtime,
     workingCopies: { prepare: async (run) => `/runs/${run.id}/workspace` },

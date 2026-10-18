@@ -12,9 +12,11 @@ import type { HumanApprovalReason } from "./types.js";
 import { TrajectoryState } from "./trajectory-state.js";
 
 export const SEMANTIC_RISK_ELEVATED = 0.6;
-export const SEMANTIC_REASONING_STEER_RISK = 0.78;
+export const SEMANTIC_REASONING_STEER_RISK = SEMANTIC_RISK_ELEVATED;
 export const SEMANTIC_ACTION_BLOCK_RISK = 0.8;
 export const SEMANTIC_MIN_CONFIDENCE = 0.65;
+const MAX_SEMANTIC_INPUT_CHARS = 48_000;
+const REASONING_ITEMS_BETWEEN_REVIEWS = 3;
 
 export type IntentDecision = "allow" | "steer" | "decline" | "interrupt" | "human_review";
 
@@ -34,12 +36,27 @@ export interface IntentControllerResult {
  */
 export class IntentController {
   private readonly state: TrajectoryState;
+  private reasoningReviewUnavailable = false;
+  private reasoningItemsSinceReview = 0;
+  private hasReviewedReasoning = false;
 
   constructor(
     private readonly monitor: SemanticIntentMonitor,
     trustedTask: TrustedTaskContext,
   ) {
     this.state = new TrajectoryState(trustedTask);
+  }
+
+  shouldReviewReasoning(cheapIntentSignal: boolean): boolean {
+    this.reasoningItemsSinceReview += 1;
+    const checkpointReached =
+      !this.hasReviewedReasoning ||
+      this.reasoningItemsSinceReview >= REASONING_ITEMS_BETWEEN_REVIEWS;
+    if (!cheapIntentSignal && !checkpointReached) return false;
+
+    this.hasReviewedReasoning = true;
+    this.reasoningItemsSinceReview = 0;
+    return true;
   }
 
   async observeReasoning(
@@ -50,8 +67,9 @@ export class IntentController {
     this.state.sync(trace);
     try {
       const assessment = await this.monitor.assess(
-        redactMonitorInput(this.state.monitorInput("reasoning", cheapIntentSignal)),
+        boundedMonitorInput(this.state.monitorInput("reasoning", cheapIntentSignal)),
       );
+      this.reasoningReviewUnavailable = false;
       this.state.recordAssessment(assessment);
       const shouldSteer =
         assessment.conflictsWithTask &&
@@ -70,13 +88,18 @@ export class IntentController {
         ...(steer === undefined ? {} : { steer }),
       };
     } catch (error) {
+      // Reasoning itself is not an action to block, but do not let a failed
+      // review silently remove scrutiny from the next proposed action.
+      this.reasoningReviewUnavailable = true;
       return monitorFailure(seq, "reasoning", error, false);
     }
   }
 
   shouldReviewAction(action: SemanticProposedAction): boolean {
+    if (this.reasoningReviewUnavailable) return true;
     if (this.state.currentRisk() >= SEMANTIC_RISK_ELEVATED) return true;
     if (action.type === "command") return isHighConsequenceCommand(action.command);
+    if (action.type === "context_handoff") return true;
     return isConsequentialFileChange(action);
   }
 
@@ -92,8 +115,9 @@ export class IntentController {
 
     try {
       const assessment = await this.monitor.assess(
-        redactMonitorInput(this.state.monitorInput(action.type, false, action)),
+        boundedMonitorInput(this.state.monitorInput(action.type, false, action)),
       );
+      this.reasoningReviewUnavailable = false;
       this.state.recordAssessment(assessment);
       const block =
         assessment.conflictsWithTask &&
@@ -141,6 +165,14 @@ export class IntentController {
   }
 }
 
+function boundedMonitorInput(input: Parameters<SemanticIntentMonitor["assess"]>[0]) {
+  const redacted = redactMonitorInput(input);
+  if (JSON.stringify(redacted).length > MAX_SEMANTIC_INPUT_CHARS) {
+    throw new Error("semantic review input exceeds the configured size limit");
+  }
+  return redacted;
+}
+
 export function isHighConsequenceCommand(command: string): boolean {
   const explicitEffect =
     /\b(?:git\s+push|npm\s+publish|cargo\s+publish|gem\s+push|twine\s+upload|docker\s+push|terraform\s+apply|kubectl\s+(?:apply|delete)|helm\s+(?:install|upgrade|uninstall)|rm\s+-rf|git\s+(?:reset\s+--hard|clean\s+-[^\s]*f)|(?:drop|truncate)\s+(?:database|table|schema))\b/i;
@@ -173,7 +205,7 @@ function isConsequentialFileChange(action: Extract<SemanticProposedAction, { typ
 function findingFor(
   assessment: SemanticAssessment,
   seq: number,
-  checkpoint: "reasoning" | "command" | "file_change",
+  checkpoint: "reasoning" | "command" | "file_change" | "context_handoff",
   decision: IntentDecision,
   steer?: string,
 ): Finding {
@@ -213,7 +245,7 @@ function neutralFinding(): IntentControllerResult {
 
 function monitorFailure(
   seq: number,
-  checkpoint: "reasoning" | "command" | "file_change",
+  checkpoint: "reasoning" | "command" | "file_change" | "context_handoff",
   error: unknown,
   required: boolean,
   originalUserTask = "the delegated task",

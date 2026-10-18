@@ -613,7 +613,8 @@ want the result without paying for the first two runs.
 | `APP_AUTH_TOKEN` | empty on loopback | Shared demo bearer token. 24+ random URL-safe chars required for a non-loopback production server. Not user identity. |
 | `RUNTIME_PROVIDER` | `local-process` | `container` for one disposable runtime container per turn (set by `npm run poc`). Only the container path is traced. |
 | `CONTAINER_ENGINE` | `docker` | `docker`, `podman`, … Colima exposes the Docker CLI so it uses `docker`. |
-| `CODEX_SANDBOX_MODE` | `workspace-write` | Codex inner sandbox for unguarded turns. |
+| `CODEX_SANDBOX_MODE` | `workspace-write` | Codex inner sandbox for unguarded container turns. `danger-full-access` is capped at `workspace-write` unless network access is explicitly enabled. |
+| `CODEX_NETWORK_ACCESS` | `false` | Allow agent tool commands and built-in web search to use the network on unguarded container turns. Egress, semantic, and HITL guarded turns always deny network. This relies on Codex controls and is not host-level filtering. |
 | `CODEX_TIMEOUT_MS` | `600000` | Max duration of one turn. |
 | `CODEX_MAX_OUTPUT_BYTES` | `2097152` | Crash guard on runtime stdout. |
 | `GUARDRAIL_EGRESS_ENABLED` | `false` | Run the sensitive-egress + outbound-blob checks against every container turn. Also puts the turn on the `read-only` + `untrusted` policy with network denied, so every command except a known-safe read and every workspace write pauses at an approval the guard can inspect. |
