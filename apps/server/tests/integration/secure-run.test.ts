@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { apiErrorSchema, type AgentProfile, type RunSnapshot, type SecurityContext, type SecurityPolicy } from "@launchpad/shared";
+import { apiErrorSchema, type AgentProfile, type ProposedAction, type RunSnapshot, type SecurityContext, type SecurityPolicy } from "@launchpad/shared";
 import { ApiCallError, HarnessClient } from "./harness/client.js";
 import { AGENTS, CAPABILITIES, timestamp, WORKSPACE_ID } from "./harness/factories.js";
 import { checkRunInvariants } from "./harness/invariants.js";
@@ -41,6 +41,7 @@ describe("secure multi-agent run", () => {
   const executedActions = () => target.runtime.executed.map(({ action }) => action.type);
 
   it("routes delegation, handoff, command and file actions through one real middleware instance", async () => {
+    const evaluations: Array<{ context: SecurityContext; action: ProposedAction }> = [];
     const options: StandInOptions = {
       middlewareFactory: (store, agents) => {
         const profiles = new Map<string, AgentProfile>();
@@ -71,7 +72,7 @@ describe("secure multi-agent run", () => {
           createdAt: timestamp(),
           updatedAt: timestamp(),
         };
-        return new DefaultSecurityMiddleware({
+        const middleware = new DefaultSecurityMiddleware({
           config: loadConfig({ NODE_ENV: "test" }),
           checks: () => [],
           source: {
@@ -115,6 +116,19 @@ describe("secure multi-agent run", () => {
             },
           },
         });
+        return {
+          resolvePolicy: (workspaceId, agentId) => middleware.resolvePolicy(workspaceId, agentId),
+          openExecution: async (context) => {
+            const guard = await middleware.openExecution(context);
+            return {
+              ...guard,
+              evaluate: async (action) => {
+                evaluations.push({ context, action });
+                return guard.evaluate(action);
+              },
+            };
+          },
+        };
       },
     };
     const { client, run, recorder } = await startRun(options);
@@ -127,7 +141,7 @@ describe("secure multi-agent run", () => {
     expect(snapshot.findings.map(({ code }) => code)).toContain("capability-network-denied");
     expect(executedActions()).toEqual(["command", "file_change"]);
     expect(snapshot.executions.every(({ capabilities }) => capabilities !== null)).toBe(true);
-    expect(target.middleware.evaluations.map(({ action }) => action.type)).toEqual([
+    expect(evaluations.map(({ action }) => action.type)).toEqual([
       "delegation", "delegation", "command", "context_handoff", "command", "file_change",
     ]);
   });
