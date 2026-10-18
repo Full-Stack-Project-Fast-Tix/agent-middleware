@@ -14,6 +14,7 @@ import type { AppConfig } from "./config.js";
 import { runChecks, reasoningOf, type Check, type Finding } from "./checks.js";
 import {
   classifyEgress,
+  DEFAULT_SENSITIVE_MARKERS,
   harvestCredentialValues,
   sensitiveReadSeqs,
 } from "./check-sensitive-egress.js";
@@ -117,6 +118,9 @@ export class DefaultSecurityMiddleware implements SecurityMiddleware {
     }
 
     const checks = this.checkFactory(facts.reflections ?? []);
+    const sensitiveMarkers = this.options.config.guardrailSensitiveMarkers.length > 0
+      ? this.options.config.guardrailSensitiveMarkers
+      : DEFAULT_SENSITIVE_MARKERS;
     const runTaint = this.getRunTaint(context.workspaceId, context.runId);
     runTaint.activeExecutions += 1;
     const semantic = this.options.semanticMonitor
@@ -128,7 +132,7 @@ export class DefaultSecurityMiddleware implements SecurityMiddleware {
       : undefined;
     return new StatefulExecutionGuard(
       context, policy, facts.delegationDepth, checks, this.options.source, semantic,
-      this.options.config.guardrailSensitiveMarkers, runTaint,
+      sensitiveMarkers, runTaint,
     );
   }
 

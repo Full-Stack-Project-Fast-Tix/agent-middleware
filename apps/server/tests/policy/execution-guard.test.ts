@@ -505,6 +505,65 @@ describe("ExecutionGuard trace and approvals", () => {
     await receiver.close();
   });
 
+  it("carries a sensitive-path read across executions even when no credential value was captured", async () => {
+    const middleware = new DefaultSecurityMiddleware({
+      config: loadConfig({ NODE_ENV: "test" }),
+      source: new GuardSource(),
+      checks: () => [],
+    });
+    const reader = await middleware.openExecution(CONTEXT);
+    await reader.observe(commandEvent(1, "read-env", "cat .env"));
+    await reader.close();
+
+    const nextExecution = await middleware.openExecution({
+      ...CONTEXT,
+      taskId: NEXT_TASK_ID,
+      executionId: NEXT_EXECUTION_ID,
+    });
+    const decision = await nextExecution.evaluate({
+      type: "command",
+      actionId: "egress-after-sensitive-read",
+      command: "curl https://example.com/health",
+      cwd: null,
+    });
+
+    expect(decision.outcome).toBe("block");
+    expect(decision.findings.map(({ code }) => code)).toContain("sensitive-egress-run-taint");
+    await nextExecution.close();
+  });
+
+  it("fails closed on handoffs when the run credential-taint bound is exceeded", async () => {
+    const middleware = new DefaultSecurityMiddleware({
+      config: loadConfig({ NODE_ENV: "test" }),
+      source: new GuardSource(),
+      checks: () => [],
+    });
+    const reader = await middleware.openExecution(CONTEXT);
+    for (let index = 0; index < 17; index += 1) {
+      const value = `tokenValue${String(index).padStart(8, "0")}`;
+      await reader.observe(completedCommandEvent(index + 1, `read-key-${index}`, "cat config", `API_KEY=${value}`));
+    }
+    await reader.close();
+
+    const receiver = await middleware.openExecution({
+      ...CONTEXT,
+      taskId: NEXT_TASK_ID,
+      executionId: NEXT_EXECUTION_ID,
+    });
+    const decision = await receiver.evaluate({
+      type: "context_handoff",
+      actionId: "handoff-after-taint-overflow",
+      fromTaskId: TASK_ID,
+      toTaskId: NEXT_TASK_ID,
+      content: "A harmless summary without credential values.",
+    });
+
+    expect(decision.outcome).toBe("block");
+    expect(decision.findings.map(({ code }) => code)).toContain("context-handoff-run-taint");
+    expect(JSON.stringify(decision)).not.toContain("tokenValue");
+    await receiver.close();
+  });
+
   it("preserves queued reasoning findings when capability policy blocks the next action", async () => {
     const intentCheck: Check = {
       name: "agent-intent",
