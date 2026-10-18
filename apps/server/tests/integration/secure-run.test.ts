@@ -121,11 +121,13 @@ describe("secure multi-agent run", () => {
           openExecution: async (context) => {
             const guard = await middleware.openExecution(context);
             return {
-              ...guard,
               evaluate: async (action) => {
                 evaluations.push({ context, action });
                 return guard.evaluate(action);
               },
+              observe: (record) => guard.observe(record),
+              recordApprovalOutcome: (actionId, outcome) => guard.recordApprovalOutcome(actionId, outcome),
+              close: () => guard.close(),
             };
           },
         };
