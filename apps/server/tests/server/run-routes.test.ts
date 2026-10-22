@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
-import type { Approval, RunSnapshot } from "@launchpad/shared";
+import type { Approval, RunSnapshot, WorkspaceRole } from "@launchpad/shared";
 import type { AgentService } from "../../src/agent-service.js";
 import { createApp } from "../../src/app.js";
 import { loadConfig } from "../../src/config.js";
@@ -20,7 +20,7 @@ afterEach(async () => {
   await app.close();
 });
 
-async function start(runWorkspace: string) {
+async function start(runWorkspace: string, role: WorkspaceRole = "developer") {
   const calls: string[] = [];
   const options: RunRoutesOptions = {
     orchestrator: {
@@ -40,7 +40,7 @@ async function start(runWorkspace: string) {
     snapshot: async (runId) => (runId === RUN ? ({ run: { id: RUN, workspaceId: runWorkspace } } as RunSnapshot) : null),
     approval: async (approvalId) => (approvalId === APPROVAL ? ({ id: APPROVAL, runId: RUN } as Approval) : null),
     currentUserId: () => "00000000-0000-4000-8000-0000000000ee",
-    canAccessWorkspace: async (workspaceId) => workspaceId === MINE,
+    workspaceRole: async (workspaceId) => (workspaceId === MINE ? role : null),
     listWorkspaces: async () => [{ id: MINE, name: "Mine" }],
     listAgents: async () => [],
   };
@@ -80,6 +80,19 @@ describe("run routes", () => {
       "Approval not found",
       "Workspace not found",
     ]);
+    expect(calls).toEqual([]);
+  });
+
+  it("lets an auditor read but not act", async () => {
+    const calls = await start(MINE, "auditor");
+    expect((await inject("GET", `/api/runs/${RUN}/snapshot`)).statusCode).toBe(200);
+    expect((await inject("GET", `/api/workspaces/${MINE}/agents`)).statusCode).toBe(200);
+    const responses = [
+      await inject("POST", `/api/workspaces/${MINE}/runs`, { userPrompt: "Add validation" }),
+      await inject("POST", `/api/runs/${RUN}/cancel`),
+      await inject("POST", `/api/approvals/${APPROVAL}/resolve`, { decision: "approve" }),
+    ];
+    expect(responses.map((response) => response.statusCode)).toEqual([403, 403, 403]);
     expect(calls).toEqual([]);
   });
 

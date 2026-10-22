@@ -66,6 +66,8 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [authRequired, setAuthRequired] = useState<boolean | null>(null);
   const [authInput, setAuthInput] = useState("");
+  const [authMethod, setAuthMethod] = useState<"token" | "password">("token");
+  const [emailInput, setEmailInput] = useState("");
   const [resolvingApprovalId, setResolvingApprovalId] = useState<string | null>(null);
   const [surface, setSurface] = useState<"playground" | "admin" | "runs">(() =>
     window.location.hash.startsWith("#/runs") ? "runs" : "playground",
@@ -172,8 +174,9 @@ export default function App() {
     mountedRef.current = true;
     void api
       .auth()
-      .then(async ({ required }) => {
+      .then(async ({ required, method }) => {
         if (!mountedRef.current) return;
+        setAuthMethod(method);
         setAuthRequired(required);
         if (!required) await bootstrap();
       })
@@ -376,14 +379,14 @@ export default function App() {
     event.preventDefault();
     setBusy(true);
     setError(null);
-    setAuthToken(authInput);
     try {
+      setAuthToken(authMethod === "password" ? (await api.signIn(emailInput, authInput)).token : authInput);
       await bootstrap();
       setAuthRequired(false);
       setAuthInput("");
     } catch (reason) {
       if (reason instanceof ApiError && reason.status === 401) {
-        setError("The access token is not valid.");
+        setError(authMethod === "password" ? "The email or password is not right." : "The access token is not valid.");
       } else {
         setError(reason instanceof Error ? reason.message : String(reason));
       }
@@ -411,13 +414,30 @@ export default function App() {
         <form className="auth-card" onSubmit={unlock}>
           <div className="brand-mark">A</div>
           <span className="eyebrow">Agent Launchpad</span>
-          <h1>Enter the access token</h1>
-          <p>This shared demo token is configured by the platform operator.</p>
+          <h1>{authMethod === "password" ? "Sign in" : "Enter the access token"}</h1>
+          <p>
+            {authMethod === "password"
+              ? "Use the account your platform operator set up for you."
+              : "This shared demo token is configured by the platform operator."}
+          </p>
           {error && <div className="error-banner" role="alert">{error}</div>}
+          {authMethod === "password" && (
+            <label>
+              Email
+              <input
+                autoFocus
+                type="email"
+                value={emailInput}
+                onChange={(event) => setEmailInput(event.target.value)}
+                autoComplete="username"
+                required
+              />
+            </label>
+          )}
           <label>
-            Access token
+            {authMethod === "password" ? "Password" : "Access token"}
             <input
-              autoFocus
+              autoFocus={authMethod !== "password"}
               type="password"
               value={authInput}
               onChange={(event) => setAuthInput(event.target.value)}
@@ -426,7 +446,7 @@ export default function App() {
             />
           </label>
           <button className="button button-primary" disabled={busy || !authInput.trim()}>
-            {busy ? <Spinner /> : "Open Launchpad"}
+            {busy ? <Spinner /> : authMethod === "password" ? "Sign in" : "Open Launchpad"}
           </button>
         </form>
       </main>

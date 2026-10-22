@@ -18,6 +18,7 @@ import {
 import type { AgentService } from "./agent-service.js";
 import { registerRunEventStream, type RunEventStreamOptions } from "./run-events-route.js";
 import { registerRunRoutes, type RunRoutesOptions } from "./run-routes.js";
+import { registerSessionAuth, type Identity } from "./auth-routes.js";
 
 /**
  * Response bodies the outbound redactor runs over. Anything else — static
@@ -54,6 +55,8 @@ export interface AppExtensions {
   runEvents?: RunEventStreamOptions;
   /** Run, snapshot, cancel and approval routes for the multi-agent model. Omitted, not registered. */
   runs?: RunRoutesOptions;
+  /** Signed-in users with sessions, instead of the shared APP_AUTH_TOKEN. */
+  identity?: Identity;
 }
 
 export async function createApp(
@@ -76,8 +79,11 @@ export async function createApp(
         : false,
   });
 
+  // Signed-in sessions replace the shared token when the server has identity.
+  if (extensions.identity) registerSessionAuth(app, extensions.identity);
   app.addHook("onRequest", async (request, reply) => {
     if (
+      extensions.identity !== undefined ||
       !config.authToken ||
       !request.url.startsWith("/api/") ||
       request.url === "/api/health" ||
@@ -119,7 +125,9 @@ export async function createApp(
    * streaming. The one streaming route, the RunEvent SSE stream, bypasses
    * this hook entirely and redacts each frame itself (run-events-route.ts).
    */
-  app.addHook("onSend", async (_request, reply, payload) => {
+  app.addHook("onSend", async (request, reply, payload) => {
+    // Only the sign-in response opts out: its body is the session token it hands over.
+    if (request.routeOptions.config.redact === false) return payload;
     const contentType = String(reply.getHeader("content-type") ?? "");
     if (!REDACTED_CONTENT_TYPES.some((type) => contentType.includes(type))) {
       return payload;
@@ -145,7 +153,11 @@ export async function createApp(
     service: "volc-agent-launchpad",
   }));
 
-  app.get("/api/auth", async () => ({ required: config.authToken.length > 0 }));
+  app.get("/api/auth", async () =>
+    extensions.identity
+      ? { required: true, method: "password" }
+      : { required: config.authToken.length > 0, method: "token" },
+  );
 
   app.get("/api/system", async () => service.systemInfo());
 

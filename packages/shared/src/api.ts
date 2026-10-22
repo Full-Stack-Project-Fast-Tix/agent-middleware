@@ -3,7 +3,7 @@ import { idSchema, jsonObjectSchema, requiredTextSchema } from "./common.js";
 import { agentCapabilitiesSchema, agentSchema, capabilityCeilingSchema } from "./agents.js";
 import { approvalDecisionSchema, orchestrationModeSchema, workspaceRoleSchema } from "./enums.js";
 import { runSnapshotSchema } from "./events.js";
-import { workspaceSchema } from "./identity.js";
+import { userSchema, workspaceSchema } from "./identity.js";
 import { runSchema } from "./runs.js";
 import { approvalSchema } from "./security.js";
 
@@ -50,6 +50,38 @@ export const pageQuerySchema = z.object({
 export type PageQuery = z.infer<typeof pageQuerySchema>;
 
 /**
+ * Sign-in. `GET /api/auth` says whether requests need a bearer token, and
+ * which kind: the operator's shared token, or a session from signing in.
+ *
+ *   GET    /api/auth                    -> AuthInfo
+ *   POST   /api/auth/session  SignInRequest -> 201 Session (401 on a wrong email or password)
+ *   DELETE /api/auth/session            -> 204, ends the session in the Authorization header
+ *   GET    /api/auth/me                 -> { user }
+ */
+export const authInfoSchema = z.object({
+  required: z.boolean(),
+  method: z.enum(["token", "password"]),
+});
+export type AuthInfo = z.infer<typeof authInfoSchema>;
+
+export const signInRequestSchema = z.object({
+  email: z.email().max(320),
+  password: z.string().min(1).max(1_024),
+});
+export type SignInRequest = z.infer<typeof signInRequestSchema>;
+
+/** The token is the bearer for every later request, until expiresAt or sign-out. */
+export const sessionSchema = z.object({
+  token: z.string(),
+  user: userSchema,
+  expiresAt: z.string(),
+});
+export type SessionResponse = z.infer<typeof sessionSchema>;
+
+export const meResponseSchema = z.object({ user: userSchema });
+export type MeResponse = z.infer<typeof meResponseSchema>;
+
+/**
  * Routes for the Run -> Task -> AgentExecution model. The legacy single-agent
  * routes (`/api/agents/...`, `GET /api/runs/:id`) keep working alongside these
  * until the new model replaces them.
@@ -62,8 +94,10 @@ export type PageQuery = z.infer<typeof pageQuerySchema>;
  *   POST /api/runs/:runId/cancel                                -> 202 { run }
  *   POST /api/approvals/:approvalId/resolve  ResolveApprovalRequest -> { approval }
  *
- * The workspaces are the caller's own. The agents include disabled and
- * archived ones, so a past Run's agent can still be named.
+ * The workspaces are the caller's own. Reading needs any role in the
+ * workspace; starting or cancelling a run and answering an approval need
+ * `developer` or `security_admin` (403 for an `auditor`). The agents include
+ * disabled and archived ones, so a past Run's agent can still be named.
  *
  * Cancel is idempotent: the first call sets cancelRequestedAt and the run
  * reaches `cancelled` asynchronously, visible on the event stream. Repeating
@@ -71,6 +105,8 @@ export type PageQuery = z.infer<typeof pageQuerySchema>;
  * a run that already completed or failed answers 409.
  */
 export const apiPaths = {
+  session: () => "/api/auth/session",
+  me: () => "/api/auth/me",
   workspaces: () => "/api/workspaces",
   workspaceAgents: (workspaceId: string) => `/api/workspaces/${encodeURIComponent(workspaceId)}/agents`,
   runs: (workspaceId: string) => `/api/workspaces/${encodeURIComponent(workspaceId)}/runs`,

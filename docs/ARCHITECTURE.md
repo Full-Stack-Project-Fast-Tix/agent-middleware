@@ -184,13 +184,22 @@ sequenceDiagram
     S-->>Dev: run.updated (SSE)
 ```
 
+Multi-user mode is `APP_AUTH_MODE=password`, with `DATABASE_URL` and
+`RUNTIME_PROVIDER=container`. Users sign in with accounts kept in Postgres
+instead of the shared token, and `index.ts` composes the orchestrator with
+`PostgresRunStore`, `PostgresAgentDirectory`, P1's middleware on
+`PostgresSecuritySource`, the model planner and Codex containers
+([`postgres-runs.ts`](../apps/server/src/postgres-runs.ts)). In a workspace,
+any role may read; `developer` and `security_admin` may also start and cancel
+Runs and answer approvals; `auditor` only reads. `npm run db:admin -w
+@launchpad/server` adds users, workspaces (with the four standard agents and
+the platform baseline policy) and members. The default `token` mode is
+unchanged, and `npm run dev:demo` still runs the simulated demo.
+
 Not built yet, by owner:
-- **P1/P3:** normal server startup is not yet composed with the orchestrator,
-  trusted PostgreSQL security source, durable run/agent adapters, and access
-  controls. `index.ts` still mounts multi-agent routes only in development demo
-  mode (`npm run dev:demo`), with simulated runtime and rules.
-- **P3:** identity and RBAC, workspace and agent listing APIs, and production
-  tenant isolation.
+- **P3:** an admin UI for users, workspaces and members, limits on sign-in
+  attempts, and tenant isolation beyond workspace roles (every workspace's
+  Runs share one host).
 - **P4:** the app shell, Dashboard and the full Run Detail composition.
 
 Orchestration test and load results are in

@@ -13,7 +13,8 @@
     "test:fuzz": "vitest run tests/orchestrator/fuzz.test.ts",
     "measure:orchestration": "tsx --conditions=development scripts/measure-orchestration.ts",
     "start": "node dist/index.js",
-    "db:migrate": "tsx --conditions=development src/db/migrate-cli.ts"
+    "db:migrate": "tsx --conditions=development src/db/migrate-cli.ts",
+    "db:admin": "tsx --conditions=development src/db/admin-cli.ts"
   },
   "dependencies": {
     "@fastify/cors": "^11.1.0",
