@@ -18,11 +18,12 @@ export const STANDARD_AGENTS = {
     capabilities: { write: false, shell: true, network: false, delegate: false, maxDelegationDepth: 0 },
   },
   developer: {
-    description: "Implements changes. Edits need approval.",
+    description: "Implements changes and runs the tests. Edits need approval.",
     capabilities: { write: true, shell: true, network: false, delegate: false, maxDelegationDepth: 0 },
   },
   reviewer: {
-    description: "Runs the tests and reviews the change. Read-only.",
+    // P1 counts any command outside the known read-only set (npm test included) as a write.
+    description: "Reads and reviews the change. Read-only: cannot run tests or build commands.",
     capabilities: { write: false, shell: true, network: false, delegate: false, maxDelegationDepth: 0 },
   },
 } satisfies Record<string, { description: string; capabilities: AgentCapabilities }>;
