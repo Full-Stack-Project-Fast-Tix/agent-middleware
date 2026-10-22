@@ -14,6 +14,8 @@ export interface RunEventStreamOptions {
    * repository and the caller's workspace role.
    */
   canReadRun: (runId: string, request: FastifyRequest) => boolean | Promise<boolean>;
+  /** The Run's last committed seq (RunSnapshot.lastEventSeq). Without it, a restarted server can only resync clients. */
+  lastEventSeq?: (runId: string) => number | Promise<number>;
   /** Comment sent on idle connections so proxies do not close them. */
   heartbeatMs?: number;
   /**
@@ -54,6 +56,8 @@ export function registerRunEventStream(app: FastifyInstance, options: RunEventSt
     if (!(await options.canReadRun(id, request))) {
       throw new HttpError(404, "Run not found");
     }
+    // Only needed when this process holds nothing for the Run.
+    const durableSeq = options.hub.has(id) ? 0 : ((await options.lastEventSeq?.(id)) ?? 0);
 
     reply.hijack();
     const response = reply.raw;
@@ -78,7 +82,7 @@ export function registerRunEventStream(app: FastifyInstance, options: RunEventSt
       onResync: () => {
         if (!response.writableEnded) response.end(encodeResyncFrame());
       },
-    });
+    }, durableSeq);
     if (subscription.status === "resync") {
       response.end(encodeResyncFrame());
       return reply;

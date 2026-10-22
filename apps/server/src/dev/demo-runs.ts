@@ -1,8 +1,9 @@
 // DEVELOPMENT ONLY. A multi-agent Run you can watch in the browser before the
-// real security middleware (P1) and persistence (P3) exist.
+// real security middleware (P1) exists.
 //
 // The Orchestrator, the run routes, RunEventHub and the SSE stream are the real
-// ones. Three pieces are simulated:
+// ones, and so is the store when DATABASE_URL is set (index.ts passes a
+// PostgresRunStore; otherwise runs live in memory). Three pieces are simulated:
 //
 //   DemoMiddleware  a few fixed rules instead of policy, guards and semantic review
 //   DemoPlanner     a fixed three-step plan instead of a model call
@@ -14,6 +15,7 @@
 // production.
 
 import type { FastifyInstance } from "fastify";
+import type pg from "pg";
 import { z } from "zod";
 import type {
   Agent,
@@ -23,14 +25,16 @@ import type {
   FileChangeAction,
   OrchestrationMode,
   ProposedAction,
+  RunSnapshot,
   SecurityDecision,
 } from "@launchpad/shared";
+import { ensureRow } from "../db/rows.js";
 import { HttpError } from "../errors.js";
 import { InMemoryRunStore } from "../orchestrator/in-memory-run-store.js";
 import { Orchestrator } from "../orchestrator/orchestrator.js";
 import type { SupervisorPlan } from "../orchestrator/plan.js";
 import type { PlanRequest, Planner } from "../orchestrator/planner.js";
-import type { AgentDirectory, ExecutionOutcome, ExecutionRequest, ExecutionRuntime } from "../orchestrator/ports.js";
+import type { AgentDirectory, ExecutionOutcome, ExecutionRequest, ExecutionRuntime, RunStore } from "../orchestrator/ports.js";
 import type { RunEventHub } from "../run-events.js";
 import type { RunRoutesOptions } from "../run-routes.js";
 import type { ExecutionGuard, ResolvedPolicy, SecurityMiddleware } from "../security-middleware.js";
@@ -69,22 +73,39 @@ const roleOf = (agentId: string): Role => {
 };
 
 const DEMO_POLICY: AppliedPolicy = { policyId: "0d3e0000-0000-4000-8000-0000000000b1", version: 1 };
+const DEMO_PROFILE_ID = "0d3e0000-0000-4000-8000-0000000000c1";
+const SEEDED_AT = "2026-10-01T00:00:00.000Z";
+
+const DEMO_AGENTS: Agent[] = (Object.keys(ROLES) as Role[]).map((role) => ({
+  id: ROLES[role].id,
+  workspaceId: DEMO_WORKSPACE.id,
+  name: role[0]!.toUpperCase() + role.slice(1),
+  description: ROLES[role].description,
+  instructions: "",
+  profileId: DEMO_PROFILE_ID,
+  enabled: true,
+  createdByUserId: DEMO_USER_ID,
+  version: 1,
+  archivedAt: null,
+  createdAt: SEEDED_AT,
+  updatedAt: SEEDED_AT,
+}));
+
+/**
+ * The rows a PostgresRunStore's foreign keys need: the demo user, workspace,
+ * one profile and the four agents. Safe to run on every start.
+ */
+export async function seedDemo(pool: pg.Pool): Promise<void> {
+  const stamps = { createdAt: SEEDED_AT, updatedAt: SEEDED_AT };
+  await ensureRow(pool, "users", { id: DEMO_USER_ID, email: "demo@launchpad.invalid", name: "Demo user", authSubject: "demo:runs", ...stamps });
+  await ensureRow(pool, "workspaces", { ...DEMO_WORKSPACE, createdByUserId: DEMO_USER_ID, ...stamps });
+  // Capabilities come from DemoMiddleware, so the profile's stay at their defaults.
+  await ensureRow(pool, "agent_profiles", { id: DEMO_PROFILE_ID, workspaceId: DEMO_WORKSPACE.id, name: "Demo", version: 1, ...stamps });
+  for (const agent of DEMO_AGENTS) await ensureRow(pool, "agents", agent);
+}
 
 class DemoDirectory implements AgentDirectory {
-  private readonly agents: Agent[] = (Object.keys(ROLES) as Role[]).map((role) => ({
-    id: ROLES[role].id,
-    workspaceId: DEMO_WORKSPACE.id,
-    name: role[0]!.toUpperCase() + role.slice(1),
-    description: ROLES[role].description,
-    instructions: "",
-    profileId: "0d3e0000-0000-4000-8000-0000000000c1",
-    enabled: true,
-    createdByUserId: DEMO_USER_ID,
-    version: 1,
-    archivedAt: null,
-    createdAt: "2026-10-01T00:00:00.000Z",
-    updatedAt: "2026-10-01T00:00:00.000Z",
-  }));
+  private readonly agents = DEMO_AGENTS;
 
   async getAgent(agentId: string): Promise<Agent | null> {
     return this.agents.find((agent) => agent.id === agentId) ?? null;
@@ -261,9 +282,12 @@ function pause(ms: number, signal?: AbortSignal): Promise<void> {
   });
 }
 
-export interface DemoRuns {
+/** The RunStore port plus the whole-Run read the snapshot route serves. */
+export type DemoStore = RunStore & { snapshot(runId: string): RunSnapshot | null | Promise<RunSnapshot | null> };
+
+export interface DemoRuns<S extends DemoStore = InMemoryRunStore> {
   orchestrator: Orchestrator;
-  store: InMemoryRunStore;
+  store: S;
   /** For createApp's `runs` extension. */
   routes: RunRoutesOptions;
   /** Read-only workspace and agent lists the New Run page needs. */
@@ -274,9 +298,11 @@ export interface DemoRuns {
  * `pauseScale` stretches the simulated thinking time between steps: 1 for
  * watching in the browser, 0 to measure the orchestration itself.
  */
-export function createDemoRuns(hub: RunEventHub, options: { pauseScale?: number } = {}): DemoRuns {
+export function createDemoRuns(hub: RunEventHub, options?: { pauseScale?: number }): DemoRuns;
+export function createDemoRuns<S extends DemoStore>(hub: RunEventHub, options: { pauseScale?: number; store: S }): DemoRuns<S>;
+export function createDemoRuns(hub: RunEventHub, options: { pauseScale?: number; store?: DemoStore } = {}): DemoRuns<DemoStore> {
   const pauseScale = Math.max(0, options.pauseScale ?? 1);
-  const store = new InMemoryRunStore(hub);
+  const store = options.store ?? new InMemoryRunStore(hub);
   const directory = new DemoDirectory();
   const orchestrator = new Orchestrator({
     store,
