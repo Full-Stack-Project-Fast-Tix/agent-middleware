@@ -1,6 +1,5 @@
-import { z } from "zod";
 import {
-  agentSchema,
+  agentsResponseSchema,
   apiPaths,
   approvalResponseSchema,
   followRunEvents,
@@ -12,6 +11,8 @@ import {
   type Run,
   type RunEvent,
   type RunSnapshot,
+  type WorkspaceSummary,
+  workspacesResponseSchema,
 } from "@launchpad/shared";
 import { authHeaders, request } from "../api";
 
@@ -19,22 +20,14 @@ import { authHeaders, request } from "../api";
 // against the shared schema, so a server that drifts from the contract fails
 // here, with a clear message, rather than as an undefined somewhere in the UI.
 
-export interface WorkspaceSummary {
-  id: string;
-  name: string;
-}
-
-// Workspace and agent listings are not in the shared contract yet (P3 owns
-// them). These match what the RUNS_DEMO server offers.
-const workspacesSchema = z.object({ workspaces: z.array(z.object({ id: z.string(), name: z.string() })) });
-const agentsSchema = z.object({ agents: z.array(agentSchema) });
+export type { WorkspaceSummary };
 
 export const runsApi = {
   workspaces: async (): Promise<WorkspaceSummary[]> =>
-    workspacesSchema.parse(await request("/api/workspaces")).workspaces,
+    workspacesResponseSchema.parse(await request(apiPaths.workspaces())).workspaces,
 
   agents: async (workspaceId: string): Promise<Agent[]> =>
-    agentsSchema.parse(await request(`/api/workspaces/${encodeURIComponent(workspaceId)}/agents`)).agents,
+    agentsResponseSchema.parse(await request(apiPaths.workspaceAgents(workspaceId))).agents,
 
   createRun: async (workspaceId: string, body: CreateRunRequest): Promise<Run> =>
     runResponseSchema.parse(await request(apiPaths.runs(workspaceId), { method: "POST", body: JSON.stringify(body) })).run,

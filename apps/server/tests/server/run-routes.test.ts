@@ -41,6 +41,8 @@ async function start(runWorkspace: string) {
     approval: async (approvalId) => (approvalId === APPROVAL ? ({ id: APPROVAL, runId: RUN } as Approval) : null),
     currentUserId: () => "00000000-0000-4000-8000-0000000000ee",
     canAccessWorkspace: async (workspaceId) => workspaceId === MINE,
+    listWorkspaces: async () => [{ id: MINE, name: "Mine" }],
+    listAgents: async () => [],
   };
   app = await createApp(loadConfig({ NODE_ENV: "test" }), {} as AgentService, { runs: options });
   return calls;
@@ -57,6 +59,8 @@ describe("run routes", () => {
     expect((await inject("POST", `/api/runs/${RUN}/cancel`)).statusCode).toBe(202);
     expect((await inject("POST", `/api/approvals/${APPROVAL}/resolve`, { decision: "approve" })).statusCode).toBe(200);
     expect(calls).toEqual(["createRun", "cancel", "resolveApproval"]);
+    expect((await inject("GET", "/api/workspaces")).json()).toEqual({ workspaces: [{ id: MINE, name: "Mine" }] });
+    expect((await inject("GET", `/api/workspaces/${MINE}/agents`)).json()).toEqual({ agents: [] });
   });
 
   it("answers 404 for another workspace's runs and approvals, without acting on them", async () => {
@@ -66,13 +70,15 @@ describe("run routes", () => {
       await inject("GET", `/api/runs/${RUN}/snapshot`),
       await inject("POST", `/api/runs/${RUN}/cancel`),
       await inject("POST", `/api/approvals/${APPROVAL}/resolve`, { decision: "approve" }),
+      await inject("GET", `/api/workspaces/${THEIRS}/agents`),
     ];
-    expect(responses.map((response) => response.statusCode)).toEqual([404, 404, 404, 404]);
+    expect(responses.map((response) => response.statusCode)).toEqual([404, 404, 404, 404, 404]);
     expect(responses.map((response) => response.json().error)).toEqual([
       "Workspace not found",
       "Run not found",
       "Run not found",
       "Approval not found",
+      "Workspace not found",
     ]);
     expect(calls).toEqual([]);
   });

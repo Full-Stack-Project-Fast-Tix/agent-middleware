@@ -14,9 +14,7 @@
 // middleware is acceptable here, and why index.ts refuses this mode in
 // production.
 
-import type { FastifyInstance } from "fastify";
 import type pg from "pg";
-import { z } from "zod";
 import type {
   Agent,
   AgentCapabilities,
@@ -29,7 +27,6 @@ import type {
   SecurityDecision,
 } from "@launchpad/shared";
 import { ensureRow } from "../db/rows.js";
-import { HttpError } from "../errors.js";
 import { InMemoryRunStore } from "../orchestrator/in-memory-run-store.js";
 import { Orchestrator } from "../orchestrator/orchestrator.js";
 import type { SupervisorPlan } from "../orchestrator/plan.js";
@@ -290,8 +287,6 @@ export interface DemoRuns<S extends DemoStore = InMemoryRunStore> {
   store: S;
   /** For createApp's `runs` extension. */
   routes: RunRoutesOptions;
-  /** Read-only workspace and agent lists the New Run page needs. */
-  registerDirectoryRoutes(app: FastifyInstance): void;
 }
 
 /**
@@ -322,15 +317,8 @@ export function createDemoRuns(hub: RunEventHub, options: { pauseScale?: number;
       approval: (approvalId) => store.getApproval(approvalId),
       currentUserId: () => DEMO_USER_ID,
       canAccessWorkspace: async (workspaceId) => workspaceId === DEMO_WORKSPACE.id,
-    },
-    registerDirectoryRoutes(app) {
-      // Proposed shapes for P3's real routes; not yet in packages/shared/src/api.ts.
-      app.get("/api/workspaces", async () => ({ workspaces: [DEMO_WORKSPACE] }));
-      app.get("/api/workspaces/:workspaceId/agents", async (request) => {
-        const { workspaceId } = z.object({ workspaceId: z.guid() }).parse(request.params);
-        if (workspaceId !== DEMO_WORKSPACE.id) throw new HttpError(404, "Workspace not found");
-        return { agents: await directory.listAgents(workspaceId) };
-      });
+      listWorkspaces: async () => [DEMO_WORKSPACE],
+      listAgents: (workspaceId) => directory.listAgents(workspaceId),
     },
   };
 }

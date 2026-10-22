@@ -62,7 +62,6 @@ const app = await createApp(config, service, {
 });
 let stopApprovalSweep = () => {};
 if (demoRuns !== null) {
-  demoRuns.registerDirectoryRoutes(app);
   app.log.warn("RUNS_DEMO is on: multi-agent runs use a simulated runtime and security middleware.");
   const recovered = await demoRuns.orchestrator.recoverInterruptedRuns();
   if (recovered > 0) app.log.warn({ recovered }, "Closed runs the previous process left active");
