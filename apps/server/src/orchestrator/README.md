@@ -112,23 +112,10 @@ Changing any of these is a contract change: record it in
 
 ## Wiring it into the server
 
-The routes, runtime, working copies and sweep are all built. `index.ts` does
-not start them yet, because there is no real `SecurityMiddleware` until P1's
-lands. Once it does:
-
-```ts
-const orchestrator = new Orchestrator({
-  store,                          // P3's repositories (InMemoryRunStore until then)
-  agents,                         // P3's agent repository
-  middleware,                     // P1's SecurityMiddleware
-  planner: createModelPlanner(config),
-  runtime: new CodexExecutionRuntime(new ContainerCodexRunner(config)),
-  workingCopies: new DirectoryWorkingCopies({ root: path.join(config.dataDirectory, "runs"), sources }),
-});
-await orchestrator.recoverInterruptedRuns();   // before accepting requests
-startApprovalSweep(orchestrator);
-// createApp(..., { runEvents, runs: { orchestrator, snapshot, approval, currentUserId, canAccessWorkspace } })
-```
+`../postgres-runs.ts` builds the orchestrator with P3's PostgreSQL
+repositories, P1's middleware, the model planner, the Codex runtime and
+per-Run working copies. `index.ts` uses it with `APP_AUTH_MODE=password`,
+recovers interrupted Runs before it listens, and starts the approval sweep.
 
 ## Still to do
 

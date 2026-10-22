@@ -65,6 +65,11 @@ const envSchema = z.object({
     .regex(/^[A-Za-z0-9._~-]*$/, "APP_AUTH_TOKEN must use URL-safe characters")
     .optional(),
   /**
+   * "token": everyone shares APP_AUTH_TOKEN. "password": users sign in with
+   * accounts kept in Postgres (DATABASE_URL), and multi-agent Runs are on.
+   */
+  APP_AUTH_MODE: z.enum(["token", "password"]).default("token"),
+  /**
    * Which model service Codex talks to.
    *
    * "ark" is the legacy BytePlus ModelArk compatibility path, and needs the adapter in
@@ -175,7 +180,7 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env) {
   const env = envSchema.parse(environment);
   const authToken = env.APP_AUTH_TOKEN?.trim() ?? "";
   const loopbackHosts = new Set(["127.0.0.1", "::1", "localhost"]);
-  if (env.NODE_ENV === "production" && !loopbackHosts.has(env.HOST)) {
+  if (env.NODE_ENV === "production" && !loopbackHosts.has(env.HOST) && env.APP_AUTH_MODE === "token") {
     if (authToken.length < 24 || authToken.startsWith("replace-")) {
       throw new Error(
         "APP_AUTH_TOKEN must contain at least 24 characters for a non-loopback production server",
@@ -212,6 +217,7 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env) {
     containerUser: env.CONTAINER_USER?.trim() || defaultContainerUser,
     runtimeInstanceId: env.RUNTIME_INSTANCE_ID,
     authToken,
+    authMode: env.APP_AUTH_MODE,
     modelProvider: env.MODEL_PROVIDER,
     // The key, the model name, and the environment variable Codex reads the
     // key from, all resolved for whichever provider is selected. Everything

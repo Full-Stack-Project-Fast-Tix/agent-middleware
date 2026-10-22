@@ -29,9 +29,11 @@ later runs, so the same mistake is caught faster the second time — and the rul
 that stops it was written by the guard, not by the model.
 
 > [!WARNING]
-> This is a single-user proof of concept. It has no user identity, no RBAC, no
-> tenant isolation, and no hardened sandbox. Do not point it at production data
-> or real credentials. See [SECURITY.md](SECURITY.md).
+> This is a proof of concept. By default it is single-user with a shared token;
+> `APP_AUTH_MODE=password` adds user accounts and workspace roles (see
+> [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)). It has no tenant isolation and
+> no hardened sandbox. Do not point it at production data or real credentials.
+> See [SECURITY.md](SECURITY.md).
 
 ---
 
@@ -800,7 +802,8 @@ false negative puts a live credential on a projector.
 
 ### Platform limitations
 
-Shared demo token; no user identity, authorization, RBAC, or tenant isolation;
+Shared demo token by default (`APP_AUTH_MODE=password` adds user accounts and
+workspace roles, with no limit on sign-in attempts yet); no tenant isolation;
 no CSRF protection; no per-Agent container boundary in ECS mode; ordinary local
 containers rather than hardened multi-tenant sandboxes; broad outbound network
 access on unguarded turns; the model key is available to the server and the

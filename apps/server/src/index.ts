@@ -2,11 +2,14 @@ import path from "node:path";
 import { AgentService } from "./agent-service.js";
 import { startArkProxy, type ArkProxy } from "./ark-proxy.js";
 import { createApp } from "./app.js";
+import { signedInUser } from "./auth-routes.js";
 import { createDemoRuns, seedDemo, type DemoRuns, type DemoStore } from "./dev/demo-runs.js";
 import { loadConfig, writeCodexConfig } from "./config.js";
 import { openDatabase } from "./db/pool.js";
+import { PostgresIdentity } from "./db/postgres-identity.js";
 import { PostgresRunStore } from "./db/postgres-run-store.js";
 import { startApprovalSweep } from "./orchestrator/orchestrator.js";
+import { createPostgresRuns } from "./postgres-runs.js";
 import { RunEventHub } from "./run-events.js";
 import { createRunner } from "./runner-factory.js";
 import { JsonStore } from "./store.js";
@@ -41,31 +44,48 @@ if (runsDemo && config.nodeEnv === "production") {
   throw new Error("RUNS_DEMO uses simulated security decisions and must not run in production.");
 }
 
-// With DATABASE_URL set, the schema is migrated here and Runs are kept in Postgres.
+// With DATABASE_URL set, the schema is migrated here and Runs are kept in
+// Postgres. With APP_AUTH_MODE=password as well, users sign in (db:admin adds
+// them) and Runs are real: P1's middleware, the model planner and Codex containers.
+if (config.authMode === "password" && (runsDemo || !process.env.DATABASE_URL)) {
+  throw new Error("APP_AUTH_MODE=password needs DATABASE_URL, and does not combine with RUNS_DEMO.");
+}
 const database = process.env.DATABASE_URL ? await openDatabase({ connectionString: process.env.DATABASE_URL }) : null;
+const identity = config.authMode === "password" ? new PostgresIdentity(database!) : null;
 
-let demoRuns: DemoRuns<DemoStore> | null = null;
+let runs: Pick<DemoRuns<DemoStore>, "orchestrator" | "store" | "routes"> | null = null;
 if (runsDemo && database !== null) {
   await seedDemo(database);
-  demoRuns = createDemoRuns(runEvents, { store: new PostgresRunStore(database, runEvents) });
+  runs = createDemoRuns(runEvents, { store: new PostgresRunStore(database, runEvents) });
 } else if (runsDemo) {
-  demoRuns = createDemoRuns(runEvents);
+  runs = createDemoRuns(runEvents);
+} else if (identity !== null && config.runtimeProvider === "container") {
+  runs = createPostgresRuns(config, database!, runEvents, identity);
 }
 
 const app = await createApp(config, service, {
   runEvents: {
     hub: runEvents,
-    canReadRun: async (runId) => (demoRuns === null ? runEvents.has(runId) : (await demoRuns.store.getRun(runId)) !== null),
-    lastEventSeq: async (runId) => (await demoRuns?.store.snapshot(runId))?.lastEventSeq ?? 0,
+    canReadRun: async (runId, request) => {
+      if (runs === null) return runEvents.has(runId);
+      const run = await runs.store.getRun(runId);
+      if (run === null || identity === null) return run !== null;
+      return (await identity.workspaceRole(run.workspaceId, signedInUser(request).id)) !== null;
+    },
+    lastEventSeq: async (runId) => (await runs?.store.snapshot(runId))?.lastEventSeq ?? 0,
   },
-  ...(demoRuns === null ? {} : { runs: demoRuns.routes }),
+  ...(runs === null ? {} : { runs: runs.routes }),
+  ...(identity === null ? {} : { identity }),
 });
+if (identity !== null && runs === null) {
+  app.log.warn("Multi-agent runs need RUNTIME_PROVIDER=container, so their routes are off.");
+}
 let stopApprovalSweep = () => {};
-if (demoRuns !== null) {
-  app.log.warn("RUNS_DEMO is on: multi-agent runs use a simulated runtime and security middleware.");
-  const recovered = await demoRuns.orchestrator.recoverInterruptedRuns();
+if (runs !== null) {
+  if (runsDemo) app.log.warn("RUNS_DEMO is on: multi-agent runs use a simulated runtime and security middleware.");
+  const recovered = await runs.orchestrator.recoverInterruptedRuns();
   if (recovered > 0) app.log.warn({ recovered }, "Closed runs the previous process left active");
-  stopApprovalSweep = startApprovalSweep(demoRuns.orchestrator, {
+  stopApprovalSweep = startApprovalSweep(runs.orchestrator, {
     onError: (error) => app.log.error({ err: error }, "Approval timeout sweep failed"),
   });
 }
@@ -91,5 +111,5 @@ process.on("SIGINT", () => void shutdown("SIGINT"));
 
 // The demo has simulated security and usually no access token: keep it on this
 // machine unless HOST was set on purpose.
-const host = demoRuns !== null && process.env.HOST === undefined ? "127.0.0.1" : config.host;
+const host = runsDemo && process.env.HOST === undefined ? "127.0.0.1" : config.host;
 await app.listen({ host, port: config.port });

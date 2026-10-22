@@ -26,6 +26,7 @@ import type {
   RunSnapshot,
   SecurityDecision,
 } from "@launchpad/shared";
+import { STANDARD_AGENTS } from "../db/admin.js";
 import { ensureRow } from "../db/rows.js";
 import { InMemoryRunStore } from "../orchestrator/in-memory-run-store.js";
 import { Orchestrator } from "../orchestrator/orchestrator.js";
@@ -40,26 +41,10 @@ export const DEMO_WORKSPACE = { id: "0d3e0000-0000-4000-8000-000000000001", name
 export const DEMO_USER_ID = "0d3e0000-0000-4000-8000-0000000000aa";
 
 const ROLES = {
-  supervisor: {
-    id: "0d3e0000-0000-4000-8000-000000000011",
-    description: "Plans the work and delegates it. Cannot edit files.",
-    capabilities: { write: false, shell: false, network: false, delegate: true, maxDelegationDepth: 1 },
-  },
-  analyst: {
-    id: "0d3e0000-0000-4000-8000-000000000012",
-    description: "Reads the code and reports findings. Read-only.",
-    capabilities: { write: false, shell: true, network: false, delegate: false, maxDelegationDepth: 0 },
-  },
-  developer: {
-    id: "0d3e0000-0000-4000-8000-000000000013",
-    description: "Implements changes. Edits need approval.",
-    capabilities: { write: true, shell: true, network: false, delegate: false, maxDelegationDepth: 0 },
-  },
-  reviewer: {
-    id: "0d3e0000-0000-4000-8000-000000000014",
-    description: "Runs the tests and reviews the change. Read-only.",
-    capabilities: { write: false, shell: true, network: false, delegate: false, maxDelegationDepth: 0 },
-  },
+  supervisor: { id: "0d3e0000-0000-4000-8000-000000000011", ...STANDARD_AGENTS.supervisor },
+  analyst: { id: "0d3e0000-0000-4000-8000-000000000012", ...STANDARD_AGENTS.analyst },
+  developer: { id: "0d3e0000-0000-4000-8000-000000000013", ...STANDARD_AGENTS.developer },
+  reviewer: { id: "0d3e0000-0000-4000-8000-000000000014", ...STANDARD_AGENTS.reviewer },
 } satisfies Record<string, { id: string; description: string; capabilities: AgentCapabilities }>;
 type Role = keyof typeof ROLES;
 
@@ -316,7 +301,7 @@ export function createDemoRuns(hub: RunEventHub, options: { pauseScale?: number;
       snapshot: async (runId) => store.snapshot(runId),
       approval: (approvalId) => store.getApproval(approvalId),
       currentUserId: () => DEMO_USER_ID,
-      canAccessWorkspace: async (workspaceId) => workspaceId === DEMO_WORKSPACE.id,
+      workspaceRole: async (workspaceId) => (workspaceId === DEMO_WORKSPACE.id ? "developer" : null),
       listWorkspaces: async () => [DEMO_WORKSPACE],
       listAgents: (workspaceId) => directory.listAgents(workspaceId),
     },

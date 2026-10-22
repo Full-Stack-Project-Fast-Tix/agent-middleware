@@ -46,7 +46,12 @@ export async function request<T>(url: string, options?: RequestInit): Promise<T>
 }
 
 export const api = {
-  auth: () => request<{ required: boolean }>("/api/auth"),
+  auth: () => request<{ required: boolean; method: "token" | "password" }>("/api/auth"),
+  signIn: (email: string, password: string) =>
+    request<{ token: string }>("/api/auth/session", {
+      method: "POST",
+      body: JSON.stringify({ email, password }),
+    }),
   system: () => request<SystemInfo>("/api/system"),
   adminOverview: () => request<AdminOverview>("/api/admin/overview"),
   listAgents: () => request<{ agents: Agent[] }>("/api/agents"),
