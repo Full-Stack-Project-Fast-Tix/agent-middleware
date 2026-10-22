@@ -19,7 +19,7 @@ import {
 } from "@launchpad/shared";
 import type pg from "pg";
 import { HttpError } from "../errors.js";
-import type { RunStore } from "../orchestrator/ports.js";
+import type { AuditFor, RunStore } from "../orchestrator/ports.js";
 import type { RunEventHub } from "../run-events.js";
 import { fromRow, insertRow, updateRow } from "./rows.js";
 
@@ -44,8 +44,8 @@ export class PostgresRunStore implements RunStore {
     private readonly now: () => string = () => new Date().toISOString(),
   ) {}
 
-  async createRun(run: Run): Promise<Run> {
-    return this.write(run.id, async (db) => {
+  async createRun(run: Run, audit?: AuditFor<Run>): Promise<Run> {
+    return this.write(run.id, audit, async (db) => {
       const created = runSchema.parse(fromRow(await insertRow(db, "runs", run)));
       return { result: created, event: { runId: run.id, type: "run.updated", payload: { run: created } } };
     });
@@ -64,12 +64,11 @@ export class PostgresRunStore implements RunStore {
   }
 
   async appendAudit(event: AuditEvent): Promise<void> {
-    // ponytail: its own statement, not the state change's transaction, because the port hands it over separately; add an audit argument to the write methods if an audit row must never be missing.
     await insertRow(this.pool, "audit_events", auditEventSchema.parse(event));
   }
 
-  async updateRun(runId: string, changes: Partial<Run>): Promise<Run> {
-    return this.write(runId, async (db) => {
+  async updateRun(runId: string, changes: Partial<Run>, audit?: AuditFor<Run>): Promise<Run> {
+    return this.write(runId, audit, async (db) => {
       const run = runSchema.parse(fromRow(await updateRow(db, "runs", runId, this.touch(changes))));
       return { result: run, event: { runId, type: "run.updated", payload: { run } } };
     });
@@ -87,8 +86,8 @@ export class PostgresRunStore implements RunStore {
     return this.many(DEPENDENCIES, [runId], taskDependencySchema);
   }
 
-  async createTask(task: Task, dependsOnTaskIds: string[]): Promise<Task> {
-    return this.write(task.runId, async (db) => {
+  async createTask(task: Task, dependsOnTaskIds: string[], audit?: AuditFor<Task>): Promise<Task> {
+    return this.write(task.runId, audit, async (db) => {
       const created = taskSchema.parse(fromRow(await insertRow(db, "tasks", task)));
       for (const dependsOnTaskId of dependsOnTaskIds) {
         await insertRow(db, "task_dependencies", { runId: task.runId, taskId: task.id, dependsOnTaskId });
@@ -97,8 +96,8 @@ export class PostgresRunStore implements RunStore {
     });
   }
 
-  async updateTask(taskId: string, changes: Partial<Task>): Promise<Task> {
-    return this.write(await this.runOf("tasks", taskId), async (db) => {
+  async updateTask(taskId: string, changes: Partial<Task>, audit?: AuditFor<Task>): Promise<Task> {
+    return this.write(await this.runOf("tasks", taskId), audit, async (db) => {
       const task = taskSchema.parse(fromRow(await updateRow(db, "tasks", taskId, this.touch(changes))));
       return { result: task, event: { runId: task.runId, type: "task.updated", payload: { task } } };
     });
@@ -113,14 +112,18 @@ export class PostgresRunStore implements RunStore {
   }
 
   async createExecution(execution: AgentExecution): Promise<AgentExecution> {
-    return this.write(execution.runId, async (db) => {
+    return this.write(execution.runId, undefined, async (db) => {
       const created = agentExecutionSchema.parse(fromRow(await insertRow(db, "agent_executions", execution)));
       return { result: created, event: { runId: execution.runId, type: "execution.updated", payload: { execution: created } } };
     });
   }
 
-  async updateExecution(executionId: string, changes: Partial<AgentExecution>): Promise<AgentExecution> {
-    return this.write(await this.runOf("agent_executions", executionId), async (db) => {
+  async updateExecution(
+    executionId: string,
+    changes: Partial<AgentExecution>,
+    audit?: AuditFor<AgentExecution>,
+  ): Promise<AgentExecution> {
+    return this.write(await this.runOf("agent_executions", executionId), audit, async (db) => {
       const row = await updateRow(db, "agent_executions", executionId, this.touch(changes));
       const execution = agentExecutionSchema.parse(fromRow(row));
       return { result: execution, event: { runId: execution.runId, type: "execution.updated", payload: { execution } } };
@@ -128,7 +131,7 @@ export class PostgresRunStore implements RunStore {
   }
 
   async addFinding(finding: SecurityFinding): Promise<SecurityFinding> {
-    return this.write(finding.runId, async (db) => {
+    return this.write(finding.runId, undefined, async (db) => {
       const created = securityFindingSchema.parse(fromRow(await insertRow(db, "security_findings", finding)));
       return { result: created, event: { runId: finding.runId, type: "finding.created", payload: { finding: created } } };
     });
@@ -150,8 +153,8 @@ export class PostgresRunStore implements RunStore {
     );
   }
 
-  async requestApproval(approval: Approval): Promise<Approval> {
-    return this.write(approval.runId, async (db) => {
+  async requestApproval(approval: Approval, audit?: AuditFor<Approval>): Promise<Approval> {
+    return this.write(approval.runId, audit, async (db) => {
       const created = approvalSchema.parse(fromRow(await insertRow(db, "approvals", approval)));
       return { result: created, event: { runId: approval.runId, type: "approval.requested", payload: { approval: created } } };
     });
@@ -165,8 +168,9 @@ export class PostgresRunStore implements RunStore {
     approvalId: string,
     status: Exclude<ApprovalStatus, "pending">,
     resolvedByUserId: string | null,
+    audit?: AuditFor<Approval>,
   ): Promise<Approval> {
-    return this.write(await this.runOf("approvals", approvalId), async (db) => {
+    return this.write(await this.runOf("approvals", approvalId), audit, async (db) => {
       const { rows } = await db.query(
         `UPDATE approvals SET status = $2, resolved_at = $3, resolved_by_user_id = $4
           WHERE id = $1 AND status = 'pending' RETURNING *`,
@@ -207,18 +211,24 @@ export class PostgresRunStore implements RunStore {
   }
 
   /**
-   * Runs `work` and bumps the run's event seq in one transaction. The run row
-   * is locked first, so one run's writes commit, number their events and get
-   * their created_seq in a single order. Events go out through the outbox
-   * after COMMIT.
+   * Runs `work`, records its audit event and bumps the run's event seq in one
+   * transaction. The run row is locked first, so one run's writes commit,
+   * number their events and get their created_seq in a single order. Events go
+   * out through the outbox after COMMIT.
    */
-  private async write<T>(runId: string, work: (db: pg.PoolClient) => Promise<{ result: T; event: Uncommitted }>): Promise<T> {
+  private async write<T>(
+    runId: string,
+    audit: AuditFor<T> | undefined,
+    work: (db: pg.PoolClient) => Promise<{ result: T; event: Uncommitted }>,
+  ): Promise<T> {
     const db = await this.pool.connect();
     let entry: OutboxEntry | undefined;
     try {
       await db.query("BEGIN");
       let seq = await this.nextSeq(db, runId);
       const { result, event } = await work(db);
+      const auditEvent = audit?.(result) ?? null;
+      if (auditEvent !== null) await insertRow(db, "audit_events", auditEventSchema.parse(auditEvent));
       // createRun: the row exists only now.
       seq ??= await this.nextSeq(db, runId);
       if (seq === undefined) throw new Error(`Unknown run ${runId}`);
