@@ -1,8 +1,9 @@
 import { z } from "zod";
 import { idSchema, jsonObjectSchema, requiredTextSchema } from "./common.js";
-import { agentCapabilitiesSchema, capabilityCeilingSchema } from "./agents.js";
+import { agentCapabilitiesSchema, agentSchema, capabilityCeilingSchema } from "./agents.js";
 import { approvalDecisionSchema, orchestrationModeSchema, workspaceRoleSchema } from "./enums.js";
 import { runSnapshotSchema } from "./events.js";
+import { workspaceSchema } from "./identity.js";
 import { runSchema } from "./runs.js";
 import { approvalSchema } from "./security.js";
 
@@ -53,11 +54,16 @@ export type PageQuery = z.infer<typeof pageQuerySchema>;
  * routes (`/api/agents/...`, `GET /api/runs/:id`) keep working alongside these
  * until the new model replaces them.
  *
+ *   GET  /api/workspaces                                        -> { workspaces }
+ *   GET  /api/workspaces/:workspaceId/agents                    -> { agents }
  *   POST /api/workspaces/:workspaceId/runs   CreateRunRequest   -> 201 { run }
  *   GET  /api/runs/:runId/snapshot                              -> { snapshot }
  *   GET  /api/runs/:runId/events             Server-Sent Events (RunEvent)
  *   POST /api/runs/:runId/cancel                                -> 202 { run }
  *   POST /api/approvals/:approvalId/resolve  ResolveApprovalRequest -> { approval }
+ *
+ * The workspaces are the caller's own. The agents include disabled and
+ * archived ones, so a past Run's agent can still be named.
  *
  * Cancel is idempotent: the first call sets cancelRequestedAt and the run
  * reaches `cancelled` asynchronously, visible on the event stream. Repeating
@@ -65,12 +71,24 @@ export type PageQuery = z.infer<typeof pageQuerySchema>;
  * a run that already completed or failed answers 409.
  */
 export const apiPaths = {
+  workspaces: () => "/api/workspaces",
+  workspaceAgents: (workspaceId: string) => `/api/workspaces/${encodeURIComponent(workspaceId)}/agents`,
   runs: (workspaceId: string) => `/api/workspaces/${encodeURIComponent(workspaceId)}/runs`,
   runSnapshot: (runId: string) => `/api/runs/${encodeURIComponent(runId)}/snapshot`,
   runEvents: (runId: string) => `/api/runs/${encodeURIComponent(runId)}/events`,
   cancelRun: (runId: string) => `/api/runs/${encodeURIComponent(runId)}/cancel`,
   resolveApproval: (approvalId: string) => `/api/approvals/${encodeURIComponent(approvalId)}/resolve`,
 } as const;
+
+/** A workspace as listings show it; where its source lives stays on the server. */
+export const workspaceSummarySchema = workspaceSchema.pick({ id: true, name: true });
+export type WorkspaceSummary = z.infer<typeof workspaceSummarySchema>;
+
+export const workspacesResponseSchema = z.object({ workspaces: z.array(workspaceSummarySchema) });
+export type WorkspacesResponse = z.infer<typeof workspacesResponseSchema>;
+
+export const agentsResponseSchema = z.object({ agents: z.array(agentSchema) });
+export type AgentsResponse = z.infer<typeof agentsResponseSchema>;
 
 export const runResponseSchema = z.object({ run: runSchema });
 export type RunResponse = z.infer<typeof runResponseSchema>;

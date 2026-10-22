@@ -225,6 +225,33 @@ for (const target of targets) {
       }
     });
 
+    it("stores a write's audit event with it, and neither when the event is malformed", async () => {
+      const store = target.open(new RunEventHub());
+      const run = await store.createRun(makeRun());
+      const audit = (actorId: string | null) => (written: { id: string; status: string }) => ({
+        id: randomUUID(),
+        workspaceId: WORKSPACE_ID,
+        actorType: "user" as const,
+        actorId,
+        eventType: "run.status_changed" as const,
+        runId: written.id,
+        taskId: null,
+        executionId: null,
+        metadata: { to: written.status },
+        createdAt: new Date().toISOString(),
+      });
+
+      await store.updateRun(run.id, { status: "planning" }, audit(USER_ID));
+      // A user event with no actor is malformed: the status change must not be kept either.
+      await expect(store.updateRun(run.id, { status: "running" }, audit(null))).rejects.toThrow();
+      expect((await store.getRun(run.id))!.status).toBe("planning");
+      const stored =
+        store instanceof InMemoryRunStore
+          ? store.auditEvents(run.id).map((event) => event.metadata)
+          : (await pool!.query("SELECT metadata FROM audit_events WHERE run_id = $1", [run.id])).rows.map((row) => row.metadata);
+      expect(stored).toEqual([{ to: "planning" }]);
+    });
+
     it("rejects updates to rows that do not exist", async () => {
       const store = target.open(new RunEventHub());
       await expect(store.updateRun(randomUUID(), { status: "running" })).rejects.toThrow();
@@ -397,6 +424,10 @@ describe.skipIf(!url)("PostgresRunStore only", () => {
       ["Add validation", "completed"],
     ]);
     expect(snapshot.approvals.map((approval) => approval.status)).toEqual(["approved"]);
+    const { rows } = await pool!.query<{ event_type: string }>("SELECT event_type FROM audit_events WHERE run_id = $1", [run.id]);
+    expect(rows.map((row) => row.event_type)).toEqual(
+      expect.arrayContaining(["run.created", "task.created", "execution.started", "approval.requested", "approval.resolved", "execution.finished"]),
+    );
   });
 });
 

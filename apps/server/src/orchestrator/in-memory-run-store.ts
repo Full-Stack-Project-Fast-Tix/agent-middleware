@@ -13,14 +13,15 @@ import {
   type TaskDependency,
 } from "@launchpad/shared";
 import type { RunEventHub } from "../run-events.js";
-import type { RunStore } from "./ports.js";
+import type { AuditFor, RunStore } from "./ports.js";
 
 type Uncommitted = RunEventDraft extends infer D ? (D extends RunEventDraft ? Omit<D, "seq"> : never) : never;
 
 /**
- * RunStore kept in memory, for tests and local development until P3's
- * PostgreSQL repositories land. Like the database will, it assigns each Run's
- * next event seq together with the write and publishes after it.
+ * RunStore kept in memory, for tests and for running without DATABASE_URL
+ * (db/postgres-run-store.ts is the PostgreSQL one). Like the database, it
+ * assigns each Run's next event seq together with the write and publishes
+ * after it.
  */
 export class InMemoryRunStore implements RunStore {
   private readonly runs = new Map<string, Run>();
@@ -37,7 +38,8 @@ export class InMemoryRunStore implements RunStore {
     private readonly now: () => string = () => new Date().toISOString(),
   ) {}
 
-  async createRun(run: Run): Promise<Run> {
+  async createRun(run: Run, audit?: AuditFor<Run>): Promise<Run> {
+    this.record(audit, run);
     this.runs.set(run.id, run);
     this.commit({ runId: run.id, type: "run.updated", payload: { run } });
     return run;
@@ -56,13 +58,19 @@ export class InMemoryRunStore implements RunStore {
     this.audit.push(Object.freeze(auditEventSchema.parse(event)));
   }
 
+  private record<T>(audit: AuditFor<T> | undefined, written: T): void {
+    const event = audit?.(written) ?? null;
+    if (event !== null) this.audit.push(Object.freeze(auditEventSchema.parse(event)));
+  }
+
   /** Audit events in the order they were appended, optionally for one run. Not part of RunStore. */
   auditEvents(runId?: string): AuditEvent[] {
     return runId === undefined ? [...this.audit] : this.audit.filter((event) => event.runId === runId);
   }
 
-  async updateRun(runId: string, changes: Partial<Run>): Promise<Run> {
+  async updateRun(runId: string, changes: Partial<Run>, audit?: AuditFor<Run>): Promise<Run> {
     const run = this.touch(this.required(this.runs, runId, "run"), changes);
+    this.record(audit, run);
     this.runs.set(runId, run);
     this.commit({ runId, type: "run.updated", payload: { run } });
     return run;
@@ -80,7 +88,8 @@ export class InMemoryRunStore implements RunStore {
     return this.dependencies.filter((edge) => edge.runId === runId);
   }
 
-  async createTask(task: Task, dependsOnTaskIds: string[]): Promise<Task> {
+  async createTask(task: Task, dependsOnTaskIds: string[], audit?: AuditFor<Task>): Promise<Task> {
+    this.record(audit, task);
     this.tasks.set(task.id, task);
     for (const dependsOnTaskId of dependsOnTaskIds) {
       this.dependencies.push({ runId: task.runId, taskId: task.id, dependsOnTaskId });
@@ -89,8 +98,9 @@ export class InMemoryRunStore implements RunStore {
     return task;
   }
 
-  async updateTask(taskId: string, changes: Partial<Task>): Promise<Task> {
+  async updateTask(taskId: string, changes: Partial<Task>, audit?: AuditFor<Task>): Promise<Task> {
     const task = this.touch(this.required(this.tasks, taskId, "task"), changes);
+    this.record(audit, task);
     this.tasks.set(taskId, task);
     this.commit({ runId: task.runId, type: "task.updated", payload: { task } });
     return task;
@@ -110,8 +120,13 @@ export class InMemoryRunStore implements RunStore {
     return execution;
   }
 
-  async updateExecution(executionId: string, changes: Partial<AgentExecution>): Promise<AgentExecution> {
+  async updateExecution(
+    executionId: string,
+    changes: Partial<AgentExecution>,
+    audit?: AuditFor<AgentExecution>,
+  ): Promise<AgentExecution> {
     const execution = this.touch(this.required(this.executions, executionId, "execution"), changes);
+    this.record(audit, execution);
     this.executions.set(executionId, execution);
     this.commit({ runId: execution.runId, type: "execution.updated", payload: { execution } });
     return execution;
@@ -138,7 +153,8 @@ export class InMemoryRunStore implements RunStore {
     );
   }
 
-  async requestApproval(approval: Approval): Promise<Approval> {
+  async requestApproval(approval: Approval, audit?: AuditFor<Approval>): Promise<Approval> {
+    this.record(audit, approval);
     this.approvals.set(approval.id, approval);
     this.commit({ runId: approval.runId, type: "approval.requested", payload: { approval } });
     return approval;
@@ -148,6 +164,7 @@ export class InMemoryRunStore implements RunStore {
     approvalId: string,
     status: Exclude<ApprovalStatus, "pending">,
     resolvedByUserId: string | null,
+    audit?: AuditFor<Approval>,
   ): Promise<Approval> {
     const approval: Approval = {
       ...this.required(this.approvals, approvalId, "approval"),
@@ -155,6 +172,7 @@ export class InMemoryRunStore implements RunStore {
       resolvedAt: this.now(),
       resolvedByUserId,
     };
+    this.record(audit, approval);
     this.approvals.set(approvalId, approval);
     this.commit({ runId: approval.runId, type: "approval.resolved", payload: { approval } });
     return approval;

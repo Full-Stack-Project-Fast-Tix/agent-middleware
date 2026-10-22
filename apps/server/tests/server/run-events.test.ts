@@ -149,6 +149,27 @@ describe("RunEventHub", () => {
     expect(hub.subscribe(runId, 60, listen(() => undefined)).status).toBe("resync");
   });
 
+  it("starts a run it has published nothing for at the durable seq, instead of resyncing forever", () => {
+    // After a restart the client is at seq 12, which the database holds; this process has published nothing.
+    const hub = new RunEventHub();
+    expect(hub.subscribe(runId, 11, listen(() => undefined), 12).status).toBe("resync");
+    const seen: number[] = [];
+    const subscription = hub.subscribe(runId, 12, listen((event) => seen.push(event.seq)), 12);
+    expect(subscription.status).toBe("subscribed");
+    expect(hub.has(runId)).toBe(false);
+    committer(hub, { [runId]: 12 })(runUpdated());
+    expect(seen).toEqual([13]);
+    expect(hub.has(runId)).toBe(true);
+  });
+
+  it("forgets a channel started at a durable seq once its last subscriber leaves", () => {
+    const hub = new RunEventHub();
+    const subscription = hub.subscribe(runId, 12, listen(() => undefined), 12);
+    if (subscription.status !== "subscribed") throw new Error("expected a subscription");
+    subscription.unsubscribe();
+    expect(hub.subscribe(runId, 12, listen(() => undefined)).status).toBe("resync");
+  });
+
   it("tells subscribers to resync when a committed seq was never published", () => {
     const hub = new RunEventHub();
     hub.publish({ ...runUpdated(), seq: 1 } as RunEventDraft);
@@ -214,7 +235,7 @@ describe("GET /api/runs/:id/events", () => {
     await Promise.all(apps.splice(0).map((app) => app.close()));
   });
 
-  async function start(options: { authToken?: string; heartbeatMs?: number } = {}) {
+  async function start(options: { authToken?: string; heartbeatMs?: number; durable?: Record<string, number> } = {}) {
     const hub = new RunEventHub();
     const app = await createApp(
       loadConfig({ NODE_ENV: "test", ...(options.authToken ? { APP_AUTH_TOKEN: options.authToken } : {}) }),
@@ -222,7 +243,8 @@ describe("GET /api/runs/:id/events", () => {
       {
         runEvents: {
           hub,
-          canReadRun: (id) => hub.has(id),
+          canReadRun: (id) => hub.has(id) || options.durable?.[id] !== undefined,
+          lastEventSeq: (id) => options.durable?.[id] ?? 0,
           ...(options.heartbeatMs ? { heartbeatMs: options.heartbeatMs } : {}),
         },
       },
@@ -310,6 +332,17 @@ describe("GET /api/runs/:id/events", () => {
     publish(runUpdated());
     const { frames } = await read(url(), { "last-event-id": "40" }, () => false);
     expect(frames).toEqual([{ id: null, event: "resync", data: "{}" }]);
+  });
+
+  it("lets a client at the durable seq of a run this process never published wait for new events", async () => {
+    const { hub, url } = await start({ durable: { [runId]: 12 } });
+    const reading = read(url(), { "last-event-id": "12" }, (frames) => frames.length === 1);
+    await vi.waitFor(() => expect(hub.listenerCount(runId)).toBe(1));
+    committer(hub, { [runId]: 12 })(runUpdated());
+    expect((await reading).frames.map((frame) => frame.id)).toEqual(["13"]);
+
+    const behind = await read(url(), { "last-event-id": "5" }, () => false);
+    expect(behind.frames).toEqual([{ id: null, event: "resync", data: "{}" }]);
   });
 
   it("redacts credential-shaped text in every frame", async () => {

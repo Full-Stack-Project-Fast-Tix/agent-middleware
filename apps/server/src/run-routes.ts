@@ -3,8 +3,10 @@ import { z } from "zod";
 import {
   createRunRequestSchema,
   resolveApprovalRequestSchema,
+  type Agent,
   type Approval,
   type RunSnapshot,
+  type WorkspaceSummary,
 } from "@launchpad/shared";
 import { HttpError } from "./errors.js";
 import type { Orchestrator } from "./orchestrator/orchestrator.js";
@@ -12,6 +14,8 @@ import type { Orchestrator } from "./orchestrator/orchestrator.js";
 // HTTP routes for the Run -> Task -> AgentExecution model, as specified in
 // packages/shared/src/api.ts:
 //
+//   GET  /api/workspaces                                            -> { workspaces }
+//   GET  /api/workspaces/:workspaceId/agents                        -> { agents }
 //   POST /api/workspaces/:workspaceId/runs   CreateRunRequest       -> 201 { run }
 //   GET  /api/runs/:runId/snapshot                                  -> { snapshot }
 //   POST /api/runs/:runId/cancel                                    -> 202 { run }
@@ -32,6 +36,10 @@ export interface RunRoutesOptions {
   currentUserId(request: FastifyRequest): string;
   /** May this user start runs in, and read runs of, this workspace? */
   canAccessWorkspace(workspaceId: string, userId: string): Promise<boolean>;
+  /** The workspaces this user may access, by name. */
+  listWorkspaces(userId: string): Promise<WorkspaceSummary[]>;
+  /** Every agent in the workspace, including disabled and archived ones. */
+  listAgents(workspaceId: string): Promise<Agent[]>;
 }
 
 const workspaceParams = z.object({ workspaceId: z.guid() });
@@ -47,6 +55,18 @@ export function registerRunRoutes(app: FastifyInstance, options: RunRoutesOption
     if (!allowed) throw new HttpError(404, "Run not found");
     return snapshot;
   }
+
+  app.get("/api/workspaces", async (request) => ({
+    workspaces: await options.listWorkspaces(options.currentUserId(request)),
+  }));
+
+  app.get("/api/workspaces/:workspaceId/agents", async (request) => {
+    const { workspaceId } = workspaceParams.parse(request.params);
+    if (!(await options.canAccessWorkspace(workspaceId, options.currentUserId(request)))) {
+      throw new HttpError(404, "Workspace not found");
+    }
+    return { agents: await options.listAgents(workspaceId) };
+  });
 
   app.post("/api/workspaces/:workspaceId/runs", async (request, reply) => {
     const { workspaceId } = workspaceParams.parse(request.params);

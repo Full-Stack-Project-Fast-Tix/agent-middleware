@@ -19,7 +19,7 @@ import type { TurnSecurityPolicy } from "../turn-security-policy.js";
 // What the orchestrator needs from the subsystems around it. Each one is owned
 // by someone else; the orchestrator only depends on these shapes:
 //
-//   RunStore          persistence (P3). In-memory today, PostgreSQL later.
+//   RunStore          persistence (P3): in memory, or PostgreSQL in db/.
 //   AgentDirectory    agent registry (P3 storage, P1/P2 semantics).
 //   SecurityMiddleware                (P1), in ../security-middleware.ts.
 //   ExecutionRuntime  runs one AgentExecution. Week 9 adapts the Codex
@@ -35,16 +35,16 @@ import type { TurnSecurityPolicy } from "../turn-security-policy.js";
  * checks status transitions before it writes; the store does not.
  */
 export interface RunStore {
-  createRun(run: Run): Promise<Run>;
+  createRun(run: Run, audit?: AuditFor<Run>): Promise<Run>;
   getRun(runId: string): Promise<Run | null>;
-  updateRun(runId: string, changes: Partial<Run>): Promise<Run>;
+  updateRun(runId: string, changes: Partial<Run>, audit?: AuditFor<Run>): Promise<Run>;
   /** Runs not yet completed, failed or cancelled. For restart recovery. */
   listActiveRuns(): Promise<Run[]>;
 
   /**
-   * Append one audit event. Append-only: never updated or deleted. A database
-   * implementation should write it in the same transaction as the state
-   * change it describes, where there is one.
+   * Append one audit event that goes with no state change. Append-only: never
+   * updated or deleted. An event that describes a write goes to that write as
+   * its `audit` argument instead, so both are stored or neither is.
    */
   appendAudit(event: AuditEvent): Promise<void>;
 
@@ -52,13 +52,17 @@ export interface RunStore {
   /** Tasks in creation order. */
   listTasks(runId: string): Promise<Task[]>;
   listDependencies(runId: string): Promise<TaskDependency[]>;
-  createTask(task: Task, dependsOnTaskIds: string[]): Promise<Task>;
-  updateTask(taskId: string, changes: Partial<Task>): Promise<Task>;
+  createTask(task: Task, dependsOnTaskIds: string[], audit?: AuditFor<Task>): Promise<Task>;
+  updateTask(taskId: string, changes: Partial<Task>, audit?: AuditFor<Task>): Promise<Task>;
 
   getExecution(executionId: string): Promise<AgentExecution | null>;
   listExecutions(runId: string): Promise<AgentExecution[]>;
   createExecution(execution: AgentExecution): Promise<AgentExecution>;
-  updateExecution(executionId: string, changes: Partial<AgentExecution>): Promise<AgentExecution>;
+  updateExecution(
+    executionId: string,
+    changes: Partial<AgentExecution>,
+    audit?: AuditFor<AgentExecution>,
+  ): Promise<AgentExecution>;
 
   addFinding(finding: SecurityFinding): Promise<SecurityFinding>;
 
@@ -66,13 +70,17 @@ export interface RunStore {
   listApprovals(runId: string): Promise<Approval[]>;
   /** Pending approvals, in every run, whose expiresAt is at or before `asOf`. For the timeout sweep. */
   listExpiredApprovals(asOf: string): Promise<Approval[]>;
-  requestApproval(approval: Approval): Promise<Approval>;
+  requestApproval(approval: Approval, audit?: AuditFor<Approval>): Promise<Approval>;
   resolveApproval(
     approvalId: string,
     status: Exclude<ApprovalStatus, "pending">,
     resolvedByUserId: string | null,
+    audit?: AuditFor<Approval>,
   ): Promise<Approval>;
 }
+
+/** The audit event a write records, built from what it wrote; null records none. */
+export type AuditFor<T> = (written: T) => AuditEvent | null;
 
 export interface AgentDirectory {
   getAgent(agentId: string): Promise<Agent | null>;

@@ -2,8 +2,11 @@ import path from "node:path";
 import { AgentService } from "./agent-service.js";
 import { startArkProxy, type ArkProxy } from "./ark-proxy.js";
 import { createApp } from "./app.js";
-import { createDemoRuns } from "./dev/demo-runs.js";
+import { createDemoRuns, seedDemo, type DemoRuns, type DemoStore } from "./dev/demo-runs.js";
 import { loadConfig, writeCodexConfig } from "./config.js";
+import { openDatabase } from "./db/pool.js";
+import { PostgresRunStore } from "./db/postgres-run-store.js";
+import { startApprovalSweep } from "./orchestrator/orchestrator.js";
 import { RunEventHub } from "./run-events.js";
 import { createRunner } from "./runner-factory.js";
 import { JsonStore } from "./store.js";
@@ -34,21 +37,37 @@ const runEvents = new RunEventHub();
 // Runs UI can be developed against the real orchestrator before P1's
 // middleware exists. Nothing in it executes.
 const runsDemo = process.argv.includes("--runs-demo") || process.env.RUNS_DEMO === "1";
-const demoRuns = runsDemo ? createDemoRuns(runEvents) : null;
-if (demoRuns !== null && config.nodeEnv === "production") {
+if (runsDemo && config.nodeEnv === "production") {
   throw new Error("RUNS_DEMO uses simulated security decisions and must not run in production.");
+}
+
+// With DATABASE_URL set, the schema is migrated here and Runs are kept in Postgres.
+const database = process.env.DATABASE_URL ? await openDatabase({ connectionString: process.env.DATABASE_URL }) : null;
+
+let demoRuns: DemoRuns<DemoStore> | null = null;
+if (runsDemo && database !== null) {
+  await seedDemo(database);
+  demoRuns = createDemoRuns(runEvents, { store: new PostgresRunStore(database, runEvents) });
+} else if (runsDemo) {
+  demoRuns = createDemoRuns(runEvents);
 }
 
 const app = await createApp(config, service, {
   runEvents: {
     hub: runEvents,
-    canReadRun: (runId) => (demoRuns === null ? runEvents.has(runId) : demoRuns.store.snapshot(runId) !== null),
+    canReadRun: async (runId) => (demoRuns === null ? runEvents.has(runId) : (await demoRuns.store.getRun(runId)) !== null),
+    lastEventSeq: async (runId) => (await demoRuns?.store.snapshot(runId))?.lastEventSeq ?? 0,
   },
   ...(demoRuns === null ? {} : { runs: demoRuns.routes }),
 });
+let stopApprovalSweep = () => {};
 if (demoRuns !== null) {
-  demoRuns.registerDirectoryRoutes(app);
   app.log.warn("RUNS_DEMO is on: multi-agent runs use a simulated runtime and security middleware.");
+  const recovered = await demoRuns.orchestrator.recoverInterruptedRuns();
+  if (recovered > 0) app.log.warn({ recovered }, "Closed runs the previous process left active");
+  stopApprovalSweep = startApprovalSweep(demoRuns.orchestrator, {
+    onError: (error) => app.log.error({ err: error }, "Approval timeout sweep failed"),
+  });
 }
 
 if (arkProxy) {
@@ -60,8 +79,10 @@ if (arkProxy) {
 
 const shutdown = async (signal: string) => {
   app.log.info({ signal }, "Shutting down");
+  stopApprovalSweep();
   await app.close();
   await arkProxy?.close();
+  await database?.end();
   process.exit(0);
 };
 

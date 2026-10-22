@@ -115,8 +115,11 @@ export async function followRunEvents(options: FollowRunEventsOptions): Promise<
           for (const frame of parser.push(decoder.decode(value, { stream: true }))) {
             if (frame.event === RUN_STREAM_RESYNC_EVENT) {
               await reader.cancel().catch(() => undefined);
+              const before = afterSeq;
               afterSeq = await options.onResync();
-              resynced = true;
+              // Reconnect at once only when the snapshot moved us on; the same
+              // position again waits retryMs, so a server that keeps refusing it can't make us spin.
+              resynced = afterSeq !== before;
               break reading;
             }
             if (frame.event !== "message") continue;
