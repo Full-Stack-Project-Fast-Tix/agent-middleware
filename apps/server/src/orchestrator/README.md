@@ -57,8 +57,9 @@ is created either. A blocked handoff withholds that result from the prompt.
   `capabilities.write`. The runtime settings come from the middleware, never
   from here.
 - **The runtime fails closed.** `CodexExecutionRuntime` refuses to start
-  unless the policy is `read-only` sandbox with `untrusted` approvals, the only
-  combination under which every non-read action stops at an approval request.
+  unless the policy is `workspace-write` sandbox with `untrusted` approvals.
+  Workspace writes are scoped to the isolated run workspace, and proposals must
+  stop at an approval request before the gate allows them.
   A gate that throws declines the action and ends the turn. A file change it
   cannot describe is declined.
 - **Fresh thread per execution.** Context moves between agents only through

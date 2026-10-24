@@ -57,7 +57,7 @@ export class UngatedRuntimePolicyError extends Error {
     super(
       "Refusing to run an execution whose actions would not reach the security middleware: " +
         `sandbox ${policy.sandboxMode}, approval policy ${JSON.stringify(policy.approvalPolicy ?? null)}. ` +
-        'Only "read-only" with "untrusted" makes every non-read action wait for an approval request.',
+        'Only "workspace-write" with "untrusted" exposes file changes while requiring non-read actions to wait for approval.',
     );
     this.name = "UngatedRuntimePolicyError";
   }
@@ -69,7 +69,7 @@ export class UngatedRuntimePolicyError extends Error {
  * chooses the policy; this only refuses one that would bypass it.
  */
 export function assertGatedPolicy(policy: TurnSecurityPolicy): void {
-  if (policy.sandboxMode !== "read-only" || policy.approvalPolicy !== "untrusted") {
+  if (policy.sandboxMode !== "workspace-write" || policy.approvalPolicy !== "untrusted") {
     throw new UngatedRuntimePolicyError(policy);
   }
 }
@@ -94,6 +94,7 @@ export async function runGatedTurn(options: GatedTurnOptions): Promise<GatedTurn
   // resume the turn (run-turn.ts), so observed steers wait until none is running.
   const running = new Set<string>();
   const pendingSteers: string[] = [];
+  const approvedFileChanges = new Set<string>();
 
   // Observations and decisions run one at a time, in trace order, so an action
   // is decided only after every record before it has been observed.
@@ -137,6 +138,17 @@ export async function runGatedTurn(options: GatedTurnOptions): Promise<GatedTurn
 
   options.onRecord((record) => {
     trackRunning(record, running);
+    if (record.dir === "in" && record.method === "item/completed") {
+      const item = (record.payload as { params?: { item?: { id?: unknown; type?: unknown; status?: unknown } } } | null)?.params?.item;
+      if (
+        item?.type === "fileChange" &&
+        item.status === "completed" &&
+        typeof item.id === "string" &&
+        !approvedFileChanges.has(item.id)
+      ) {
+        failClosed(new Error("Codex completed a file change without a middleware approval request"));
+      }
+    }
     flushSteers();
     void inOrder(async () => {
       const decision = await gate.observe(record);
@@ -168,9 +180,11 @@ export async function runGatedTurn(options: GatedTurnOptions): Promise<GatedTurn
     }
     switch (decision.outcome) {
       case "allow":
+        if (kind === "file_change") approvedFileChanges.add(action.actionId);
         rpc.reply(id, { decision: "accept" });
         return;
       case "steer":
+        if (kind === "file_change") approvedFileChanges.add(action.actionId);
         sendSteer(decision.steer);
         rpc.reply(id, { decision: "accept" });
         return;
@@ -211,12 +225,13 @@ export async function runGatedTurn(options: GatedTurnOptions): Promise<GatedTurn
 
     // Every execution starts a fresh thread: context moves between agents only
     // through results the middleware has seen, never through a shared conversation.
-    // assertGatedPolicy has pinned these two; spelled out so the wire matches it exactly.
-    threadId = await openThread(rpc, { threadId: null, sandboxMode: "read-only", approvalPolicy: "untrusted" });
+    // assertGatedPolicy pins these; writes remain in the isolated run workspace
+    // and untrusted approval keeps proposed changes behind the ActionGate.
+    threadId = await openThread(rpc, { threadId: null, sandboxMode: "workspace-write", approvalPolicy: "untrusted" });
     const started = (await rpc.request("turn/start", {
       threadId,
       input: [{ type: "text", text: options.prompt }],
-      sandboxPolicy: buildSandboxPolicy("read-only", policy.denyNetwork),
+      sandboxPolicy: buildSandboxPolicy("workspace-write", policy.denyNetwork),
       approvalPolicy: "untrusted",
     })) as { turn?: { id?: string } };
     turnId = started?.turn?.id ?? null;

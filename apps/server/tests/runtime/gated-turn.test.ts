@@ -7,7 +7,7 @@ import type { TurnSecurityPolicy } from "../../src/turn-security-policy.js";
 import { FakeAppServer } from "./fake-app-server.js";
 
 const GATED: TurnSecurityPolicy = {
-  sandboxMode: "read-only",
+  sandboxMode: "workspace-write",
   denyNetwork: true,
   approvalPolicy: "untrusted",
   semanticEnforcement: true,
@@ -85,7 +85,7 @@ describe("runGatedTurn", () => {
     await expect(turn).resolves.toEqual({ output: "Tests pass.", threadId: "thread-1", usage: null, stopped: false });
   });
 
-  it("starts a fresh thread on the gated sandbox, whatever else the policy says", async () => {
+  it("starts a fresh thread with a writable isolated workspace and gated approvals", async () => {
     const { gate } = scriptedGate({});
     const { server, turn } = start(gate);
     await server.turnStarted();
@@ -93,11 +93,11 @@ describe("runGatedTurn", () => {
     await turn;
 
     const threadStart = server.received.find((message) => message.method === "thread/start")!;
-    expect(threadStart.params).toMatchObject({ sandbox: "read-only", approvalPolicy: "untrusted" });
+    expect(threadStart.params).toMatchObject({ sandbox: "workspace-write", approvalPolicy: "untrusted" });
     const turnStart = server.received.find((message) => message.method === "turn/start")!;
     expect(turnStart.params).toMatchObject({
       approvalPolicy: "untrusted",
-      sandboxPolicy: { type: "readOnly", networkAccess: false },
+      sandboxPolicy: { type: "workspaceWrite", writableRoots: ["/workspace"], networkAccess: false },
     });
   });
 
@@ -176,8 +176,19 @@ describe("runGatedTurn", () => {
         changes: [{ path: "src/signup.ts", kind: "add", movePath: null, diff: "+ validate(body)" }],
       },
     ]);
+    server.notify("item/completed", { item: { id: "patch_1", type: "fileChange", status: "completed" } });
     server.finish("ok");
     await turn;
+  });
+
+  it("stops if Codex completes a file change without an approval request", async () => {
+    const { gate } = scriptedGate({});
+    const { server, turn } = start(gate);
+    await server.turnStarted();
+
+    server.notify("item/completed", { item: { id: "patch_2", type: "fileChange", status: "completed" } });
+    await expect(turn).rejects.toThrow("Codex completed a file change without a middleware approval request");
+    expect(server.methodsReceived()).toContain("turn/interrupt");
   });
 
   it("declines a file change it cannot describe, without asking the gate", async () => {
@@ -243,7 +254,7 @@ describe("runGatedTurn", () => {
   it("refuses to start under a policy whose actions would skip the gate", async () => {
     const { gate } = scriptedGate({});
     for (const policy of [
-      { ...GATED, sandboxMode: "workspace-write" as const },
+      { ...GATED, sandboxMode: "read-only" as const },
       { ...GATED, approvalPolicy: "on-request" as const },
       { sandboxMode: "read-only" as const, denyNetwork: true, semanticEnforcement: false, effectGating: false },
     ]) {

@@ -86,8 +86,13 @@ directly; `runTurn()` remains the only live enforcement point. Derived findings
 are persisted on the Run and do not modify the append-only raw trace.
 
 When `GUARDRAIL_SEMANTIC_ENABLED=true`, the container runner resolves an
-explicit turn security policy before starting Codex: `read-only` sandbox,
-`untrusted` approval policy, and denied network. This does not make every
+explicit turn security policy before starting Codex: `workspace-write` sandbox
+limited to `/workspace`, `untrusted` approval policy, and denied network. The
+writable sandbox exposes Codex's file-change tool; the approval handler remains
+the intended pre-execution gate. The runtime interrupts when a file change
+completes without an approval request, but that backstop cannot undo the edit.
+Pre-execution file approval still needs verification against the pinned Codex
+0.111 binary; mocked protocol tests do not prove it. This does not make every
 operation a semantic-model call. It makes every command except a known-safe
 read, plus state-changing workspace actions, pause at Codex's real approval
 request, where `runTurn()` waits

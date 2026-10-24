@@ -36,7 +36,7 @@ function request(overrides: Partial<ExecutionRequest> = {}): ExecutionRequest {
     agent: { id: "agent-1" } as Agent,
     workingDirectory: "/data/runs/run-1/workspace",
     prompt: "Add validation",
-    runtimePolicy: { sandboxMode: "read-only", denyNetwork: true, approvalPolicy: "untrusted", semanticEnforcement: true, effectGating: true },
+    runtimePolicy: { sandboxMode: "workspace-write", denyNetwork: true, approvalPolicy: "untrusted", semanticEnforcement: true, effectGating: true },
     gate: { decide: async () => ({ outcome: "allow", reason: "ok", severity: "info", findings: [], appliedPolicies: [] }), observe: async () => null },
     signal: new AbortController().signal,
     ...overrides,
@@ -67,7 +67,7 @@ describe("CodexExecutionRuntime", () => {
     const { runner, sessions } = fakeRunner(async () => undefined);
     await expect(
       new CodexExecutionRuntime(runner).execute(
-        request({ runtimePolicy: { sandboxMode: "workspace-write", denyNetwork: false, semanticEnforcement: false, effectGating: false } }),
+        request({ runtimePolicy: { sandboxMode: "read-only", denyNetwork: false, semanticEnforcement: false, effectGating: false } }),
       ),
     ).rejects.toBeInstanceOf(UngatedRuntimePolicyError);
     expect(sessions).toEqual([]);

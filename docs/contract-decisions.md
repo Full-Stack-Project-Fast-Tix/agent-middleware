@@ -63,10 +63,11 @@ sources are untrusted is security logic, and it belongs with P1.
 
 - `SecurityMiddleware.resolvePolicy(workspaceId, agentId)` returns
   `{capabilities, appliedPolicies, runtime}`.
-- For middleware-managed multi-agent executions, `runtime` always uses the
-  read-only sandbox and `untrusted` approval policy. Every consequential action
-  therefore reaches the guard before execution; capabilities determine whether
-  the guard allows it, not whether the gate is enabled.
+- For middleware-managed multi-agent executions, `runtime` uses the
+  `workspace-write` sandbox and `untrusted` approval policy. The writable root
+  is limited to the isolated run workspace, and file-change proposals must
+  reach the guard before application; capabilities determine whether the guard
+  allows a proposal, not whether the gate is enabled.
 - P2 calls it once per execution. It configures the runtime from `runtime`,
   serialises work on `capabilities.write`, and stores `capabilities` on the
   new `AgentExecution.capabilities` field.
@@ -77,10 +78,11 @@ sources are untrusted is security logic, and it belongs with P1.
 
 - The scheduler must know which work writes (plan 3.2). Having P2 compute that
   itself would duplicate P1's layering rules.
-- The sandbox mode decides whether gates fire at all: `workspace-write`
-  applies mutations without any approval request
-  (`turn-security-policy.ts:29-30`). The orchestrator must not be the one
-  choosing it.
+- `read-only` prevents Codex 0.111 from exposing its file-change tool, so no
+  edit proposal can reach middleware. `workspace-write` exposes the tool while
+  limiting filesystem writes to the isolated run workspace; `untrusted` keeps
+  mutations behind the approval request. The orchestrator must not choose either
+  setting.
 - Audit has to explain an old decision after the policy has been edited.
 
 **Not adopted:** a capability snapshot on every decision. The one on the

@@ -82,13 +82,13 @@ export class DefaultSecurityMiddleware implements SecurityMiddleware {
     return {
       capabilities: resolved.capabilities,
       appliedPolicies: resolved.appliedPolicies,
-      // Every consequential action must reach this middleware before it runs,
-      // even when the profile grants every capability. Capabilities decide
-      // whether the middleware allows the proposal; they must not disable the
-      // interception point itself.
+      // Codex 0.111 hides its file-change tool in read-only mode. Expose it in
+      // the isolated writable workspace and require untrusted approval. The
+      // runtime checks that file changes reach the gate; this protocol behavior
+      // still needs verification against a live pinned Codex turn.
       runtime: {
         ...runtime,
-        sandboxMode: "read-only",
+        sandboxMode: "workspace-write",
         denyNetwork: runtime.denyNetwork || !resolved.capabilities.network,
         approvalPolicy: "untrusted",
         effectGating: true,

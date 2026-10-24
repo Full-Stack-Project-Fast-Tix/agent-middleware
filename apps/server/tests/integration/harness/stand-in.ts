@@ -85,7 +85,7 @@ export class ScriptedMiddleware implements SecurityMiddleware {
       capabilities: CAPABILITIES[roleOf(agentId)],
       appliedPolicies: [PLATFORM_POLICY],
       runtime: {
-        sandboxMode: "read-only",
+        sandboxMode: "workspace-write",
         denyNetwork: true,
         approvalPolicy: "untrusted",
         semanticEnforcement: true,
