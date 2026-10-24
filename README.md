@@ -120,9 +120,12 @@ When the **egress or semantic guard is on**, the guarded turn runs
 known-safe reads (`ls`, `cat`, `rg`) run untouched; the runtime expects commands
 and file-edit proposals to reach the approval handler before execution. It
 interrupts if a file change completes without that handler, but this backstop
-cannot undo the completed change. Pre-execution file approval still needs
-verification against the pinned Codex 0.111 binary; unit tests use a mock
-app-server.
+cannot undo the completed change. The pinned Codex 0.111.0 runtime has been
+verified with a local mock Responses API: it requested file-change approval
+before applying a patch, and declining left the test workspace unchanged. This
+check needs no model API key; run
+`npm run verify:codex-file-change-approval -w @launchpad/server` after building
+the local runtime image.
 
 Steer text is not written by each detector. A finding names a remediation
 category and the shared policy
