@@ -23,7 +23,7 @@ always the middleware's decision
 | `ports.ts` | The interfaces the orchestrator depends on: `RunStore`, `AgentDirectory`, `ExecutionRuntime`, `WorkingCopies` and `ActionGate`. |
 | `in-memory-run-store.ts` | `RunStore` in memory, publishing RunEvents with per-run seqs. Used until the PostgreSQL repositories land. |
 | `codex-execution-runtime.ts` | `CodexExecutionRuntime`: one execution, one disposable container, the Run's working copy at `/workspace`, its own trace file. Drives the turn with `../gated-turn.ts`. |
-| `working-copies.ts` | `DirectoryWorkingCopies`: copies the workspace to `<root>/<runId>/workspace` once per Run. Skips `node_modules` and `.codex`, keeps `.env`, copies symlinks as links. |
+| `working-copies.ts` | `DirectoryWorkingCopies`: copies the workspace to `<root>/<runId>/workspace` once per Run. Skips dependencies, local tool/credential stores, environment secrets, and common private-key files; keeps example environment templates and copies other symlinks as links. |
 
 Outside this folder: `../gated-turn.ts` drives one Codex turn whose
 approval requests go to `ActionGate.decide` and whose trace records go to

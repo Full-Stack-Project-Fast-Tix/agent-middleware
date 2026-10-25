@@ -8,9 +8,10 @@
 
 - The multi-agent path is implemented and is wired into password-auth mode with PostgreSQL, the real security middleware, the supervisor planner, and container-backed Codex executions. See [`apps/server/src/index.ts`](apps/server/src/index.ts), [`apps/server/src/postgres-runs.ts`](apps/server/src/postgres-runs.ts), and [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 - P1 fixed the gated runtime so file edits reach the approval gate, then disabled Codex `web_search` for executions whose resolved policy denies network. The pinned-runtime probe verifies that declining an edit leaves the file absent. The relevant commits are `31d0988`, `adf7f96`, and `b5e95b3`.
+- The working-copy follow-up now omits environment secrets and common credential stores/files by default, while retaining environment example templates. The prior test that expected `.env` in the agent workspace has been changed to assert the safer behavior.
 - PR #8's standard-agent descriptions route test-running work to the Developer. That assignment change is already merged; it is not an outstanding P2 task.
 - PostgreSQL persistence, password sign-in, workspace roles, run APIs, and the Run/Task UI foundations are present. The integration harness still uses stand-ins for several subsystems by design; it is not a full production-stack test.
-- The checked-out docs are inconsistent with the code. `CLAUDE.md` still says middleware-managed runs use a read-only sandbox. `README_AgentGuard.md` still describes multi-agent and password-auth support as planned. `docs/architecture-direction.md` says trusted adapters and orchestration wiring remain to be done, while `index.ts` now wires them in. P4 should reconcile status docs, with P1 correcting the security rule in `CLAUDE.md`.
+- Some checked-out docs are inconsistent with the code. `README_AgentGuard.md` still describes multi-agent and password-auth support as planned. `docs/architecture-direction.md` says trusted adapters and orchestration wiring remain to be done, while `index.ts` now wires them in. P4 should reconcile these status docs; P1 has corrected the canonical sandbox rule in `CLAUDE.md`.
 
 ## Decisions for the next phase
 
@@ -28,8 +29,8 @@ These are the recommended defaults so work can move without waiting for another 
 
 **Now**
 
-- Correct the canonical security invariant in [`CLAUDE.md`](CLAUDE.md): middleware-managed executions use `workspace-write` confined to the per-run workspace with `untrusted` approvals, not a read-only sandbox. Preserve the rule that capabilities decide which proposals are allowed, not whether the approval gate exists.
-- Define and review the default secret-file exclusions with P2. Add security-focused tests proving `.env` and common private credential files do not enter the run copy, while `.env.example` remains available. Keep the limitation explicit: a filename denylist is not a general secret scanner.
+- **Done in this follow-up:** corrected the canonical security invariant in [`CLAUDE.md`](CLAUDE.md). Middleware-managed executions use `workspace-write` confined to the per-run workspace with `untrusted` approvals; capabilities decide which proposals are allowed, not whether the approval gate exists.
+- Review the working-copy exclusion defaults with P2 before extending them. Keep the limitation explicit: a filename denylist is not a general secret scanner. The defaults and focused test expectation are now in the current branch.
 - Keep the file-change approval and network-denial probe in the runtime upgrade checklist. The actual Codex behavior is version-sensitive; rerun the probe whenever the pinned image changes.
 
 **Later / joint work**
@@ -43,7 +44,7 @@ These are the recommended defaults so work can move without waiting for another 
 
 - Fix the original false-completion issue. In [`orchestrator.ts`](apps/server/src/orchestrator/orchestrator.ts), `runTask` marks a Task completed whenever `ExecutionRuntime.execute()` returns. [`ExecutionOutcome`](apps/server/src/orchestrator/ports.ts) currently contains only the final message and runtime metadata. Add a validated task disposition to the runtime result and prompt contract. If the agent reports it could not complete the task—or the disposition is absent/invalid—record the execution as a completed turn but mark the Task failed with the explanation. Existing lifecycle rules then fail the Run and skip dependents. Add regression coverage for explicit inability, malformed disposition, and successful completion. Do not use fragile phrase matching or let an incomplete result flow to dependent tasks as a successful result.
 - Coordinate the disposition contract with P4 before changing shared API/event schemas. The recommended first implementation uses existing `Task.failed` and `Task.error`, avoiding a new status enum.
-- Implement the working-copy secret exclusions with P1's reviewed defaults. The current test that expects `.env` to be copied must be replaced with assertions that secrets are absent and templates remain.
+- Review the new working-copy exclusions and run the targeted tests when verification is scheduled. The old assertion that `.env` is copied has been replaced; `.env.example` remains available.
 - PR #8's developer/test assignment is already done. Keep test tasks assigned to an agent that can run them; preserve reviewer read-only permissions.
 
 **After the core flow is reliable**
@@ -88,7 +89,7 @@ These are the recommended defaults so work can move without waiting for another 
 
 ## Suggested order
 
-1. P1 and P2 close the secret-copy exposure and the false-completion path; P1 updates the canonical sandbox guidance.
+1. P1 and P2 review the secret-copy exclusions and close the false-completion path; P1 has updated the canonical sandbox guidance.
 2. P3 adds sign-in throttling and keeps PostgreSQL CI coverage active while P4 builds the shell and Dashboard in parallel.
 3. P2 and P3 implement terminal-artifact retention after the 30-day rule is accepted in code/docs.
 4. P4 reconciles stale docs and integrates P3's admin workflows.

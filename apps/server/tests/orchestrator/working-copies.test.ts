@@ -18,8 +18,15 @@ async function setup() {
   const source = path.join(base, "project");
   await mkdir(path.join(source, "src"), { recursive: true });
   await mkdir(path.join(source, "node_modules", "left-pad"), { recursive: true });
+  await mkdir(path.join(source, ".aws"), { recursive: true });
   await writeFile(path.join(source, "src", "signup.ts"), "export const signup = 1;\n");
   await writeFile(path.join(source, ".env"), "API_KEY=sk-test\n");
+  await writeFile(path.join(source, ".env.production"), "API_KEY=sk-production-test\n");
+  await writeFile(path.join(source, ".env.example"), "API_KEY=replace-me\n");
+  await writeFile(path.join(source, ".npmrc"), "//registry.npmjs.org/:_authToken=secret\n");
+  await writeFile(path.join(source, "id_ed25519"), "private key\n");
+  await writeFile(path.join(source, "tls.key"), "private key\n");
+  await writeFile(path.join(source, ".aws", "credentials"), "aws_secret_access_key=test\n");
   await writeFile(path.join(source, "node_modules", "left-pad", "index.js"), "module.exports = 1;\n");
   const root = path.join(base, "runs");
   let sourcePath: string | null = source;
@@ -38,15 +45,14 @@ async function setup() {
 const run = (id = RUN_ID) => ({ id, workspaceId: "00000000-0000-4000-8000-000000000001" }) as Run;
 
 describe("DirectoryWorkingCopies", () => {
-  it("copies the project into the run's own directory, secrets included, dependencies not", async () => {
+  it("copies project files but excludes environment secrets, credentials, and dependencies", async () => {
     const { root, copies } = await setup();
     const target = await copies.prepare(run());
 
     expect(target).toBe(path.join(root, RUN_ID, "workspace"));
     expect(await readFile(path.join(target, "src", "signup.ts"), "utf8")).toBe("export const signup = 1;\n");
-    // The guards exist to protect files like this one, so the copy keeps it.
-    expect(await readFile(path.join(target, ".env"), "utf8")).toBe("API_KEY=sk-test\n");
-    expect((await readdir(target)).sort()).toEqual([".env", "src"]);
+    expect(await readFile(path.join(target, ".env.example"), "utf8")).toBe("API_KEY=replace-me\n");
+    expect((await readdir(target)).sort()).toEqual([".env.example", "src"]);
   });
 
   it("prepares once: a second call keeps the agents' edits", async () => {

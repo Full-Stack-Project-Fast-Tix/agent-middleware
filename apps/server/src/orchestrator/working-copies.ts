@@ -17,8 +17,35 @@ import type { WorkingCopies } from "./ports.js";
 // nothing. Anything on the host that later reads the copy must still refuse to
 // follow links out of it.
 
-/** Never copied: rebuildable, large, or another tool's private state. */
-export const DEFAULT_EXCLUDED_NAMES = ["node_modules", ".codex"] as const;
+/** Directories never copied: rebuildable data or local credential stores. */
+export const DEFAULT_EXCLUDED_NAMES = [
+  "node_modules",
+  ".codex",
+  ".git",
+  ".ssh",
+  ".aws",
+  ".azure",
+  ".gnupg",
+  ".docker",
+  ".kube",
+] as const;
+
+const EXCLUDED_CREDENTIAL_FILE_NAMES = new Set([
+  ".npmrc",
+  ".pypirc",
+  ".netrc",
+  ".envrc",
+  "id_rsa",
+  "id_ed25519",
+  "id_ecdsa",
+  "id_dsa",
+  "application_default_credentials.json",
+  "service-account.json",
+  "service_account.json",
+]);
+
+const EXCLUDED_CREDENTIAL_SUFFIXES = [".pem", ".key", ".p12", ".pfx", ".keystore", ".tfstate"];
+const ENVIRONMENT_TEMPLATES = new Set([".env.example", ".env.sample", ".env.template"]);
 
 export interface WorkspaceSources {
   /** The project's files on this host, or null for a workspace that starts empty. */
@@ -33,7 +60,11 @@ export class DirectoryWorkingCopies implements WorkingCopies {
   constructor(options: { root: string; sources: WorkspaceSources; excludedNames?: readonly string[] }) {
     this.root = path.resolve(options.root);
     this.sources = options.sources;
-    this.excluded = new Set(options.excludedNames ?? DEFAULT_EXCLUDED_NAMES);
+    // Caller exclusions can add to the platform defaults, but cannot turn
+    // secret-file filtering off for one execution.
+    this.excluded = new Set(
+      [...DEFAULT_EXCLUDED_NAMES, ...(options.excludedNames ?? [])].map((name) => name.toLowerCase()),
+    );
   }
 
   /** Where a Run's copy lives. The id is checked so it cannot climb out of the root. */
@@ -69,9 +100,22 @@ export class DirectoryWorkingCopies implements WorkingCopies {
       errorOnExist: true,
       force: false,
       verbatimSymlinks: true,
-      filter: (entry) => entry === resolvedSource || !this.excluded.has(path.basename(entry)),
+      filter: (entry) => entry === resolvedSource || !this.isExcluded(entry),
     });
     return target;
+  }
+
+  private isExcluded(entry: string): boolean {
+    const name = path.basename(entry).toLowerCase();
+    if (this.excluded.has(name) || EXCLUDED_CREDENTIAL_FILE_NAMES.has(name)) return true;
+
+    // Environment files are often ignored by Git, but this copy does not use
+    // Git's ignore rules. Keep checked-in examples/templates for setup docs.
+    if (name === ".env" || name === ".envrc" || name.startsWith(".env.")) {
+      return !ENVIRONMENT_TEMPLATES.has(name) && !/\.(?:example|sample|template)$/.test(name);
+    }
+
+    return EXCLUDED_CREDENTIAL_SUFFIXES.some((suffix) => name.endsWith(suffix));
   }
 }
 
