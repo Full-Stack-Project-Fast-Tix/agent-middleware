@@ -52,7 +52,7 @@ describe("CodexExecutionRuntime", () => {
     const outcome = await new CodexExecutionRuntime(runner).execute(request());
 
     expect(sessions).toEqual([
-      { agentId: "agent-1", executionId: "execution-1", workspacePath: "/data/runs/run-1/workspace", traceId: "execution-1" },
+      { agentId: "agent-1", executionId: "execution-1", workspacePath: "/data/runs/run-1/workspace", disableWebSearch: true, traceId: "execution-1" },
     ]);
     expect(outcome).toEqual({
       output: "Validation added.",

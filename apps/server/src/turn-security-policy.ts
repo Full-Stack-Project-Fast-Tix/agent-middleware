@@ -13,8 +13,9 @@ import type { TurnOptions } from "./run-turn.js";
  * sandbox under `on-request` and fail without ever emitting an approval.
  * Guarded effects therefore use `untrusted` as their real pre-execution hook.
  * The writable workspace mode exposes Codex's file-change tool; its filesystem
- * access remains scoped to the isolated run workspace. Pre-execution approval
- * for those changes must be verified against the pinned Codex runtime.
+ * access remains scoped to the isolated run workspace. The pinned Codex
+ * approval behavior is checked by the local mock Responses API probe. Network
+ * denial also disables Codex's service-side web search tool for that execution.
  */
 export interface TurnSecurityPolicy {
   sandboxMode: TurnOptions["sandboxMode"];

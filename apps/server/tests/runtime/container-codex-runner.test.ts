@@ -80,6 +80,18 @@ describe("Container Codex runner", () => {
     expect(args).not.toContain("thread-123");
     expect(args).not.toContain("keep-id");
   });
+
+  it("disables Codex web search for an execution whose middleware policy denies network", () => {
+    const config = loadConfig({ NODE_ENV: "test", CODEX_HOME: "/tmp/codex-home", RUNTIME_PROVIDER: "container" });
+    const args = buildContainerRunArgs(
+      { agentId: "agent", executionId: "execution", workspacePath: "/tmp/workspace", disableWebSearch: true },
+      config,
+    );
+    const configIndex = args.indexOf("--config");
+
+    expect(configIndex).toBeGreaterThan(-1);
+    expect(args[configIndex + 1]).toBe('web_search="disabled"');
+  });
 });
 
 describe("buildGuardChecks", () => {

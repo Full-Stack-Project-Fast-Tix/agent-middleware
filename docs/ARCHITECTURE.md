@@ -95,7 +95,10 @@ The pinned Codex 0.111.0 runtime was verified with a local mock Responses API:
 it emitted a file-change approval request before applying the patch, and
 declining left the isolated workspace file absent. Re-run this check with
 `npm run verify:codex-file-change-approval -w @launchpad/server` after building
-the local runtime image. This does not make every
+the local runtime image. For each execution whose resolved policy denies
+network, the runtime also passes `web_search="disabled"` to app-server. This
+closes the service-side web search path that is outside the workspace's network
+sandbox. This does not make every
 operation a semantic-model call. It makes every command except a known-safe
 read, plus state-changing workspace actions, pause at Codex's real approval
 request, where `runTurn()` waits

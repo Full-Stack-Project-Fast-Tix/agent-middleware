@@ -84,8 +84,9 @@ export class DefaultSecurityMiddleware implements SecurityMiddleware {
       appliedPolicies: resolved.appliedPolicies,
       // Codex 0.111 hides its file-change tool in read-only mode. Expose it in
       // the isolated writable workspace and require untrusted approval. The
-      // runtime checks that file changes reach the gate; this protocol behavior
-      // still needs verification against a live pinned Codex turn.
+      // pinned runtime's approval boundary is exercised by the local mock
+      // Responses API probe. Also keep service-side web search off whenever
+      // this resolved runtime policy denies network access.
       runtime: {
         ...runtime,
         sandboxMode: "workspace-write",

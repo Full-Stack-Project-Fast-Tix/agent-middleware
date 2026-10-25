@@ -66,8 +66,10 @@ sources are untrusted is security logic, and it belongs with P1.
 - For middleware-managed multi-agent executions, `runtime` uses the
   `workspace-write` sandbox and `untrusted` approval policy. The writable root
   is limited to the isolated run workspace, and file-change proposals must
-  reach the guard before application; capabilities determine whether the guard
-  allows a proposal, not whether the gate is enabled.
+  reach the guard before application. When network is denied, the runtime also
+  disables Codex's service-side `web_search` tool for that execution;
+  capabilities determine whether the guard allows a proposal, not whether the
+  gate is enabled.
 - P2 calls it once per execution. It configures the runtime from `runtime`,
   serialises work on `capabilities.write`, and stores `capabilities` on the
   new `AgentExecution.capabilities` field.
@@ -81,8 +83,11 @@ sources are untrusted is security logic, and it belongs with P1.
 - `read-only` prevents Codex 0.111 from exposing its file-change tool, so no
   edit proposal can reach middleware. `workspace-write` exposes the tool while
   limiting filesystem writes to the isolated run workspace; `untrusted` keeps
-  mutations behind the approval request. The orchestrator must not choose either
-  setting.
+  mutations behind the approval request. Codex web search runs through a
+  service-side tool outside the workspace network sandbox, so the app-server
+  also receives a per-execution `web_search="disabled"` override when the
+  resolved policy denies network. The orchestrator must not choose these
+  settings.
 - Audit has to explain an old decision after the policy has been edited.
 
 **Not adopted:** a capability snapshot on every decision. The one on the

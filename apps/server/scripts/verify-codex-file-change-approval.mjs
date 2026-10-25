@@ -22,6 +22,7 @@ mkdirSync(codexHome);
 
 let apiRequests = 0;
 let applyPatchAvailable = false;
+let webSearchAvailable = false;
 let fileChangeApproval = false;
 let declined = false;
 const lifecycle = [];
@@ -48,6 +49,9 @@ const mockApi = createServer((request, response) => {
     if (apiRequests === 1) {
       applyPatchAvailable = (apiRequest.tools ?? []).some(
         (tool) => tool.type === "custom" && tool.name === "apply_patch",
+      );
+      webSearchAvailable = (apiRequest.tools ?? []).some(
+        (tool) => tool.type === "web_search" || tool.name === "web_search",
       );
     }
 
@@ -102,7 +106,7 @@ const runtime = spawn("docker", [
   "--env", "CODEX_HOME=/codex-home",
   "--env", "HOME=/tmp",
   "--workdir", "/workspace",
-  image, "codex", "app-server", "--listen", "stdio://",
+  image, "codex", "app-server", "--config", 'web_search="disabled"', "--listen", "stdio://",
 ], { stdio: ["pipe", "pipe", "pipe"] });
 const appServerLines = createInterface({ input: runtime.stdout });
 const pending = new Map();
@@ -113,7 +117,7 @@ function finish(kind, turn = null, error = null) {
   finished = true;
   clearTimeout(timer);
   const fileExists = existsSync(targetPath);
-  const passed = kind === "turn-completed" && applyPatchAvailable && fileChangeApproval && declined && !fileExists;
+  const passed = kind === "turn-completed" && applyPatchAvailable && !webSearchAvailable && fileChangeApproval && declined && !fileExists;
   console.log(JSON.stringify({
     passed,
     runtimeImage: image,
@@ -122,6 +126,7 @@ function finish(kind, turn = null, error = null) {
     turnStatus: turn?.status ?? null,
     error,
     applyPatchAvailable,
+    webSearchAvailable,
     fileChangeApproval,
     declined,
     fileExists,
@@ -184,7 +189,11 @@ timer = setTimeout(() => finish("timeout", null, "Timed out waiting for the Code
 try {
   await rpc("initialize", { clientInfo: { name: "agentguard-approval-probe", title: "AgentGuard approval probe", version: "1.0.0" } });
   runtime.stdin.write(JSON.stringify({ method: "initialized", params: {} }) + "\n");
-  const thread = await rpc("thread/start", { cwd: "/workspace", sandbox: "workspace-write", approvalPolicy: "untrusted" });
+  const thread = await rpc("thread/start", {
+    cwd: "/workspace",
+    sandbox: "workspace-write",
+    approvalPolicy: "untrusted",
+  });
   await rpc("turn/start", {
     threadId: thread.thread.id,
     input: [{ type: "text", text: "Create approval-probe.txt using apply_patch with the content: created by mock" }],

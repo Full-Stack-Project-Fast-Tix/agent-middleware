@@ -45,6 +45,8 @@ export interface RuntimeSessionRequest {
   executionId: string;
   /** Mounted at /workspace. */
   workspacePath: string;
+  /** Disable Codex's service-side web search when this execution has no network capability. */
+  disableWebSearch?: boolean;
   /** Names the trace file: the legacy run id, or the AgentExecution id. */
   traceId: string;
 }
@@ -63,7 +65,7 @@ export interface RuntimeSession {
 }
 
 export function buildContainerRunArgs(
-  request: Pick<RunnerRequest, "agentId" | "executionId" | "workspacePath">,
+  request: Pick<RunnerRequest, "agentId" | "executionId" | "workspacePath"> & { disableWebSearch?: boolean },
   config: AppConfig,
 ): string[] {
   const name = containerName(request.executionId, config.runtimeInstanceId);
@@ -121,6 +123,7 @@ export function buildContainerRunArgs(
     // binary speaking bidirectional JSON-RPC, which is what makes both the
     // trace and any future enforcement possible.
     "app-server",
+    ...(request.disableWebSearch ? ["--config", 'web_search="disabled"'] : []),
     "--listen",
     "stdio://",
   ];

@@ -55,7 +55,9 @@ is created either. A blocked handoff withholds that result from the prompt.
 - **Policy.** It is resolved once per execution and snapshotted on
   `AgentExecution.capabilities`. The scheduler serialises on
   `capabilities.write`. The runtime settings come from the middleware, never
-  from here.
+  from here. When the resolved policy denies network, the container runtime
+  disables Codex's service-side `web_search` tool as well as workspace network
+  access.
 - **The runtime fails closed.** `CodexExecutionRuntime` refuses to start
   unless the policy is `workspace-write` sandbox with `untrusted` approvals.
   Workspace writes are scoped to the isolated run workspace, and proposals must

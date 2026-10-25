@@ -127,6 +127,10 @@ check needs no model API key; run
 `npm run verify:codex-file-change-approval -w @launchpad/server` after building
 the local runtime image.
 
+For executions whose resolved policy denies network access, the runtime also
+disables Codex's service-side `web_search` tool per execution. The workspace
+network sandbox alone does not cover that tool.
+
 Steer text is not written by each detector. A finding names a remediation
 category and the shared policy
 ([`steering-policy.ts`](apps/server/src/steering-policy.ts)) builds the
