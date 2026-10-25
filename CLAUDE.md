@@ -19,7 +19,7 @@ AgentGuard is a security-focused coding-agent platform. A developer specifies th
 
 This remains a proof of concept, not a production-secure multi-tenant service. Preserve the legacy single-agent path while extending the multi-agent Run → Task → AgentExecution model unless a breaking change is explicit. Do not claim production security, hardened tenant isolation, complete prompt-injection detection, or guaranteed prevention of every secret or malicious instruction. Read the architecture documents before making cross-component assumptions.
 
-The main areas are `apps/server` (Fastify API, legacy runtime, security checks and multi-agent foundations), `apps/web` (React UI), `packages/shared` (shared TypeScript/Zod contracts), `benchmark/` (evaluation and replay), `apps/server/migrations/` and `apps/server/src/db/` (PostgreSQL foundations), and `deploy/`/`scripts/` (POC operations). The normal server startup and multi-agent foundations are not yet a fully composed production deployment; consult `docs/ARCHITECTURE.md` for exact current status. Preserve `AgentRun` compatibility while the multi-agent model evolves.
+The main areas are `apps/server` (Fastify API, legacy runtime, security checks and multi-agent foundations), `apps/web` (React UI), `packages/shared` (shared TypeScript/Zod contracts), `benchmark/` (evaluation and replay), `apps/server/migrations/` and `apps/server/src/db/` (PostgreSQL foundations), and `deploy/`/`scripts/` (POC operations). Password-authenticated container-mode startup composes the multi-agent path, but this is not a production-hardened deployment; consult `docs/ARCHITECTURE.md` for exact current status. Preserve `AgentRun` compatibility while the multi-agent model evolves.
 
 ## Security and authority invariants
 

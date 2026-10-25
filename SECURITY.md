@@ -20,6 +20,10 @@ credentials, personal data, or exploit details in an issue.
   `CODEX_NETWORK_ACCESS=true` opts into broad access on unguarded container turns;
   egress, semantic, and HITL guarded turns still deny it.
   This is not host-level egress filtering.
+- Multi-agent working copies exclude known environment-secret patterns and
+  common credential stores/files by default, but this is a filename-based
+  denylist rather than general secret detection. Unrecognized secrets in
+  copied files may still be visible to the Agent.
 - Prompt-triggered command and file execution
 - Ark key available to the server and active Runtime container
 - Ark key stored in Terraform POC state

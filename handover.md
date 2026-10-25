@@ -11,13 +11,13 @@
 - The working-copy follow-up now omits environment secrets and common credential stores/files by default, while retaining environment example templates. The prior test that expected `.env` in the agent workspace has been changed to assert the safer behavior.
 - PR #8's standard-agent descriptions route test-running work to the Developer. That assignment change is already merged; it is not an outstanding P2 task.
 - PostgreSQL persistence, password sign-in, workspace roles, run APIs, and the Run/Task UI foundations are present. The integration harness still uses stand-ins for several subsystems by design; it is not a full production-stack test.
-- Some checked-out docs are inconsistent with the code. `README_AgentGuard.md` still describes multi-agent and password-auth support as planned. `docs/architecture-direction.md` says trusted adapters and orchestration wiring remain to be done, while `index.ts` now wires them in. P4 should reconcile these status docs; P1 has corrected the canonical sandbox rule in `CLAUDE.md`.
+- The implementation-status docs have been reconciled with the current startup wiring and working-copy exclusions. The integration harness still uses stand-ins in its default scenarios; see `docs/ARCHITECTURE.md` for that limitation.
 
 ## Decisions for the next phase
 
 These are the recommended defaults so work can move without waiting for another planning meeting.
 
-1. **Do not put project secrets in an agent-visible working copy by default.** `DirectoryWorkingCopies` currently excludes only `node_modules` and `.codex`; it copies `.env`, and [`working-copies.test.ts`](apps/server/tests/orchestrator/working-copies.test.ts) asserts that behavior. A `.gitignore` entry does not affect this copy operation. Exclude `.env` and `.env.*` by default, while retaining obvious templates such as `.env.example`; add common private-key/credential files to a narrow, documented default denylist. Do not treat this as complete secret detection. If an agent needs a credential for a task, pass a narrowly scoped, short-lived value through a separate approved mechanism rather than copying the project's secret file.
+1. **Keep project secrets out of agent-visible working copies by default.** `DirectoryWorkingCopies` now excludes `.env` and `.env.*` except example/sample/template files, common credential-store directories and filenames, and selected private-key/state-file extensions. `.gitignore` does not control this copy operation. This is a filename-based denylist, not general secret detection. If an agent needs a credential, provide it through a separately approved, narrowly scoped mechanism rather than copying the project's secret file.
 2. **Separate “the Codex turn ended” from “the task was completed.”** Keep the existing `AgentExecution` status for whether the turn ran successfully. Require a validated final task disposition (`complete` or `incomplete`); map `incomplete`, missing, or invalid disposition to the existing `Task.failed` status with a useful error/result. Do not infer completion by searching free-form prose, and do not retry a task just because the agent reported it could not do the work. Treat the disposition as an agent report, not proof that code is correct. Prefer the existing status and fields over adding a new shared `TaskStatus` unless the UI demonstrates a real need.
 3. **Keep nested delegation disabled for the first integrated milestone.** The current orchestrator README says specialists cannot delegate, so effective depth is 1. That is a reasonable initial boundary. Do not expose a higher effective depth until P1 and P2 have tested parent/child identity, depth enforcement, and middleware evaluation at every delegation.
 4. **Set a 30-day default retention for terminal-run workspaces and raw traces.** Never clean up queued, running, or approval-waiting runs. Retain audit rows and bounded status/findings after artifacts expire, and show that an artifact is expired instead of presenting a broken path as available evidence. P2 owns the policy and P3 owns the cleanup job/storage behavior. This is a POC default; a real deployment should make retention configurable and disclose it.
@@ -30,7 +30,7 @@ These are the recommended defaults so work can move without waiting for another 
 **Now**
 
 - **Done in this follow-up:** corrected the canonical security invariant in [`CLAUDE.md`](CLAUDE.md). Middleware-managed executions use `workspace-write` confined to the per-run workspace with `untrusted` approvals; capabilities decide which proposals are allowed, not whether the approval gate exists.
-- Review the working-copy exclusion defaults with P2 before extending them. Keep the limitation explicit: a filename denylist is not a general secret scanner. The defaults and focused test expectation are now in the current branch.
+- **Done:** added default working-copy exclusions for known environment-secret patterns and common credential stores/files, retaining example templates. Keep the limitation explicit: a filename denylist is not general secret detection. P2 can review the defaults alongside orchestration changes.
 - Keep the file-change approval and network-denial probe in the runtime upgrade checklist. The actual Codex behavior is version-sensitive; rerun the probe whenever the pinned image changes.
 
 **Later / joint work**
@@ -44,7 +44,7 @@ These are the recommended defaults so work can move without waiting for another 
 
 - Fix the original false-completion issue. In [`orchestrator.ts`](apps/server/src/orchestrator/orchestrator.ts), `runTask` marks a Task completed whenever `ExecutionRuntime.execute()` returns. [`ExecutionOutcome`](apps/server/src/orchestrator/ports.ts) currently contains only the final message and runtime metadata. Add a validated task disposition to the runtime result and prompt contract. If the agent reports it could not complete the task—or the disposition is absent/invalid—record the execution as a completed turn but mark the Task failed with the explanation. Existing lifecycle rules then fail the Run and skip dependents. Add regression coverage for explicit inability, malformed disposition, and successful completion. Do not use fragile phrase matching or let an incomplete result flow to dependent tasks as a successful result.
 - Coordinate the disposition contract with P4 before changing shared API/event schemas. The recommended first implementation uses existing `Task.failed` and `Task.error`, avoiding a new status enum.
-- Review the new working-copy exclusions and run the targeted tests when verification is scheduled. The old assertion that `.env` is copied has been replaced; `.env.example` remains available.
+- The working-copy exclusion defaults are implemented; preserve them and their regression coverage during orchestration changes.
 - PR #8's developer/test assignment is already done. Keep test tasks assigned to an agent that can run them; preserve reviewer read-only permissions.
 
 **After the core flow is reliable**
@@ -70,7 +70,7 @@ These are the recommended defaults so work can move without waiting for another 
 **Now**
 
 - Continue the app shell, Dashboard, and full Run Detail composition listed in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). Run creation, task graph, task drill-down, approvals, and SSE foundations already exist; build on them rather than replacing the working API/event contract.
-- Reconcile stale project-status documentation: `README_AgentGuard.md`, `docs/architecture-direction.md`, and the inaccurate statements in `docs/ARCHITECTURE.md`. Record what is implemented, what remains P3/P4 work, and what is only design direction. Update the orchestrator README where it still says PostgreSQL stores are waiting to land.
+- Continue keeping project-status documentation aligned with implementation as P2/P3/P4 work lands. Current architecture docs distinguish the wired password-auth/container path from the integration harness's stand-ins and list remaining admin UI, throttling, and tenant-isolation work.
 - Review any shared-contract changes required by P2's task disposition with P2 first. If the UI needs to distinguish an agent-reported completion from verified completion, represent that distinction explicitly rather than implying that a completed Codex turn proves the requested code is correct.
 
 ## Who waits on whom

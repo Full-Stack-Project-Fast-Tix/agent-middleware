@@ -33,6 +33,8 @@ that stops it was written by the guard, not by the model.
 > `APP_AUTH_MODE=password` adds user accounts and workspace roles (see
 > [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)). It has no tenant isolation and
 > no hardened sandbox. Do not point it at production data or real credentials.
+> Multi-agent run copies omit common environment-secret and credential-file
+> patterns, but that filename-based filter is not general secret detection.
 > See [SECURITY.md](SECURITY.md).
 
 ---
@@ -70,9 +72,11 @@ to decide *why* the Agent is doing something, or whether an instruction is
 ### Behavioural invariants, not intent detection
 
 Each deterministic guard enforces a **behavioural invariant**: something the
-Agent must never do, no matter what led it there (for example, *workspace
-secrets never leave the machine*). The guard only asks whether the Agent is
-about to cross that line.
+Agent must never do, no matter what led it there (for example, preventing
+recognized workspace credentials from being sent through a detected egress
+path). The guard only asks whether the Agent is about to cross that line.
+Filename-based working-copy exclusions reduce exposure but do not detect every
+secret or guarantee that sensitive data never leaves the machine.
 
 The semantic guard is the one exception, and a narrow one. It does not guess
 motive either — it compares the Agent's *apparent objective* against the
