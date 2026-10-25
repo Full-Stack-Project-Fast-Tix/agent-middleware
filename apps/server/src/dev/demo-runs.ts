@@ -187,7 +187,7 @@ class DemoMiddleware implements SecurityMiddleware {
     return {
       capabilities: ROLES[roleOf(agentId)].capabilities,
       appliedPolicies: [DEMO_POLICY],
-      runtime: { sandboxMode: "read-only", denyNetwork: true, approvalPolicy: "untrusted", semanticEnforcement: true, effectGating: true },
+      runtime: { sandboxMode: "workspace-write", denyNetwork: true, approvalPolicy: "untrusted", semanticEnforcement: true, effectGating: true },
     };
   }
 

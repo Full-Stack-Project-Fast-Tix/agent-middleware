@@ -249,7 +249,7 @@ describe("DefaultSecurityMiddleware.resolvePolicy", () => {
     const resolved = await middleware.resolvePolicy(WORKSPACE_ID, AGENT_ID);
 
     expect(resolved.runtime).toEqual({
-      sandboxMode: "read-only",
+      sandboxMode: "workspace-write",
       denyNetwork: false,
       approvalPolicy: "untrusted",
       semanticEnforcement: false,

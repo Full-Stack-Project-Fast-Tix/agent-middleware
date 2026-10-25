@@ -30,7 +30,7 @@ describe("turn security policy", () => {
     );
 
     expect(policy).toEqual({
-      sandboxMode: "read-only",
+      sandboxMode: "workspace-write",
       denyNetwork: true,
       approvalPolicy: "untrusted",
       semanticEnforcement: false,
@@ -38,7 +38,7 @@ describe("turn security policy", () => {
     });
   });
 
-  it("uses the verified read-only approval barrier for semantic enforcement", () => {
+  it("uses the writable-workspace approval barrier for semantic enforcement", () => {
     const policy = resolveTurnSecurityPolicy(
       loadConfig({
         NODE_ENV: "test",
@@ -49,7 +49,7 @@ describe("turn security policy", () => {
     );
 
     expect(policy).toEqual({
-      sandboxMode: "read-only",
+      sandboxMode: "workspace-write",
       denyNetwork: true,
       approvalPolicy: "untrusted",
       semanticEnforcement: true,
@@ -68,7 +68,7 @@ describe("turn security policy", () => {
     expect(config.hitlEnabled).toBe(true);
     expect(config.hitlTimeoutMs).toBe(120_000);
     expect(policy).toEqual({
-      sandboxMode: "read-only",
+      sandboxMode: "workspace-write",
       denyNetwork: true,
       approvalPolicy: "untrusted",
       semanticEnforcement: false,

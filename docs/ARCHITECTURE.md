@@ -86,8 +86,19 @@ directly; `runTurn()` remains the only live enforcement point. Derived findings
 are persisted on the Run and do not modify the append-only raw trace.
 
 When `GUARDRAIL_SEMANTIC_ENABLED=true`, the container runner resolves an
-explicit turn security policy before starting Codex: `read-only` sandbox,
-`untrusted` approval policy, and denied network. This does not make every
+explicit turn security policy before starting Codex: `workspace-write` sandbox
+limited to `/workspace`, `untrusted` approval policy, and denied network. The
+writable sandbox exposes Codex's file-change tool; the approval handler remains
+the intended pre-execution gate. The runtime interrupts when a file change
+completes without an approval request, but that backstop cannot undo the edit.
+The pinned Codex 0.111.0 runtime was verified with a local mock Responses API:
+it emitted a file-change approval request before applying the patch, and
+declining left the isolated workspace file absent. Re-run this check with
+`npm run verify:codex-file-change-approval -w @launchpad/server` after building
+the local runtime image. For each execution whose resolved policy denies
+network, the runtime also passes `web_search="disabled"` to app-server. This
+closes the service-side web search path that is outside the workspace's network
+sandbox. This does not make every
 operation a semantic-model call. It makes every command except a known-safe
 read, plus state-changing workspace actions, pause at Codex's real approval
 request, where `runTurn()` waits
@@ -115,8 +126,11 @@ single-agent path above, which is unchanged. These parts exist:
   [`security-middleware-impl.ts`](../apps/server/src/security-middleware-impl.ts)):
   a concrete policy resolver and one stateful guard per AgentExecution,
   including bounded in-memory run-scoped credential taint. The middleware is
-  exercised through the orchestrator integration harness, but is not composed
-  into normal server startup.
+  composed into password-authenticated container-mode server startup. The
+  integration harness also exercises the orchestrator and routes, using
+  stand-ins for persistence and middleware in its default scenarios; focused
+  middleware tests cover the concrete implementation. This is not a full
+  production-stack test.
 - **Orchestrator**
   ([`apps/server/src/orchestrator`](../apps/server/src/orchestrator/README.md)):
   - plans with a tool-less supervisor call, validates the plan, and delegates
@@ -138,8 +152,16 @@ single-agent path above, which is unchanged. These parts exist:
 - **Integration harness**
   ([`apps/server/tests/integration`](../apps/server/tests/integration)): drives
   Runs through the public API and checks the invariants every Run must
-  satisfy, against the real orchestrator and routes. Persistence and the
-  middleware are still stand-ins.
+  satisfy, against the real orchestrator and routes. Its default scenarios use
+  stand-ins for persistence and middleware, so it does not replace a full
+  PostgreSQL/container deployment check.
+
+Multi-agent run copies omit `.env` and `.env.*` except example/sample/template
+files, common credential stores and filenames, and selected private-key/state
+file extensions. This is a filename-based denylist, not a general secret
+scanner; secrets stored under unrecognized names may still be copied. See
+[`working-copies.ts`](../apps/server/src/orchestrator/working-copies.ts) for
+the exact defaults.
 
 One `auto` Run, end to end. Every arrow into the middleware is a decision that
 can allow, steer, block or require approval:

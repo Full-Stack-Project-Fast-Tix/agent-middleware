@@ -21,10 +21,10 @@ import type { TurnSecurityPolicy } from "./turn-security-policy.js";
 export interface ResolvedPolicy extends EffectivePolicy {
   /**
    * Chosen by the middleware, never the orchestrator. For example a
-   * workspace-write sandbox applies mutations without ever raising an approval
-   * request (turn-security-policy.ts), so picking it would bypass evaluate().
-   * The multi-agent middleware always returns a pre-execution gate; capabilities
-   * decide whether a gated action is allowed, not whether the gate fires.
+   * workspace-write sandbox exposes file changes within the isolated run
+   * workspace; `untrusted` approval ensures proposals reach evaluate() before
+   * application. Capabilities decide whether a gated action is allowed, not
+   * whether the gate fires.
    */
   runtime: TurnSecurityPolicy;
 }

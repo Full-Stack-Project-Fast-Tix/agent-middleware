@@ -97,7 +97,7 @@ const envSchema = z.object({
    * Run the sensitive-egress family of checks (sensitive-egress and
    * outbound-blob) against every turn, and pin a guarded turn to
    * GUARDRAIL_SANDBOX with network denied. Guarded effects use the verified
-   * read-only/untrusted Runtime policy, which pauses every command except
+   * workspace-write/untrusted Runtime policy, which pauses every command except
    * known-safe reads before execution. Off by default: with no checks the agent
    * runs exactly as it would unobserved.
    *
@@ -131,7 +131,7 @@ const envSchema = z.object({
   GUARDRAIL_SENSITIVE_MARKERS: z.string().default(""),
   /**
    * Legacy egress sandbox setting retained for configuration compatibility.
-   * Hard deterministic and semantic guards use the verified read-only policy.
+   * Guarded container turns use the writable-workspace approval policy.
    */
   GUARDRAIL_SANDBOX: z
     .enum(["read-only", "workspace-write", "danger-full-access"])
@@ -155,7 +155,7 @@ const envSchema = z.object({
     .transform((value) => value === "true" || value === "1"),
   /**
    * Enable task-aware semantic monitoring and its container-runtime
-   * pre-execution policy: read-only sandbox, untrusted approvals, and denied
+   * pre-execution policy: workspace-write sandbox, untrusted approvals, and denied
    * network. Container Runtime only.
    */
   GUARDRAIL_SEMANTIC_ENABLED: z

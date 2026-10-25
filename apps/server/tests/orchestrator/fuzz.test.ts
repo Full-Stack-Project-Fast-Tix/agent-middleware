@@ -115,7 +115,7 @@ class FuzzMiddleware implements SecurityMiddleware {
     return {
       capabilities: CAPABILITIES[agentId]!,
       appliedPolicies: [],
-      runtime: { sandboxMode: "read-only", denyNetwork: true, approvalPolicy: "untrusted", semanticEnforcement: true, effectGating: true },
+      runtime: { sandboxMode: "workspace-write", denyNetwork: true, approvalPolicy: "untrusted", semanticEnforcement: true, effectGating: true },
     };
   }
 

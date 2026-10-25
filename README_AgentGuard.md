@@ -4,7 +4,7 @@
 
 AgentGuard is a platform for delegating software-engineering tasks to autonomous coding agents while keeping **security enforcement, human approvals, and execution visibility outside the agents themselves**.
 
-> **Project status:** Active capstone development. The existing repository is a single-user, single-agent security-middleware proof of concept. Multi-agent orchestration, multi-user governance, and the expanded operations console described below are **planned**, not necessarily implemented.
+> **Project status:** Active capstone development. The repository now has a multi-agent Run/Task/AgentExecution path, password-authenticated workspaces backed by PostgreSQL, server-side middleware wiring, container-backed Codex execution, and a Runs UI. The broader governance and operations-console vision below is only partly implemented. This remains a proof of concept, not production-grade tenant isolation.
 
 ## Overview
 
@@ -19,13 +19,16 @@ The proof of concept currently includes:
 - A browser-based coding-agent platform using **Codex CLI**.
 - A **React + TypeScript** frontend and **Fastify + TypeScript** backend.
 - A single-agent execution lifecycle with workspace interaction, execution traces, and security findings.
-- **Deterministic guards** for behavioral invariants (for example, preventing sensitive workspace data from leaving the environment).
+- Multi-agent Runs with task planning, dependency-aware scheduling, isolated working copies, and per-execution container runtimes in password-authenticated mode.
+- PostgreSQL-backed users, workspaces, workspace roles, and Run persistence for that mode.
+- Run and Task status views, approval handling, and live Run updates in the web app.
+- **Deterministic guards** for behavioral invariants (for example, detecting known credentials used in recognized outbound channels).
 - A **semantic guard** that compares an agent's apparent objective with the trusted user task and checks for task deviation.
 - **Human-in-the-loop (HITL)** approval boundaries and execution interruption.
 - **Reflection memory** recording structured lessons from past security incidents.
 - Security findings surfaced in the execution trajectory, with replay/evaluation through an existing benchmark framework.
 
-The current proof of concept uses lightweight single-user persistence. It does **not yet** offer first-class multi-agent orchestration, authentication/RBAC, tenant/workspace isolation, administrator-managed hierarchical policies, or a full operations console.
+The multi-agent and password-authenticated paths are implemented foundations, with workspace-role checks and capability ceilings. Admin management UI, sign-in throttling, configurable policy rules, stronger tenant isolation, and the full operations console remain unfinished. Run copies omit known environment-secret patterns and common credential stores/files by default; this filename-based filter is not general secret detection.
 
 ## Planned product capabilities
 
@@ -117,7 +120,7 @@ The supervisor's plan should be **structured JSON validated with Zod**. It choos
 
 ### Security evaluation contract
 
-The planned shared boundary between the orchestrator and security middleware consists of:
+The shared boundary between the orchestrator and security middleware consists of:
 
 | Contract | Purpose |
 | --- | --- |
@@ -145,7 +148,7 @@ Workspace (logical project)
 └── Run 124 -> /runs/124/workspace
 ```
 
-Within a run, read-only analysis tasks may run concurrently. Write-capable tasks should initially be serialized to avoid merge/conflict complexity. Existing containment controls should continue to protect sensitive files (such as `.env`). This approach is **not a claim of production-grade sandboxing** beyond what is actually demonstrated.
+Within a run, read-only analysis tasks may run concurrently. Write-capable tasks should initially be serialized to avoid merge/conflict complexity. Multi-agent working copies exclude `.env` and `.env.*` except example/sample/template files, common credential-store directories and filenames, and private-key/state-file extensions. These are filename-based defaults, not general secret detection; unusual secrets in other files can still be copied. This approach is **not a claim of production-grade sandboxing** beyond what is actually demonstrated.
 
 ### Data and event conventions
 

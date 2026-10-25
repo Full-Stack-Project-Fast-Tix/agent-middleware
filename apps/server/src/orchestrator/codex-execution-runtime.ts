@@ -28,6 +28,7 @@ export class CodexExecutionRuntime implements ExecutionRuntime {
           agentId: request.agent.id,
           executionId: request.execution.id,
           workspacePath: request.workingDirectory,
+          disableWebSearch: request.runtimePolicy.denyNetwork,
           traceId: request.execution.id,
         },
         (session) =>

@@ -12,6 +12,10 @@ import type { TurnOptions } from "./run-turn.js";
  * `on-request`: a network-denied command may still be attempted inside the
  * sandbox under `on-request` and fail without ever emitting an approval.
  * Guarded effects therefore use `untrusted` as their real pre-execution hook.
+ * The writable workspace mode exposes Codex's file-change tool; its filesystem
+ * access remains scoped to the isolated run workspace. The pinned Codex
+ * approval behavior is checked by the local mock Responses API probe. Network
+ * denial also disables Codex's service-side web search tool for that execution.
  */
 export interface TurnSecurityPolicy {
   sandboxMode: TurnOptions["sandboxMode"];
@@ -26,9 +30,10 @@ export interface TurnSecurityPolicy {
 export function resolveTurnSecurityPolicy(config: AppConfig): TurnSecurityPolicy {
   if (config.semanticGuardEnabled || config.egressGuardEnabled || config.hitlEnabled) {
     return {
-      // `workspaceWrite` permits mutations with no approval notification.
-      // `readOnly` keeps inspection cheap but makes writes request approval.
-      sandboxMode: "read-only",
+      // Codex 0.111 does not expose its file-change tool in `readOnly` mode.
+      // `untrusted` is the approval policy. Gated runtime also fails closed if
+      // a file change completes without the expected approval request.
+      sandboxMode: "workspace-write",
       // Defence in depth after the untrusted approval boundary: even an
       // unexpected ungated network attempt remains inside a networkless sandbox.
       denyNetwork: true,
