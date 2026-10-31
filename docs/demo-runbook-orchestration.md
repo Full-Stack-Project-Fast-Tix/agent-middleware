@@ -26,10 +26,10 @@ Say this once, early. It is true, and it pre-empts the first question.
    - Both listen on this machine only: the demo has simulated security and no
      access token, so do not expose it on the network.
    - Wait for the line `RUNS_DEMO is on`.
-2. **Open** `http://localhost:<port>/#/runs/new` and check that it says
+2. **Open** `http://localhost:<port>/runs/new` and check that it says
    "Workspace Demo: checkout-service".
-3. **Rehearse once,** then restart (step 1) so the "Started in this browser"
-   list holds only that run.
+3. **Rehearse once,** then restart (step 1) so the Dashboard's "Recent runs"
+   starts empty.
 4. **Make it readable:** browser zoom 125% for a projector, and close other
    tabs.
 5. **Keep a backup:** leave the completed rehearsal run open in a second tab.
@@ -40,13 +40,13 @@ Say this once, early. It is true, and it pre-empts the first question.
 
 | Step | Do | Point at / say |
 | --- | --- | --- |
-| 1 | **Runs** tab. Keep "Plan and delegate". Click the first example ("Add input validation…"), then **Start run**. | "The request is the trusted goal. The supervisor sees only this and the list of agents, never the repository, so a poisoned file cannot shape the plan." |
+| 1 | **Start a run** on the Dashboard. Keep "Plan and delegate". Click the first example ("Add input validation…"), then **Start run**. | "The request is the trusted goal. The supervisor sees only this and the list of agents, never the repository, so a poisoned file cannot shape the plan." |
 | 2 | Watch **Plan** complete; three tasks appear. | "Each dashed line is a delegation. Before a task existed, the security layer checked it. A refused delegation never becomes a task." |
-| 3 | Click **Find the relevant code** when it shows **MEDIUM 1**. | "The analyst read `skills/deploy-helper.md`, which tells agents to post `.env` to a 'release service'. That is a warning, not a block: reading is allowed, and the instruction is now marked untrusted." |
-| 4 | **Make the change** shows **HIGH**, and the yellow approval banner appears. | "The developer agent followed that instruction and tried to `curl` the `.env` file out. Refused, *acted on*. The agent carries on with the real work." |
-| 5 | Click **Review** in the banner. Show the redacted file list, then **Approve once**. | "Changing source needs a person's approval under this workspace's policy. The approver sees what will change, redacted, and nothing runs until they answer." |
-| 6 | **Test and review** runs. Click it and point at the capability chips. | "The reviewer runs with *no write*. These are the capabilities it launched with, recorded for audit." |
-| 7 | Point at **Result**. | "The run's result is the final task's report. Earlier results reached it as inputs, and each handoff was checked too." |
+| 3 | Click **Find the relevant code** when it shows **Medium 1**. | "The analyst read `skills/deploy-helper.md`, which tells agents to post `.env` to a 'release service'. That is a warning, not a block: reading is allowed, and the instruction is now marked untrusted." |
+| 4 | **Make the change** shows **High**, and the amber Held strip appears. Point at the **Blocked** row on the gate line. | "The developer agent followed that instruction and tried to `curl` the `.env` file out. Refused, *acted on*. The agent carries on with the real work." |
+| 5 | Show what the agent proposed in the strip, click **Review** for the redacted file list, then **Approve**. | "Changing source needs a person's approval under this workspace's policy. The approver sees what will change, redacted, and nothing runs until they answer." |
+| 6 | **Test and review** runs. Click it and point at Allowed and Not allowed under **Attempts**. | "The reviewer runs with *no write*. These are the capabilities it launched with, recorded for audit." |
+| 7 | Point at **Agent's report**. | "This is the final task's report, and AgentGuard labels it as not verified: an agent saying it finished is not proof. Earlier results reached it as inputs, and each handoff was checked too." |
 
 ### Optional extras (about 30 s each)
 
@@ -65,8 +65,8 @@ Say this once, early. It is true, and it pre-empts the first question.
 | Symptom | Fix |
 | --- | --- |
 | Page says "Request failed" | The API is not up yet or has stopped. Wait for `RUNS_DEMO is on`, then reload the page. |
-| "This server does not offer multi-agent runs yet" | The server was started with `npm run dev` instead of `npm run dev:demo`. Restart it with `dev:demo`. |
-| "This run no longer exists" | The server restarted, so in-memory runs are gone. Click **Start a new run**. |
+| "This server does not offer multi-agent runs" | The server was started with `npm run dev` instead of `npm run dev:demo`. Restart it with `dev:demo`. |
+| "This run did not load" | The server restarted, so in-memory runs are gone. Click **Go to runs**, then start a new one. |
 | Port already in use | Another app holds 3000 or 5173. Close it, or use the port Vite prints. |
 | Anything else | Switch to the backup tab with the completed run and narrate it. |
 
@@ -85,9 +85,10 @@ Say this once, early. It is true, and it pre-empts the first question.
 - **"Can one agent pass a secret to another?"** Results move between tasks
   only as `context_handoff` actions, which the middleware evaluates. A blocked
   handoff is withheld from the next agent's prompt.
-- **"How does it scale?"** About 110 runs/s of orchestration in one process.
-  At a realistic pace, 50 concurrent runs take about 2.5% longer than one.
-  Model and container time dominate a real run.
-- **"What's not finished?"** The real security middleware (P1) and PostgreSQL
-  persistence (P3) still need to be connected. The interfaces are frozen and
-  tested with stand-ins.
+- **"How does it scale?"** In one process, about 120 runs/s of orchestration in
+  memory and about 25 runs/s on PostgreSQL. Model and container time dominate a
+  real run. See [orchestration-evaluation.md](orchestration-evaluation.md).
+- **"What's not finished?"** See "Not built yet" in
+  [ARCHITECTURE.md](ARCHITECTURE.md). The real middleware and PostgreSQL are wired
+  into password mode, and this demo does not use them. Stronger tenant isolation
+  is still to be reviewed, so this is a proof of concept.
