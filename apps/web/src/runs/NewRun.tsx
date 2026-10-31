@@ -3,7 +3,6 @@ import type { Agent, OrchestrationMode } from "@launchpad/shared";
 import { ApiError } from "../api";
 import { navigate, paths } from "../router";
 import { Button, PageHeader } from "../ui";
-import { rememberRun } from "./routes";
 import { runsApi, type WorkspaceSummary } from "./runs-api";
 
 const EXAMPLES = [
@@ -61,7 +60,6 @@ export function NewRun() {
         orchestrationMode: mode,
         ...(agentId ? { agentId } : {}),
       });
-      rememberRun({ id: run.id, prompt: run.userPrompt, createdAt: run.createdAt });
       navigate(paths.run(run.id));
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));

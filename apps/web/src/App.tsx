@@ -3,9 +3,11 @@ import { api, ApiError, setAuthToken } from "./api";
 import { Admin } from "./Admin";
 import { Playground } from "./Playground";
 import { navigate, paths, useRoute, type Route } from "./router";
-import { RunsHome, RunsPage } from "./runs/RunsPage";
+import { Dashboard } from "./runs/Dashboard";
+import { RunsPage } from "./runs/RunsPage";
+import { useHeldCount } from "./runs/useRunList";
 import { AppShell, ButtonLink, EmptyState, Loading, type NavItem } from "./ui";
-import { CurrentWorkspaceProvider } from "./useCurrentWorkspace";
+import { CurrentWorkspaceProvider, useCurrentWorkspace } from "./useCurrentWorkspace";
 import { usePlayground, type PlaygroundState } from "./usePlayground";
 
 // The primitives gallery is a development aid, left out of production builds.
@@ -42,7 +44,7 @@ function NotFound() {
 function CurrentPage({ route, playground }: { route: Route; playground: PlaygroundState }) {
   switch (route.page) {
     case "dashboard":
-      return <RunsHome title="Dashboard" />;
+      return <Dashboard />;
     case "runs":
     case "new-run":
     case "run":
@@ -82,6 +84,12 @@ function CurrentPage({ route, playground }: { route: Route; playground: Playgrou
     case "not-found":
       return <NotFound />;
   }
+}
+
+/** The frame with what it needs from the current workspace. */
+function Shell({ route, children }: { route: Route; children: React.ReactNode }) {
+  const { current } = useCurrentWorkspace();
+  return <AppShell nav={navItems(route)} heldCount={useHeldCount(current?.id ?? null)}>{children}</AppShell>;
 }
 
 export default function App() {
@@ -194,9 +202,9 @@ export default function App() {
 
   return (
     <CurrentWorkspaceProvider>
-      <AppShell nav={navItems(route)} heldCount={null}>
+      <Shell route={route}>
         <CurrentPage route={route} playground={playground} />
-      </AppShell>
+      </Shell>
     </CurrentWorkspaceProvider>
   );
 }

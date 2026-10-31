@@ -15,6 +15,17 @@ export function formatDuration(from: string | null, to: string | null): string {
   return to === null ? `${text} so far` : text;
 }
 
+/** A date and time for tables, where runs can be days old. */
+export function formatWhen(value: string): string {
+  return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(value));
+}
+
+/** "file_change" reads "File change". */
+export function humanize(value: string): string {
+  const words = value.replaceAll("_", " ");
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
 /** Agent names for display; falls back to a short id for an agent this page does not know. */
 export function agentName(agents: ReadonlyMap<string, Agent>, agentId: string | null): string {
   if (agentId === null) return "Unassigned";
