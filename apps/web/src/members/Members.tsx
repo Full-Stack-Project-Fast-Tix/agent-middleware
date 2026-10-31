@@ -48,12 +48,62 @@ export function MembersUnavailable() {
  */
 export function Members({ viewerId }: { viewerId: string | null }) {
   const { workspaces, current, error: workspacesError, reload: reloadWorkspaces } = useCurrentWorkspace();
-  const workspaceId = current?.id ?? null;
+  // "You left" has to outlive the page for the workspace that was left.
+  const [carriedNotice, setCarriedNotice] = useState<string | null>(null);
+  const clearCarriedNotice = useCallback(() => setCarriedNotice(null), []);
+  const left = useCallback((message: string) => {
+    setCarriedNotice(message);
+    reloadWorkspaces();
+  }, [reloadWorkspaces]);
 
+  if (workspacesError !== null) {
+    return (
+      <div className="page">
+        <PageHeader title="Members" />
+        <ErrorState message={`The list of workspaces did not load: ${workspacesError}`} onRetry={reloadWorkspaces} />
+      </div>
+    );
+  }
+  if (workspaces === null) return <div className="page"><PageHeader title="Members" /><Loading label="Loading workspaces" /></div>;
+  if (current === null) {
+    return (
+      <div className="page">
+        <PageHeader title="Members" />
+        {carriedNotice !== null && <p className="members-notice" role="status">{carriedNotice}</p>}
+        <EmptyState title="You are not in a workspace yet">
+          Ask a security admin to add you to their workspace, or your platform operator to create one.
+        </EmptyState>
+      </div>
+    );
+  }
+  // Keyed by workspace: a slow answer about the last one goes to a page that is gone.
+  return (
+    <WorkspaceMembers
+      key={current.id}
+      workspaceId={current.id}
+      workspaceName={current.name}
+      viewerId={viewerId}
+      reloadWorkspaces={reloadWorkspaces}
+      initialNotice={carriedNotice}
+      onNoticeShown={clearCarriedNotice}
+      onLeft={left}
+    />
+  );
+}
+
+function WorkspaceMembers({ workspaceId, workspaceName, viewerId, reloadWorkspaces, initialNotice, onNoticeShown, onLeft }: {
+  workspaceId: string;
+  workspaceName: string;
+  viewerId: string | null;
+  reloadWorkspaces: () => void;
+  initialNotice: string | null;
+  onNoticeShown: () => void;
+  onLeft: (message: string) => void;
+}) {
   const [list, setList] = useState<WorkspaceMembersResponse | null>(null);
   const [listError, setListError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(initialNotice);
   const [confirming, setConfirming] = useState<Confirming | null>(null);
   const [busyUserId, setBusyUserId] = useState<string | null>(null);
   const [email, setEmail] = useState("");
@@ -61,13 +111,12 @@ export function Members({ viewerId }: { viewerId: string | null }) {
   const [adding, setAdding] = useState(false);
 
   const latestLoad = useRef(0);
-  const keepNotice = useRef(false);
+  const mounted = useRef(true);
   const status = useRef<HTMLParagraphElement>(null);
   const emailInput = useRef<HTMLInputElement>(null);
   const focusAfterConfirm = useRef<string | null>(null);
 
   const load = useCallback(async () => {
-    if (workspaceId === null) return;
     const attempt = ++latestLoad.current;
     try {
       const next = await membersApi.list(workspaceId);
@@ -82,17 +131,17 @@ export function Members({ viewerId }: { viewerId: string | null }) {
   }, [workspaceId]);
 
   useEffect(() => {
-    setList(null);
-    setListError(null);
-    setActionError(null);
-    setConfirming(null);
-    if (keepNotice.current) keepNotice.current = false;
-    else setNotice(null);
+    mounted.current = true;
     void load();
     return () => {
+      mounted.current = false;
       latestLoad.current += 1;
     };
   }, [load]);
+
+  useEffect(() => {
+    if (initialNotice !== null) onNoticeShown();
+  }, [initialNotice, onNoticeShown]);
 
   // A closed confirmation gives focus back to the control that opened it.
   useEffect(() => {
@@ -100,26 +149,6 @@ export function Members({ viewerId }: { viewerId: string | null }) {
     document.getElementById(focusAfterConfirm.current)?.focus();
     focusAfterConfirm.current = null;
   }, [confirming]);
-
-  if (workspacesError !== null) {
-    return (
-      <div className="page">
-        <PageHeader title="Members" />
-        <ErrorState message={`The list of workspaces did not load: ${workspacesError}`} onRetry={reloadWorkspaces} />
-      </div>
-    );
-  }
-  if (workspaces === null) return <div className="page"><PageHeader title="Members" /><Loading label="Loading workspaces" /></div>;
-  if (current === null || workspaceId === null) {
-    return (
-      <div className="page">
-        <PageHeader title="Members" />
-        <EmptyState title="You are not in a workspace yet">
-          Ask a security admin to add you to their workspace, or your platform operator to create one.
-        </EmptyState>
-      </div>
-    );
-  }
 
   const canManage = list?.viewerRole === "security_admin";
 
@@ -140,9 +169,10 @@ export function Members({ viewerId }: { viewerId: string | null }) {
     } finally {
       setBusyUserId(null);
     }
+    if (!mounted.current) return;
     await load();
     focusAfterConfirm.current = null;
-    document.getElementById(`member-role-${member.userId}`)?.focus();
+    if (mounted.current) document.getElementById(`member-role-${member.userId}`)?.focus();
   };
 
   const remove = async (member: WorkspaceMemberSummary) => {
@@ -153,10 +183,9 @@ export function Members({ viewerId }: { viewerId: string | null }) {
     const leaving = member.userId === viewerId;
     try {
       await membersApi.remove(workspaceId, member.userId);
-      setNotice(leaving ? `You left ${current.name}.` : `Removed ${member.name}.`);
+      setNotice(leaving ? `You left ${workspaceName}.` : `Removed ${member.name}.`);
       if (leaving) {
-        keepNotice.current = true;
-        reloadWorkspaces();
+        onLeft(`You left ${workspaceName}.`);
         return;
       }
     } catch (reason) {
@@ -164,6 +193,7 @@ export function Members({ viewerId }: { viewerId: string | null }) {
     } finally {
       setBusyUserId(null);
     }
+    if (!mounted.current) return;
     await load();
     focusAfterConfirm.current = null;
     status.current?.focus();
@@ -184,6 +214,7 @@ export function Members({ viewerId }: { viewerId: string | null }) {
     } finally {
       setAdding(false);
     }
+    if (!mounted.current) return;
     await load();
     emailInput.current?.focus();
   };
@@ -201,7 +232,7 @@ export function Members({ viewerId }: { viewerId: string | null }) {
 
   return (
     <div className="page members-page">
-      <PageHeader title="Members" description={`People who can open ${current.name}.`} />
+      <PageHeader title="Members" description={`People who can open ${workspaceName}.`} />
 
       {listError !== null ? (
         <ErrorState message={listError} onRetry={() => {
@@ -303,7 +334,7 @@ export function Members({ viewerId }: { viewerId: string | null }) {
           )}
 
           <section className="page-section">
-            <h2>What each role can do</h2>
+            <h2>What each role can do with runs and members</h2>
             <dl className="members-roles">
               {ROLES.map((item) => (
                 <div key={item}>
