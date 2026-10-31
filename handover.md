@@ -35,7 +35,7 @@ These are the recommended defaults so work can move without waiting for another 
 
 **Later / joint work**
 
-- Review host-level egress options with P3 if the project needs stronger guarantees than Codex's sandbox. The container currently has a bridge network and must reach the model provider; simply changing it to `--network none` would also stop model requests. Any stronger design needs an explicit provider-only egress path.
+- Review host-level egress options with P3 if the project needs stronger guarantees than Codex's sandbox. The Codex container currently has a bridge network and must reach the model provider; simply changing it to `--network none` would also stop model requests. Any stronger design needs an explicit provider-only egress path. The Claude runtime closes this gap for its own path: the model call stays on the host, so its tool containers run with `--network none` when policy denies network (`docs/contract-decisions.md`, decision 17). It remains open for Codex.
 - Keep arbitrary `SecurityPolicy.rules` unsupported until a concrete rule schema and enforcement behavior are agreed. The resolver currently fails closed on non-empty or unknown-version rules; that is safer than silently ignoring them.
 
 ### P2 — Orchestration

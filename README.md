@@ -9,6 +9,8 @@
 > ```
 >
 > Needs Docker and a key in `.env`. Costs and steps: [Quick start](#quick-start).
+> Multi-agent Runs now run on Claude: [Run on Claude](#run-on-claude). The Playground
+> and the demos below still need Codex.
 
 ## Architecture Diagram
 <img width="1280" height="889" alt="architecture_diagram" src="https://github.com/user-attachments/assets/625e2753-09f4-4e59-b7c2-72d39c82e13e" />
@@ -502,6 +504,131 @@ Both check your setup first and refuse with a copy-pasteable fix rather than
 producing a meaningless result. No key? `./scripts/verify-guards.sh` re-derives
 the results from the runs already committed here, free.
 
+### Run on Claude
+
+`MODEL_PROVIDER=anthropic` runs multi-agent Runs on Claude, with the agent loop on
+this machine and every tool call in a disposable container. The gate sits outside
+the agent by construction: the model can only act by asking AgentGuard
+([contract decision 17](docs/contract-decisions.md#17-claude-runs-through-an-agent-loop-agentguard-owns)).
+
+These steps have been exercised end to end against a local mock of the API, but
+**not yet against the real API**. The first real run is what proves this path, so
+start small. It needs Docker, Node.js 22 and an Anthropic API key.
+
+**1. Put the key in `.env`.** It is the only place it goes, and the server is the
+only thing that reads it. No container ever gets it.
+
+```bash
+cp .env.example .env
+```
+
+In `.env`, set the key and turn on sign-in and the database, which Runs need:
+
+```dotenv
+ANTHROPIC_API_KEY=your-key
+APP_AUTH_MODE=password
+DATABASE_URL=postgres://launchpad:launchpad@127.0.0.1:5433/launchpad
+```
+
+For a first run, also add these lower limits. They hold one attempt at one task to
+$3.50 ([what a Run costs](#what-a-run-costs)):
+
+```dotenv
+CLAUDE_MAX_ITERATIONS=20
+CLAUDE_MAX_TOTAL_OUTPUT_TOKENS=50000
+CLAUDE_MAX_TOTAL_INPUT_TOKENS=500000
+```
+
+Set a monthly spend limit for the key's workspace in the Anthropic Console as well.
+That is the only limit here that covers everything.
+
+**2. Start the database and add yourself and a workspace.** Pick a small repository
+for the workspace, ideally one whose tests need no dependencies: the agent works
+on a copy that leaves out `node_modules` and `.git`, and by default it has no network
+to install anything. Your repository itself is not changed.
+
+```bash
+npm ci
+docker compose up -d postgres
+export DATABASE_URL=postgres://launchpad:launchpad@127.0.0.1:5433/launchpad
+npm run db:migrate -w @launchpad/server
+printf '%s' 'choose-a-password' | npm run db:admin -w @launchpad/server -- add-user you@example.com "Your Name"
+npm run db:admin -w @launchpad/server -- add-workspace "First run" /absolute/path/to/a/small/repo you@example.com
+```
+
+**3. Check the boundary, for free.** This builds the runtime image and runs the
+real-container probe. It uses Docker and no key.
+
+```bash
+npm run build:claude-runtime
+npm run verify:claude-runtime -w @launchpad/server
+```
+
+Every line should say `PASS`.
+
+**4. Start it and make a Run.**
+
+```bash
+npm run poc
+```
+
+Open <http://localhost:3000>, sign in, choose **New run**, and give it one small,
+concrete task on a single agent, such as *Add a function that reverses a string to
+`src/util.js`, and say what you changed.*
+
+**5. What to watch for.**
+
+- **Run Detail** shows each decision as it happens, and the raw trace of each
+  attempt. The Anthropic Console shows the real spend. An attempt that fails records
+  its tokens only in its trace, not on the execution.
+- **A refusal** fails the attempt with `Claude refused to continue (category: ...)`.
+  Security-related work can trip the `cyber` classifier. The request opts in to
+  server-side fallback, which retries on another model first, and the trace shows
+  `model/fallback` when that happens. Later turns on the fallback model run without
+  the earlier thinking.
+- **A limit** fails the attempt with an error naming the setting. A failed attempt
+  is retried once, so it can cost twice.
+- **`semantic-monitor-unavailable` findings** mean a semantic review did not answer
+  in time, which sends actions that needed review to a person. The 15-second timeout
+  has not been measured against the real API, and the first call also compiles the
+  response schema. Raise `GUARDRAIL_SEMANTIC_TIMEOUT_MS` if you see these.
+- **A read-only agent ending early.** The analyst and reviewer may run only single
+  plain read commands, and a second distinct refusal ends the execution. The system
+  prompt tells them. If they still chain commands with `&&` or `|`, Runs on `auto`
+  will fail at that task.
+- **Approvals expire** after two minutes by default, and an expired one declines
+  the action.
+- **A finished Run is the agent's report, not proof.** Read the diff in the working
+  copy under `~/.volc-agent-launchpad/data/runs/` (macOS) or `.local/data/runs/`
+  (Linux).
+
+The Playground and Safety pages are for Codex's single-agent path. With this provider
+they say so and cannot start work. Dashboard, Runs, Run Detail and Members work as
+before.
+
+#### What a Run costs
+
+Estimates, from the list prices for `claude-opus-5-5` ($4 per million input tokens,
+$20 output, $0.20 cache reads, $5 cache writes). They have not been measured on real
+Runs. Thinking counts as output, and `CLAUDE_EFFORT=high` thinks more than the
+API's default of `medium`.
+
+| | Estimate |
+| --- | --- |
+| One small execution (about 10 turns, 25K tokens of context) | $0.30 to $1 |
+| The supervisor's plan | about $0.05 |
+| One semantic review, when one is needed | about $0.02 |
+| A small `auto` Run: a plan and three tasks, with guards on | $1 to $4 |
+| **Most one attempt can cost, default limits** | **$14** (2M input tokens all billed as cache writes, $10, plus 200K output, $4) |
+| **Most one attempt can cost, the first-run limits above** | **$3.50** |
+| Most one task can cost | twice the attempt, since a failed attempt is retried once |
+
+The limits apply per attempt, and a Run can plan up to six tasks. So the default
+limits only bound one `auto` Run to about $168 plus its reviews, which is why the
+Console spend limit matters. Most input in a long loop is cache reads, so an attempt
+that reaches the input limit normally costs nearer $4.40 than $14. A fallback bills at
+the fallback model's rates.
+
 ### Reading the evidence yourself
 
 Every run in [`benchmark-results/2026-08-31-slice/`](benchmark-results/2026-08-31-slice)
@@ -514,14 +641,16 @@ derived from those files and nothing else.
 
 - Node.js 22+ and npm 10+
 - One container engine: Docker, Colima, or rootless Podman
-- An OpenAI API key
+- An Anthropic API key for Runs on Claude, or an OpenAI API key for Codex
 
-Codex CLI ships inside the runtime image; it is not required on the host.
+With Codex, the CLI ships inside the runtime image; it is not required on the host.
+Claude needs no agent CLI at all. The steps below are for Codex's single-agent
+Playground, so set `MODEL_PROVIDER=openai` for them.
 
 ### One command (local container runtime — recommended)
 
 ```bash
-OPENAI_API_KEY=your-openai-api-key \
+MODEL_PROVIDER=openai OPENAI_API_KEY=your-openai-api-key \
 npm run poc
 ```
 
@@ -624,10 +753,20 @@ want the result without paying for the first two runs.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `MODEL_PROVIDER` | `openai` | Model provider used by Codex. |
+| `MODEL_PROVIDER` | `ark` in code, `anthropic` in `.env.example` | `anthropic` runs Runs on Claude. `openai` and `ark` run Codex. |
+| `ANTHROPIC_API_KEY` / `ANTHROPIC_MODEL` | — / `claude-opus-5-5` | Claude credentials and model. Startup refuses `anthropic` with no key, except for the simulated `dev:demo`. |
+| `CLAUDE_EFFORT` | `high` | Effort for each turn of an execution: `low` to `max`. |
+| `CLAUDE_MAX_ITERATIONS` | `40` | Model turns per execution. |
+| `CLAUDE_MAX_TOKENS_PER_CALL` | `32000` | `max_tokens` for one turn, thinking included. |
+| `CLAUDE_MAX_TOTAL_OUTPUT_TOKENS` / `CLAUDE_MAX_TOTAL_INPUT_TOKENS` | `200000` / `2000000` | Tokens per execution. Input counts cache reads and writes. |
+| `CLAUDE_EXECUTION_TIMEOUT_MS` | `900000` | Model and tool time per execution. Waiting for an approval does not count. |
+| `CLAUDE_COMMAND_TIMEOUT_MS` | `120000` | One shell command, enforced inside the container. |
+| `CLAUDE_TOOL_OUTPUT_MAX_BYTES` | `32768` | One tool's output, as the model and the trace see it. |
+| `CLAUDE_MAX_EDIT_FILE_BYTES` | `1048576` | Largest file the editor tool reads or writes. |
+| `ANTHROPIC_BASE_URL` | — | For a test double or a gateway only. The key is sent to it. |
 | `OPENAI_API_KEY` / `OPENAI_MODEL` | — / `gpt-5.1-codex` | OpenAI API credentials and model. |
 | `APP_AUTH_TOKEN` | empty on loopback | Shared demo bearer token. 24+ random URL-safe chars required for a non-loopback production server. Not user identity. |
-| `RUNTIME_PROVIDER` | `local-process` | `container` for one disposable runtime container per turn (set by `npm run poc`). Only the container path is traced. |
+| `RUNTIME_PROVIDER` | `local-process` | `container` for one disposable runtime container per turn (set by `npm run poc`). Only the container path is traced, and Claude needs it. |
 | `CONTAINER_ENGINE` | `docker` | `docker`, `podman`, … Colima exposes the Docker CLI so it uses `docker`. |
 | `CODEX_SANDBOX_MODE` | `workspace-write` | Codex inner sandbox for unguarded container turns. `danger-full-access` is capped at `workspace-write` unless network access is explicitly enabled. |
 | `CODEX_NETWORK_ACCESS` | `false` | Allow agent tool commands and built-in web search to use the network on unguarded container turns. Egress, semantic, and HITL guarded turns always deny network. This relies on Codex controls and is not host-level filtering. |
@@ -640,7 +779,7 @@ want the result without paying for the first two runs.
 | `GUARDRAIL_SANDBOX` | `workspace-write` | Legacy, retained for config compatibility. Egress- and semantic-guarded turns use the resolved `workspace-write` + `untrusted` policy regardless of this value. |
 | `GUARDRAIL_BLOB_MIN_CHARS` | `128` | Minimum base64/hex run the outbound-blob check treats as an encoded blob. |
 | `GUARDRAIL_SEMANTIC_ENABLED` | `false` | Enable task-aware asynchronous review. In the container Runtime, this also uses a `workspace-write` + `untrusted` policy so file-edit proposals and non-read commands pause at an approval boundary before execution. |
-| `GUARDRAIL_SEMANTIC_MODEL` | Configured Agent model | Optional model override for semantic review. |
+| `GUARDRAIL_SEMANTIC_MODEL` | Configured Agent model | Optional model override for semantic review, from the selected provider. |
 | `GUARDRAIL_SEMANTIC_TIMEOUT_MS` | `15000` | Timeout for one semantic assessment. Required action reviews delegate to HITL when available and otherwise fail closed; reasoning-only reviews fail open with a warning. |
 | `HITL_ENABLED` | `false` | Enable one-shot human confirmation for high-consequence commands, semantic uncertainty, and unavailable required semantic reviews. Uses the same `workspace-write` + `untrusted` Runtime boundary; routine approvals remain automatic. |
 | `HITL_TIMEOUT_MS` | `120000` | Maximum time a Runtime approval may wait for a person. Timeout denies that action and lets the turn continue. |
@@ -820,8 +959,9 @@ Shared demo token by default (`APP_AUTH_MODE=password` adds user accounts and
 workspace roles, with no limit on sign-in attempts yet); no tenant isolation;
 no CSRF protection; no per-Agent container boundary in ECS mode; ordinary local
 containers rather than hardened multi-tenant sandboxes; broad outbound network
-access on unguarded turns; the model key is available to the server and the
-active runtime container. See [SECURITY.md](SECURITY.md).
+access on unguarded turns; with Codex, the model key is available to the server
+and the active runtime container (with Claude, only to the server). See
+[SECURITY.md](SECURITY.md).
 
 ---
 

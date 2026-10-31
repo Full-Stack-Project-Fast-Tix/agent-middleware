@@ -25,7 +25,10 @@ credentials, personal data, or exploit details in an issue.
   denylist rather than general secret detection. Unrecognized secrets in
   copied files may still be visible to the Agent.
 - Prompt-triggered command and file execution
-- Ark key available to the server and active Runtime container
+- Ark key available to the server and active Runtime container. With
+  `MODEL_PROVIDER=anthropic` the key is available to the server only: the agent loop
+  runs there, and tools run in a container without it. Repository content the agent
+  reads still reaches Anthropic as tool results.
 - Ark key stored in Terraform POC state
 
 ## Safe use

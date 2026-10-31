@@ -40,6 +40,10 @@ OPENAI_API_KEY=your-openai-api-key
 OPENAI_MODEL=gpt-5.1
 ```
 
+The template documents Claude as its default choice, but this guide is for the
+single-agent Playground, which needs Codex. To run multi-agent Runs on Claude
+instead, follow [Run on Claude](README.md#run-on-claude).
+
 Never commit `.env` or paste the API key into source files. Use a long random
 `APP_AUTH_TOKEN` when the app will be reachable beyond your own machine.
 
