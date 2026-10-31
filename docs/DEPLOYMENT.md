@@ -189,6 +189,59 @@ terraform -chdir=deploy/volcengine destroy
 > Destroying the stack removes the ECS instance, system disk, and Agent
 > workspaces. Back up required code first.
 
+## Back up and restore PostgreSQL
+
+`scripts/pg-backup.sh` works on the running compose stack's `postgres` container
+and needs only Docker on the host. It finds the container by its Compose labels
+and does not read `docker-compose.yml`, `.env` or `.env.production`. The database
+user and default database name come from the container's own environment. If the
+stack runs under another project name, set `COMPOSE_PROJECT_NAME`, or name the
+container directly with `POSTGRES_CONTAINER`.
+
+Stopping and starting the app does go through Compose. The `launchpad` service
+loads its settings from `LAUNCHPAD_ENV_FILE`, which defaults to `.env`, so point
+that at your env file as below if yours has another name.
+
+```bash
+# Writes backups/<db>-<UTC time>.dump, readable only by you
+scripts/pg-backup.sh backup
+
+# Row count of every table, to compare before and after
+scripts/pg-backup.sh counts --db launchpad
+
+# Restore into a new database, to inspect a backup safely
+scripts/pg-backup.sh restore --db launchpad_check backups/launchpad-20261031T120000Z.dump
+
+# Recover the live database: stop the app first, then replace
+export LAUNCHPAD_ENV_FILE=.env.production
+docker compose --env-file "$LAUNCHPAD_ENV_FILE" stop launchpad
+scripts/pg-backup.sh restore --db launchpad --replace backups/launchpad-20261031T120000Z.dump
+docker compose --env-file "$LAUNCHPAD_ENV_FILE" start launchpad
+```
+
+`--replace` restores into a temporary database and swaps it in only after that
+succeeds, so a damaged backup leaves the current database in place. It fails
+while anything is connected to the database.
+
+What to know before relying on this:
+
+- **Nothing runs on a schedule.** Run `backup` from cron or similar, and copy the
+  file to another machine. A backup on the database's own disk does not survive
+  losing that disk.
+- **A backup is sensitive.** It holds password hashes, session token hashes, and
+  stored agent output. Encrypt it wherever it is kept. `backups/` is ignored by
+  Git.
+- **Sessions come back too.** A session in the backup works after a restore until
+  it expires, up to 12 hours after it began. To sign everyone out, run `DELETE FROM
+  sessions` after restoring.
+- **Restoring loses what came after the backup,** including audit events. Audit
+  rows are append-only for the application, not for whoever operates the database.
+- **Only PostgreSQL is covered.** Traces under `data/`, Run working copies under
+  `workspaces/`, and `codex-home/` are files on the host. Back them up separately.
+  A restored Run can point at a trace that no longer exists.
+- **Active Runs do not resume.** On startup, the server closes any Run the restored
+  database still shows as active.
+
 ## Secret handling
 
 - Ark keys configure model access; Volcengine account AK/SK configures
