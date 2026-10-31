@@ -227,7 +227,7 @@ function ApprovalRow({
       time={`Expires at ${clock(request.expiresAt)}`}
       actions={
         <>
-          <Button variant="primary" busy={busy} onClick={() => onDecision("approve")}>Approve once</Button>
+          <Button variant="primary" busy={busy} onClick={() => onDecision("approve")}>Approve</Button>
           <Button variant="danger" disabled={busy} onClick={() => onDecision("deny")}>Deny</Button>
         </>
       }

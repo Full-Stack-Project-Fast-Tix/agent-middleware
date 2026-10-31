@@ -1,4 +1,5 @@
 import { useMemo, useState, type ReactNode } from "react";
+import { formatWhen } from "./runs/format";
 import type { AdminOverview, Agent } from "./types";
 import { Button, DataTable, DecisionMark, ForeignInline, Loading, PageHeader } from "./ui";
 
@@ -250,7 +251,7 @@ function InterventionList({ interventions, onViewRun }: { interventions: AdminOv
         <p>{event.summary}</p>
         <div className="cluster meta">
           <span>{event.agentName}</span>
-          <time dateTime={event.at}>{new Date(event.at).toLocaleString()}</time>
+          <time dateTime={event.at}>{formatWhen(event.at)}</time>
           <span>{label(event.layer)} layer</span>
           {event.category && <span>{label(event.category)}</span>}
         </div>

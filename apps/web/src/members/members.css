@@ -127,9 +127,13 @@
   font-weight: 500;
 }
 
+.members-add label input,
+.members-add label select {
+  margin-top: 0;
+}
+
 .members-add label input {
   height: 32px;
-  margin-top: 0;
   padding: 4px 8px;
   border-color: var(--control-edge);
 }

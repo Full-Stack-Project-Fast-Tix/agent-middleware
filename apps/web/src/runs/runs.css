@@ -165,6 +165,14 @@
   color: var(--held);
 }
 
+/* On a phone, Review matters more than when the run started. */
+@media (max-width: 640px) {
+  .waiting-on-you th:nth-child(3),
+  .waiting-on-you td:nth-child(3) {
+    display: none;
+  }
+}
+
 .list-stale {
   padding: 8px 12px;
   background: var(--held-tint);
