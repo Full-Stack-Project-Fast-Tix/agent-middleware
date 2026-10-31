@@ -20,7 +20,7 @@ export function GateTimeline({ timeline, error, onRetry, fresh, active, names, s
   onResolve: (approvalId: string, decision: "approve" | "deny") => void;
 }) {
   return (
-    <section className="page-section gate-timeline" aria-labelledby="gate-heading">
+    <section className="page-section" aria-labelledby="gate-heading">
       <h2 id="gate-heading">Gate timeline</h2>
       {timeline === null ? (
         error !== null
@@ -32,7 +32,7 @@ export function GateTimeline({ timeline, error, onRetry, fresh, active, names, s
         </EmptyState>
       ) : (
         <>
-          {error !== null && <p className="list-stale" role="alert">This timeline stopped updating: {error}</p>}
+          {error !== null && <p className="notice notice-held" role="alert">This timeline stopped updating: {error}</p>}
           {timeline.omittedEntries > 0 && (
             <p className="meta">
               {timeline.omittedEntries === 1 ? "1 older decision is" : `${timeline.omittedEntries} older decisions are`} not shown.
@@ -50,16 +50,16 @@ export function GateTimeline({ timeline, error, onRetry, fresh, active, names, s
                   key={entry.id}
                   caption={
                     row.handoff !== null ? (
-                      <>
+                      <span>
                         {row.caption} from <TaskName title={names.task(row.handoff.fromTaskId)} writtenByPlan={names.writtenByPlan(row.handoff.fromTaskId)} />
                         {" "}to <TaskName title={names.task(row.handoff.toTaskId)} writtenByPlan={names.writtenByPlan(row.handoff.toTaskId)} />
                         , {row.handoff.characters.toLocaleString()} characters
-                      </>
+                      </span>
                     ) : showTask ? (
-                      <span className="gate-caption">
+                      <>
                         <span>{row.caption}</span>
                         <span><TaskName title={taskTitle} writtenByPlan={names.writtenByPlan(taskId!)} /></span>
-                      </span>
+                      </>
                     ) : row.caption
                   }
                   proposal={row.proposal ?? undefined}

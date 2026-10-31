@@ -131,7 +131,7 @@ export function RunDetail({ runId }: { runId: string }) {
               {promptOpen ? "Fold the request" : "Show the whole request"}
             </button>
           )}
-          <div className="cluster meta run-facts">
+          <div className="cluster meta">
             <StatusBadge status={run.status} live={active} />
             {run.cancelRequestedAt !== null && active && <span>Cancelling</span>}
             <span>{run.orchestrationMode === "auto" ? "Planned and delegated" : "One agent"}</span>
@@ -157,15 +157,17 @@ export function RunDetail({ runId }: { runId: string }) {
         </div>
       </header>
 
-      {loadError !== null && <p className="list-stale" role="alert">Live updates stopped: {loadError} Reload the page to reconnect.</p>}
+      {loadError !== null && <p className="notice notice-held" role="alert">Live updates stopped: {loadError} Reload the page to reconnect.</p>}
       {actionError !== null && (
         <ErrorState title="That did not go through" message={actionError} onRetry={() => setActionError(null)} retryLabel="Dismiss" />
       )}
 
       {waiting.length > 0 && (
         <section className="held-strip" aria-label="Held for your approval" role="status">
-          <DecisionGlyph decision="require_approval" size={20} />
-          <strong>{waiting.length === 1 ? "1 action is held for your approval" : `${waiting.length} actions are held for your approval`}</strong>
+          <div className="held-title">
+            <span className="held-glyph"><DecisionGlyph decision="require_approval" size={15} /></span>
+            {waiting.length === 1 ? "1 action is held for your approval" : `${waiting.length} actions are held for your approval`}
+          </div>
           <ul>
             {waiting.map((approval) => {
               const proposal = proposals.get(approval.id);
@@ -209,19 +211,6 @@ export function RunDetail({ runId }: { runId: string }) {
 
       <div className="run-body">
         <div className="run-main">
-          <GateTimeline
-            timeline={timeline.timeline}
-            error={timeline.error}
-            onRetry={() => void timeline.reload()}
-            fresh={timeline.fresh}
-            active={active}
-            names={names}
-            selectedTaskId={selectedTask?.id ?? null}
-            onSelectTask={setPicked}
-            resolvingApprovalId={resolvingApprovalId}
-            onResolve={(approvalId, decision) => void resolve(approvalId, decision)}
-          />
-          {timeline.timeline !== null && <ProposedFiles timeline={timeline.timeline} runEnded={!active} />}
           {run.finalOutput !== null && run.status === "completed" && (
             <section className="page-section" aria-label="Agent's report">
               <Foreign label="Agent's report" note="Not verified by AgentGuard">
@@ -238,6 +227,19 @@ export function RunDetail({ runId }: { runId: string }) {
               <p className="meta">{run.error ?? "It was cancelled before it finished."}</p>
             </section>
           )}
+          <GateTimeline
+            timeline={timeline.timeline}
+            error={timeline.error}
+            onRetry={() => void timeline.reload()}
+            fresh={timeline.fresh}
+            active={active}
+            names={names}
+            selectedTaskId={selectedTask?.id ?? null}
+            onSelectTask={setPicked}
+            resolvingApprovalId={resolvingApprovalId}
+            onResolve={(approvalId, decision) => void resolve(approvalId, decision)}
+          />
+          {timeline.timeline !== null && <ProposedFiles timeline={timeline.timeline} runEnded={!active} />}
         </div>
 
         {selectedTask !== null && (

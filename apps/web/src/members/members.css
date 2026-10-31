@@ -1,10 +1,6 @@
-.members-page h2 {
-  font-size: var(--text-15);
-  font-weight: 600;
-}
-
 .members-readonly {
   max-width: 72ch;
+  color: var(--ink-soft);
 }
 
 .members-feedback {
@@ -12,32 +8,7 @@
   gap: 8px;
 }
 
-.members-feedback:has(> .members-notice[hidden]:only-child) {
-  display: none;
-}
-
-.members-error {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px 16px;
-  padding: 8px 12px;
-  border-left: 3px solid var(--blocked);
-  background: var(--blocked-tint);
-}
-
-.members-error span {
-  max-width: 72ch;
-}
-
-.members-notice {
-  padding: 8px 12px;
-  border-left: 3px solid var(--passed);
-  background: var(--passed-tint);
-}
-
-.members-notice[hidden] {
+.members-feedback:has(> .notice[hidden]:only-child) {
   display: none;
 }
 
@@ -46,12 +17,14 @@
 }
 
 .member-you {
+  display: inline-block;
   margin-left: 8px;
-  padding: 0 4px;
-  border: 1px solid var(--rule);
-  border-radius: var(--radius-control);
-  color: var(--steel);
-  font-size: var(--text-13);
+  padding: 0 6px;
+  border-radius: var(--radius-badge);
+  background: var(--neutral-tint);
+  color: var(--ink-soft);
+  font-size: 12px;
+  font-weight: 500;
 }
 
 .member-email {
@@ -63,8 +36,8 @@
   width: 240px;
 }
 
-.member-role select {
-  width: 160px;
+.member-role .select-trigger {
+  width: 176px;
 }
 
 .member-only-admin {
@@ -82,80 +55,66 @@
   text-align: right;
 }
 
-.data-table .member-actions {
-  text-align: right;
-}
-
 .member-actions .button:disabled {
-  border-color: transparent;
   background: transparent;
 }
 
-.data-table .member-confirm td {
+.member-confirm td {
   height: auto;
   background: var(--held-tint);
 }
 
-.member-confirm div {
+.member-confirm-body {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px 12px;
 }
 
-.member-confirm span {
+.member-confirm-body > span {
   flex: 1 1 280px;
   max-width: 72ch;
 }
 
-.data-table tbody .member-confirm:hover {
+.member-confirm:hover {
   background: transparent;
 }
 
 .members-add {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
+  display: grid;
+  grid-template-columns: minmax(200px, 1fr) minmax(160px, 200px) auto;
+  align-items: end;
   gap: 12px;
   max-width: 720px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-surface);
+  background: var(--surface);
 }
 
-.members-add label {
-  display: grid;
-  gap: 4px;
-  font-size: var(--text-13);
-  font-weight: 500;
-}
-
-.members-add label input,
-.members-add label select {
-  margin-top: 0;
-}
-
-.members-add label input {
-  height: 32px;
-  padding: 4px 8px;
-  border-color: var(--control-edge);
-}
-
-.members-add label:first-child {
-  flex: 1 1 260px;
-}
-
-.members-add label:nth-child(2) {
-  flex: 0 1 180px;
+.members-add .button {
+  min-height: 36px;
 }
 
 .members-roles {
   display: grid;
-  gap: 8px;
   margin: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-surface);
+  background: var(--surface);
 }
 
-.members-roles div {
+.members-role-row {
   display: grid;
   grid-template-columns: 140px minmax(0, 72ch);
-  gap: 12px;
+  gap: 16px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.members-role-row:last-child {
+  border-bottom: 0;
 }
 
 .members-roles dt {
@@ -164,7 +123,7 @@
 
 .members-roles dd {
   margin: 0;
-  color: var(--steel);
+  color: var(--ink-soft);
 }
 
 /* On phones each person becomes a stacked block, so nothing scrolls sideways. */
@@ -177,20 +136,20 @@
     clip-path: inset(50%);
   }
 
-  .members-table .data-table,
+  .members-table table,
   .members-table tbody {
     display: block;
   }
 
-  .members-table .member-row {
+  .member-row {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
     gap: 8px 12px;
-    padding: 12px;
-    border-bottom: 1px solid var(--rule);
+    padding: 14px;
+    border-bottom: 1px solid var(--line);
   }
 
-  .members-table .member-row td {
+  .member-row td {
     display: block;
     width: auto;
     height: auto;
@@ -198,51 +157,51 @@
     border: 0;
   }
 
-  .members-table .member-person,
-  .members-table .member-joined {
+  .member-person,
+  .member-joined {
     grid-column: 1 / -1;
   }
 
-  .members-table .member-joined {
+  .member-joined {
     order: 1;
-    color: var(--steel);
-    font-size: var(--text-13);
+    color: var(--ink-soft);
+    font-size: var(--text-sm);
   }
 
-  .members-table .member-role select {
+  .member-role .select-trigger {
     width: 100%;
     min-height: 44px;
   }
 
-  .members-table .member-actions .button {
+  .member-actions .button {
     min-height: 44px;
   }
 
-  .members-table .member-confirm {
+  .member-confirm {
     display: block;
-    border-bottom: 1px solid var(--rule);
+    border-bottom: 1px solid var(--line);
   }
 
-  .data-table .member-confirm td {
+  .member-confirm td {
     display: block;
     border: 0;
   }
 
-  .members-roles div {
+  .members-role-row {
     grid-template-columns: minmax(0, 1fr);
     gap: 0;
   }
 
+  .members-add {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .members-add .button,
-  .members-add select {
+  .members-add .select-trigger {
     min-height: 44px;
   }
 
-  .members-add label input {
+  .members-add input {
     height: 44px;
-  }
-
-  .members-add label:nth-child(2) {
-    flex: 1 1 100%;
   }
 }

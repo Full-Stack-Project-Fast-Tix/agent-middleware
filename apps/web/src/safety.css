@@ -9,29 +9,30 @@
 
 .safety-details {
   display: grid;
-  gap: 24px;
+  gap: 28px;
   min-width: 0;
 }
 
-.data-table th[scope="row"] {
-  font-size: var(--text-14);
+.fact-name {
+  height: 44px;
+  padding-block: 8px;
+  color: var(--ink);
+  font-size: var(--text-base);
   font-weight: 400;
   white-space: normal;
 }
 
-.data-table tr:last-child th[scope="row"] {
-  border-bottom: 0;
-}
-
-.data-table .fact-value {
+.fact-value {
   width: 1%;
-  text-align: right;
+  height: 44px;
+  padding-block: 8px;
   font-weight: 600;
+  text-align: right;
 }
 
 /* On a phone, keep the action in reach rather than behind a sideways scroll. */
 @media (max-width: 640px) {
-  .data-table .wide-only {
+  .wide-only {
     display: none;
   }
 }
@@ -39,15 +40,17 @@
 .safety-list {
   margin: 0;
   padding: 0;
-  list-style: none;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-surface);
   background: var(--surface);
-  border-top: 2px solid var(--graphite);
   container-type: inline-size;
+  list-style: none;
 }
 
 .safety-list > li {
-  padding: 12px;
-  border-bottom: 1px solid var(--rule);
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--line);
 }
 
 .safety-list > li:last-child {

@@ -87,7 +87,7 @@ function FactTable({ caption, facts }: { caption: string; facts: ReadonlyArray<r
       <tbody>
         {facts.map(([name, value]) => (
           <tr key={name}>
-            <th scope="row">{name}</th>
+            <th scope="row" className="fact-name">{name}</th>
             <td className="num fact-value">{value}</td>
           </tr>
         ))}
@@ -138,7 +138,7 @@ function Overview({ overview, agents, onSelectAgent }: {
                 <td className="cell-prompt wide-only">{agent.description || "Coding agent"}</td>
                 <td className="num">{overview.interventions.filter((event) => event.agentId === agent.id).length}</td>
                 <td className="num wide-only">{overview.learnedPatterns.filter((pattern) => pattern.agentId === agent.id).length}</td>
-                <td><Button onClick={() => onSelectAgent(agent.id)} aria-label={`View safety for ${agent.name}`}>View safety</Button></td>
+                <td className="cell-action"><Button onClick={() => onSelectAgent(agent.id)} aria-label={`View safety for ${agent.name}`}>View safety</Button></td>
               </tr>
             ))}
           </tbody>

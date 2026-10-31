@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import type { WorkspaceMemberSummary, WorkspaceMembersResponse, WorkspaceRole } from "@launchpad/shared";
 import { paths } from "../router";
-import { Button, ButtonLink, DataTable, EmptyState, ErrorState, Loading, PageHeader } from "../ui";
+import { Button, ButtonLink, DataTable, EmptyState, ErrorState, Loading, PageHeader, Select } from "../ui";
 import { useCurrentWorkspace } from "../useCurrentWorkspace";
 import {
   changeErrorMessage,
@@ -23,9 +23,7 @@ function formatDate(value: string): string {
   return new Intl.DateTimeFormat(undefined, { year: "numeric", month: "short", day: "numeric" }).format(new Date(value));
 }
 
-function RoleOptions() {
-  return ROLES.map((role) => <option key={role} value={role}>{ROLE_WORDS[role]}</option>);
-}
+const ROLE_OPTIONS = ROLES.map((role) => ({ value: role, label: ROLE_WORDS[role] }));
 
 /** Shown in token mode, where these routes do not exist. No request is made. */
 export function MembersUnavailable() {
@@ -69,7 +67,7 @@ export function Members({ viewerId }: { viewerId: string | null }) {
     return (
       <div className="page">
         <PageHeader title="Members" />
-        {carriedNotice !== null && <p className="members-notice" role="status">{carriedNotice}</p>}
+        {carriedNotice !== null && <p className="notice notice-passed" role="status">{carriedNotice}</p>}
         <EmptyState title="You are not in a workspace yet">
           Ask a security admin to add you to their workspace, or your platform operator to create one.
         </EmptyState>
@@ -233,7 +231,7 @@ function WorkspaceMembers({ workspaceId, workspaceName, viewerId, reloadWorkspac
   };
 
   return (
-    <div className="page members-page">
+    <div className="page">
       <PageHeader title="Members" description={`People who can open ${workspaceName}.`} />
 
       {listError !== null ? (
@@ -254,12 +252,12 @@ function WorkspaceMembers({ workspaceId, workspaceName, viewerId, reloadWorkspac
 
           <div className="members-feedback">
             {actionError !== null && (
-              <div className="members-error" role="alert">
+              <div className="notice notice-blocked" role="alert">
                 <span>{actionError}</span>
                 <Button variant="ghost" onClick={() => setActionError(null)}>Dismiss</Button>
               </div>
             )}
-            <p className="members-notice" role="status" tabIndex={-1} ref={status} hidden={notice === null}>{notice}</p>
+            <p className="notice notice-passed" role="status" tabIndex={-1} ref={status} hidden={notice === null}>{notice}</p>
           </div>
 
           <section className="page-section members-table">
@@ -320,12 +318,7 @@ function WorkspaceMembers({ workspaceId, workspaceName, viewerId, reloadWorkspac
                     required
                   />
                 </label>
-                <label>
-                  Role
-                  <select value={role} onChange={(event) => setRole(event.target.value as WorkspaceRole)}>
-                    <RoleOptions />
-                  </select>
-                </label>
+                <Select label="Role" value={role} onChange={setRole} options={ROLE_OPTIONS} />
                 <Button type="submit" variant="primary" busy={adding} disabled={!email.trim()}>Add member</Button>
               </form>
               <p className="meta">
@@ -339,7 +332,7 @@ function WorkspaceMembers({ workspaceId, workspaceName, viewerId, reloadWorkspac
             <h2>What each role can do with runs and members</h2>
             <dl className="members-roles">
               {ROLES.map((item) => (
-                <div key={item}>
+                <div key={item} className="members-role-row">
                   <dt>{ROLE_WORDS[item]}</dt>
                   <dd>{ROLE_DUTIES[item]}</dd>
                 </div>
@@ -384,15 +377,14 @@ function MemberRows({ member, you, canManage, onlyAdmin, busy, confirming, onRol
               )}
             </>
           ) : (
-            <select
+            <Select
               id={`member-role-${member.userId}`}
               aria-label={`Role for ${member.name}`}
               value={confirming?.kind === "role" ? confirming.role : member.role}
               disabled={busy || confirming !== null}
-              onChange={(event) => onRole(event.target.value as WorkspaceRole)}
-            >
-              <RoleOptions />
-            </select>
+              onChange={onRole}
+              options={ROLE_OPTIONS}
+            />
           )}
         </td>
         <td className="num member-joined"><time dateTime={member.joinedAt}>{formatDate(member.joinedAt)}</time></td>
@@ -415,7 +407,7 @@ function MemberRows({ member, you, canManage, onlyAdmin, busy, confirming, onRol
       {confirming !== null && (
         <tr className="member-confirm">
           <td colSpan={4}>
-            <div role="group" aria-label={`Confirm the change to ${member.name}`}>
+            <div className="member-confirm-body" role="group" aria-label={`Confirm the change to ${member.name}`}>
               <span>{confirming.message}</span>
               <Button autoFocus onClick={onKeep}>{confirming.kind === "remove" ? "Keep member" : "Keep role"}</Button>
               {confirming.kind === "remove"

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { Agent, OrchestrationMode } from "@launchpad/shared";
 import { navigate, paths } from "../router";
-import { Button, ErrorState, PageHeader } from "../ui";
+import { Button, ErrorState, PageHeader, Select } from "../ui";
 import { useCurrentWorkspace } from "../useCurrentWorkspace";
 import { runsApi } from "./runs-api";
 
@@ -50,7 +50,7 @@ export function NewRun() {
   };
 
   return (
-    <div className="runs-page">
+    <div className="page page-narrow">
       <PageHeader
         title="Start a run"
         description="Describe the work. A single agent can do it, or a supervisor can split it between specialists."
@@ -58,7 +58,7 @@ export function NewRun() {
 
       {workspacesError !== null && <ErrorState title="Your workspaces did not load" message={workspacesError} onRetry={reload} />}
       {error && (
-        <div className="error-banner" role="alert">
+        <div className="notice notice-blocked" role="alert">
           <span>{error}</span>
           <Button variant="ghost" onClick={() => setError(null)}>Dismiss</Button>
         </div>
@@ -77,51 +77,47 @@ export function NewRun() {
 
         <fieldset className="mode-choice">
           <legend>How should it run?</legend>
-          <label className={mode === "auto" ? "selected" : ""}>
+          <label className={"mode-card" + (mode === "auto" ? " mode-card-chosen" : "")}>
             <input type="radio" name="mode" value="auto" checked={mode === "auto"} onChange={() => { setMode("auto"); setAgentId(""); }} />
             <strong>Plan and delegate</strong>
             <span>A supervisor splits the work between specialist agents. Every delegation is checked.</span>
           </label>
-          <label className={mode === "single" ? "selected" : ""}>
+          <label className={"mode-card" + (mode === "single" ? " mode-card-chosen" : "")}>
             <input type="radio" name="mode" value="single" checked={mode === "single"} onChange={() => { setMode("single"); setAgentId(""); }} />
             <strong>One agent</strong>
             <span>A single agent does the whole task.</span>
           </label>
         </fieldset>
 
-        <label>
-          {mode === "auto" ? "Supervisor" : "Agent"}
-          <select
-            aria-label={mode === "auto" ? "Supervisor" : "Agent"}
-            value={agentId}
-            onChange={(event) => setAgentId(event.target.value)}
-            disabled={usable.length === 0}
-          >
-            <option value="">Workspace default</option>
-            {usable.map((agent) => (
-              <option key={agent.id} value={agent.id}>
-                {agent.name}{agent.description ? `: ${agent.description}` : ""}
-              </option>
-            ))}
-          </select>
-        </label>
+        <Select
+          label={mode === "auto" ? "Supervisor" : "Agent"}
+          value={agentId}
+          onChange={setAgentId}
+          disabled={usable.length === 0}
+          options={[
+            { value: "", label: "Workspace default" },
+            ...usable.map((agent) => ({ value: agent.id, label: agent.name, hint: agent.description || undefined })),
+          ]}
+        />
 
-        <label>
-          Task
-          <textarea
-            aria-label="Task"
-            value={prompt}
-            onChange={(event) => setPrompt(event.target.value)}
-            placeholder="What should the agents do?"
-            rows={5}
-            maxLength={20_000}
-            required
-          />
-        </label>
-        <div className="new-run-examples">
-          {EXAMPLES.map((example) => (
-            <button type="button" key={example} onClick={() => setPrompt(example)}>{example}</button>
-          ))}
+        <div className="new-run-task">
+          <label>
+            Task
+            <textarea
+              aria-label="Task"
+              value={prompt}
+              onChange={(event) => setPrompt(event.target.value)}
+              placeholder="What should the agents do?"
+              rows={5}
+              maxLength={20_000}
+              required
+            />
+          </label>
+          <div className="new-run-examples">
+            {EXAMPLES.map((example) => (
+              <button type="button" className="new-run-example" key={example} onClick={() => setPrompt(example)}>{example}</button>
+            ))}
+          </div>
         </div>
 
         <div className="new-run-footer">

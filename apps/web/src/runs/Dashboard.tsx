@@ -12,27 +12,27 @@ function WaitingOnYou({ workspaceId }: { workspaceId: string }) {
   if (list === null || list.runs.length === 0) return null;
   return (
     <section className="page-section waiting-on-you" aria-labelledby="waiting-heading">
-      <h2 id="waiting-heading" className="cluster">
+      <h2 id="waiting-heading" className="waiting-heading">
         <DecisionGlyph decision="require_approval" />
         Waiting on you
       </h2>
       <DataTable caption="Runs waiting on a decision">
         <thead>
-          <tr><th>Task</th><th>Held</th><th>Started</th><th><span className="sr-only">Open</span></th></tr>
+          <tr><th>Task</th><th>Held</th><th className="waiting-started">Started</th><th><span className="sr-only">Open</span></th></tr>
         </thead>
         <tbody>
           {list.runs.map((run) => (
-            <tr key={run.id}>
+            <tr key={run.id} className="run-row">
               <td className="cell-prompt"><Link to={paths.run(run.id)}>{run.userPrompt}</Link></td>
               <td className="num count-held">{run.pendingApprovalCount}</td>
-              <td className="num">{formatWhen(run.startedAt ?? run.createdAt)}</td>
+              <td className="num waiting-started">{formatWhen(run.startedAt ?? run.createdAt)}</td>
               <td className="cell-action"><ButtonLink to={paths.run(run.id)} variant="primary">Review</ButtonLink></td>
             </tr>
           ))}
         </tbody>
       </DataTable>
       {list.nextCursor !== null && (
-        <p><Link to={`${paths.runs}?status=waiting_approval`}>See every run that is held</Link></p>
+        <p className="see-all"><Link to={`${paths.runs}?status=waiting_approval`}>See every run that is held</Link></p>
       )}
     </section>
   );
@@ -58,9 +58,9 @@ function RecentRuns({ workspaceId }: { workspaceId: string }) {
   return (
     <section className="page-section" aria-labelledby="recent-heading">
       <h2 id="recent-heading">Recent runs</h2>
-      {error !== null && <p className="list-stale" role="alert">This list stopped updating: {error}</p>}
+      {error !== null && <p className="notice notice-held" role="alert">This list stopped updating: {error}</p>}
       <RunsTable caption="Recent runs" runs={list.runs} />
-      {list.nextCursor !== null && <p><Link to={paths.runs}>See all runs</Link></p>}
+      {list.nextCursor !== null && <p className="see-all"><Link to={paths.runs}>See all runs</Link></p>}
     </section>
   );
 }

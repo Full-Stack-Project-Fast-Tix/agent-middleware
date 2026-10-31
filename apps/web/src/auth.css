@@ -1,125 +1,160 @@
-/* Sign-in. The wordmark sits across the gate line: Agent on the graphite side,
-   Guard on the trusted side, and the mark on the line between them. */
+/* Sign-in: a calm form on the left, and on the right a deep panel holding a small
+   piece of the product, the gate line itself. The page's tokens are redefined
+   inside the panel, so the sample is the real primitive and not a drawing of it. */
 
 .auth-screen {
-  --auth-side: 28px;
-  --auth-top: clamp(56px, 22vh, 220px);
-  min-height: 100vh;
-  min-height: 100dvh;
   display: grid;
   grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
-  grid-template-rows: auto minmax(0, 1fr);
+  gap: 12px;
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding: 12px;
   background: var(--surface);
 }
 
-.auth-word {
-  font-size: var(--text-32);
-  font-weight: 600;
-  font-stretch: 112%;
-  letter-spacing: -0.01em;
-  line-height: 40px;
-}
-
-.auth-agent-side {
-  grid-row: 1 / -1;
-  position: relative;
-  padding: var(--auth-top) var(--auth-side) 32px 32px;
-  background: var(--graphite);
-  color: var(--surface);
-  text-align: right;
-}
-
-.auth-pitch {
-  position: absolute;
-  left: 32px;
-  right: 32px;
-  bottom: 32px;
+.auth-column {
   display: grid;
-  gap: 4px;
-  max-width: 44ch;
-  color: var(--topbar-quiet);
-  text-align: left;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 24px;
+  padding: 20px clamp(20px, 5vw, 64px) 16px;
 }
 
-.auth-guard-side {
-  position: relative;
-  padding: var(--auth-top) var(--auth-side) 0;
-}
-
-.auth-mark {
-  --mark-fill: var(--surface);
-  position: absolute;
-  top: calc(var(--auth-top) + 8px);
-  left: -12px;
+.auth-wordmark {
   display: flex;
-}
-
-.auth-mark-refused {
-  animation: gate-draw 180ms ease-out both;
+  align-items: center;
+  gap: 9px;
+  font-size: var(--text-md);
+  font-weight: 600;
+  letter-spacing: -0.012em;
 }
 
 .auth-body {
   display: grid;
-  align-content: start;
+  align-content: center;
   gap: 16px;
-  max-width: calc(380px + 2 * var(--auth-side));
-  padding: 32px var(--auth-side) 48px;
+  width: 100%;
+  max-width: 360px;
+  margin: 0 auto;
 }
 
 .auth-form {
   display: grid;
-  gap: 16px;
+  gap: 18px;
 }
 
 .auth-heading {
   display: grid;
-  gap: 4px;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.auth-form input {
+  height: 40px;
 }
 
 .auth-form .button {
   width: 100%;
+  margin-top: 2px;
 }
 
-@media (max-width: 760px) {
+.auth-foot-pitch {
+  display: none;
+}
+
+.auth-panel {
+  --surface: var(--night);
+  --ink: #eaf2f2;
+  --ink-soft: #a3b8bc;
+  --ink-faint: #8fa6ab;
+  --line: transparent;
+  --line-strong: #3a565d;
+  --foreign: #1b3a41;
+  --foreign-ink: #d5e2e3;
+  --foreign-edge: transparent;
+  --passed: #82d3a8;
+  --held: #edc07a;
+  --held-tint: #3a4034;
+  --held-line: #6f6443;
+  --blocked: #f19aa8;
+  --on-solid: var(--night);
+  display: grid;
+  align-content: center;
+  gap: clamp(32px, 6vh, 56px);
+  padding: clamp(32px, 6vw, 88px) clamp(24px, 5vw, 72px);
+  border-radius: var(--radius-panel);
+  background: var(--night);
+  color: var(--ink);
+}
+
+.auth-pitch {
+  max-width: 24ch;
+  font-size: var(--text-2xl);
+  font-weight: 500;
+  letter-spacing: -0.022em;
+  line-height: 1.18;
+}
+
+.auth-sample {
+  display: grid;
+  gap: 16px;
+  max-width: 640px;
+}
+
+.auth-sample .gate-line {
+  background: transparent;
+}
+
+.auth-sample .gate-proposal {
+  padding-left: 0;
+}
+
+.auth-sample .gate-decision {
+  padding-right: 0;
+}
+
+.auth-sample .gate-row:nth-child(3) :is(.gate-node, .gate-link) {
+  animation-delay: 240ms;
+}
+
+.auth-sample .gate-row:nth-child(4) :is(.gate-node, .gate-link) {
+  animation-delay: 480ms;
+}
+
+.auth-sample-note {
+  color: var(--ink-soft);
+  font-size: var(--text-sm);
+}
+
+@media (max-width: 960px) {
   .auth-screen {
-    --auth-side: 20px;
-    --auth-top: 24px;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    display: block;
+    padding: 0;
   }
 
-  .auth-word {
-    font-size: var(--text-24);
-    line-height: 32px;
-  }
-
-  .auth-agent-side {
-    grid-row: 1;
-    padding-bottom: 24px;
-    padding-left: 16px;
-  }
-
-  .auth-pitch {
-    display: none;
-  }
-
-  .auth-guard-side {
-    padding-bottom: 24px;
-    border-bottom: 1px solid var(--rule);
-  }
-
-  .auth-mark {
-    top: calc(var(--auth-top) + 4px);
+  .auth-column {
+    min-height: 100dvh;
+    padding: 20px 20px 16px;
   }
 
   .auth-body {
-    grid-column: 1 / -1;
-    max-width: none;
-    padding: 24px 16px 40px;
+    align-content: start;
+    max-width: 420px;
+    padding-top: clamp(24px, 12vh, 96px);
   }
-}
 
-@media (prefers-reduced-motion: reduce) {
-  .auth-mark-refused {
-    animation: none;
+  .auth-panel {
+    display: none;
+  }
+
+  .auth-foot {
+    display: grid;
+    gap: 4px;
+    max-width: 420px;
+    margin: 0 auto;
+    width: 100%;
+  }
+
+  .auth-foot-pitch {
+    display: block;
   }
 }

@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { RUN_STATUSES, type RunStatus, type RunSummary } from "@launchpad/shared";
 import { Link, navigate, paths, type Route } from "../router";
-import { Button, ButtonLink, DataTable, EmptyState, ErrorState, Loading, PageHeader, StatusBadge } from "../ui";
+import { Button, ButtonLink, DataTable, EmptyState, ErrorState, Loading, PageHeader, Select, StatusBadge } from "../ui";
 import { useCurrentWorkspace } from "../useCurrentWorkspace";
 import { formatWhen } from "./format";
 import { NewRun } from "./NewRun";
@@ -38,7 +38,7 @@ export function RunsTable({ caption, runs }: { caption: string; runs: readonly R
         {runs.map((run) => {
           const active = isRunActive(run.status);
           return (
-            <tr key={run.id}>
+            <tr key={run.id} className="run-row">
               <td className="cell-prompt"><Link to={paths.run(run.id)}>{run.userPrompt}</Link></td>
               <td>
                 <span className="cluster run-row-status">
@@ -104,7 +104,7 @@ function RunsList({ workspaceId, status, onClearFilter }: {
   }
   return (
     <>
-      {error !== null && <p className="list-stale" role="alert">This list stopped updating: {error}</p>}
+      {error !== null && <p className="notice notice-held" role="alert">This list stopped updating: {error}</p>}
       <RunsTable caption="Runs in this workspace" runs={list.runs} />
       {list.nextCursor !== null && (
         <div><Button busy={loadingMore} onClick={() => void loadMore()}>Show more runs</Button></div>
@@ -127,13 +127,18 @@ function RunsIndex() {
         description="Every run in this workspace, newest first."
         actions={<ButtonLink to={paths.newRun} variant="primary" page>Start a run</ButtonLink>}
       />
-      <label className="runs-filter">
-        Status
-        <select value={status ?? ""} onChange={(event) => choose(statusFromSearch(`?status=${event.target.value}`))}>
-          <option value="">All statuses</option>
-          {RUN_STATUSES.map((value) => <option key={value} value={value}>{STATUS_LABELS[value]}</option>)}
-        </select>
-      </label>
+      <div>
+        <Select
+          label="Status"
+          inlineLabel
+          value={status ?? ""}
+          onChange={(next) => choose(statusFromSearch(`?status=${next}`))}
+          options={[
+            { value: "", label: "All statuses" },
+            ...RUN_STATUSES.map((value) => ({ value, label: STATUS_LABELS[value] })),
+          ]}
+        />
+      </div>
       <WorkspaceRequired>
         {(workspaceId) => <RunsList workspaceId={workspaceId} status={status} onClearFilter={() => choose(null)} />}
       </WorkspaceRequired>

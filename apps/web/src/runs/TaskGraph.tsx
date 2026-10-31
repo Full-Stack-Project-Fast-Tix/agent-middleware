@@ -89,7 +89,7 @@ export function TaskGraph({
                 <button
                   key={task.id}
                   type="button"
-                  className={"task-node task-node-" + task.status + (task.id === selectedTaskId ? " selected" : "")}
+                  className={"task-node task-node-" + task.status + (task.id === selectedTaskId ? " task-node-selected" : "")}
                   style={{ left: node.x, top: node.y, width: node.width, height: node.height }}
                   onClick={() => onSelect(task.id)}
                   aria-pressed={task.id === selectedTaskId}

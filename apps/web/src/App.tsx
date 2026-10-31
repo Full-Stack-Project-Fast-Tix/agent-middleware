@@ -12,7 +12,7 @@ import { Dashboard } from "./runs/Dashboard";
 import { RunsPage } from "./runs/RunsPage";
 import { useHeldCount } from "./runs/useRunList";
 import { signOut } from "./sign-out";
-import { AppShell, Button, ButtonLink, Loading, PageHeader, type NavItem } from "./ui";
+import { AppShell, Button, ButtonLink, Loading, type NavItem } from "./ui";
 import { CurrentWorkspaceProvider, useCurrentWorkspace } from "./useCurrentWorkspace";
 import { usePlayground, type PlaygroundState } from "./usePlayground";
 import { WorkspaceSwitcher } from "./WorkspaceSwitcher";
@@ -36,11 +36,11 @@ function navItems(route: Route, authMethod: "token" | "password"): NavItem[] {
 function NotFound() {
   return (
     <div className="page">
-      <PageHeader
-        title="This page does not exist"
-        description="Check the link. A run link needs the full run id."
-        actions={<ButtonLink to={paths.dashboard}>Go to the dashboard</ButtonLink>}
-      />
+      <div className="state-empty">
+        <h1>This page does not exist</h1>
+        <p>Check the link. A run link needs the full run id.</p>
+        <div className="state-empty-action"><ButtonLink to={paths.dashboard}>Go to the dashboard</ButtonLink></div>
+      </div>
     </div>
   );
 }
@@ -64,7 +64,7 @@ function CurrentPage({ route, playground, authMethod, viewer }: {
       return (
         <>
           {playground.error && (
-            <div className="error-banner" role="alert">
+            <div className="notice notice-blocked page-banner" role="alert">
               <span>{playground.error}</span>
               <Button variant="ghost" onClick={() => playground.setError(null)}>Dismiss</Button>
             </div>

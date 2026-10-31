@@ -64,8 +64,8 @@ export function TaskDrilldown({
 
   return (
     <aside className="task-drilldown" aria-label={`Task: ${task.title}`} tabIndex={0}>
-      <header>
-        <h2><TaskName title={task.title} writtenByPlan={isWrittenByPlan(task)} /></h2>
+      <header className="task-section task-drilldown-head">
+        <h2 className="task-drilldown-title"><TaskName title={task.title} writtenByPlan={isWrittenByPlan(task)} /></h2>
         <div className="cluster meta">
           <StatusBadge status={task.status} live={live} />
           {isWrittenByPlan(task) && <span>Named by the plan</span>}
@@ -75,11 +75,11 @@ export function TaskDrilldown({
       </header>
 
       {approvals.length > 0 && (
-        <section>
-          <h3>Approvals</h3>
+        <section className="task-section">
+          <h3 className="task-section-heading">Approvals</h3>
           <div className="approval-list">
             {approvals.map((approval) => (
-              <div key={approval.id} id={`approval-${approval.id}`} className={"approval-card approval-" + approval.status}>
+              <div key={approval.id} id={`approval-${approval.id}`} className={"approval-card approval-card-" + approval.status}>
                 <div className="approval-card-head">
                   <strong>{approval.summary}</strong>
                   <StatusBadge status={approvalBadgeStatus(approval.status)} />
@@ -118,11 +118,11 @@ export function TaskDrilldown({
         </section>
       )}
 
-      <section>
+      <section className="task-section">
         {/* A delegated task's objective was written by the planning agent. */}
         {task.parentTaskId === null ? (
           <>
-            <h3>Objective</h3>
+            <h3 className="task-section-heading">Objective</h3>
             <p className="task-objective">{task.objective}</p>
           </>
         ) : (
@@ -148,21 +148,21 @@ export function TaskDrilldown({
       </section>
 
       {task.error !== null && (
-        <section>
-          <h3>Error</h3>
+        <section className="task-section">
+          <h3 className="task-section-heading">Error</h3>
           <p className="task-error">{task.error}</p>
         </section>
       )}
       {task.error === null && task.result !== null && (
-        <section>
+        <section className="task-section">
           <Foreign label="Agent's report" note="Not verified by AgentGuard" maxHeight={320}>
             <MessageContent content={task.result} rich />
           </Foreign>
         </section>
       )}
 
-      <section>
-        <h3>Security findings</h3>
+      <section className="task-section">
+        <h3 className="task-section-heading">Security findings</h3>
         {findings.length === 0 ? (
           <p className="meta">None for this task.</p>
         ) : (
@@ -183,8 +183,8 @@ export function TaskDrilldown({
         )}
       </section>
 
-      <section>
-        <h3>Attempts</h3>
+      <section className="task-section">
+        <h3 className="task-section-heading">Attempts</h3>
         {executions.length === 0 ? (
           <p className="meta">Not started yet.</p>
         ) : (
@@ -192,7 +192,7 @@ export function TaskDrilldown({
             {executions.map((execution) => (
               <li key={execution.id}>
                 <div className="cluster">
-                  <strong>Attempt {execution.attempt}</strong>
+                  <strong className="execution-attempt">Attempt {execution.attempt}</strong>
                   <StatusBadge status={execution.status} live={live} />
                   <span className="meta tabular">{formatDuration(execution.startedAt, execution.completedAt)}</span>
                 </div>

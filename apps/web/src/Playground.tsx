@@ -5,7 +5,7 @@ import { ReflectionList } from "./Reflections";
 import { Trajectory } from "./Trajectory";
 import { Workspace } from "./Workspace";
 import { AgentSafetyDetails } from "./Admin";
-import { Button, EmptyState, ErrorState, Foreign, Loading, StatusBadge } from "./ui";
+import { Button, EmptyState, ErrorState, Foreign, Loading, Select, StatusBadge } from "./ui";
 import { emptyForm, isActiveRun, type PlaygroundState } from "./usePlayground";
 
 const starterPrompts = [
@@ -140,16 +140,18 @@ export function Playground({ state }: { state: PlaygroundState }) {
           <p className="meta agent-pane-empty">No agents yet.</p>
         ) : (
           <>
-            <label className="agent-select">
-              Agent
-              <select value={selectedId ?? ""} onChange={(event) => setSelectedId(event.target.value)}>
-                {agents.map((agent) => (
-                  <option key={agent.id} value={agent.id}>
-                    {agent.name}{agent.status === "ready" ? "" : ` (${agent.status})`}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <div className="agent-select">
+              <Select
+                label="Agent"
+                value={selectedId ?? ""}
+                onChange={setSelectedId}
+                options={agents.map((agent) => ({
+                  value: agent.id,
+                  label: agent.name,
+                  hint: agent.status === "ready" ? undefined : agent.status,
+                }))}
+              />
+            </div>
             <ul className="agent-list">
               {agents.map((agent) => (
                 <li key={agent.id}>
@@ -192,7 +194,7 @@ export function Playground({ state }: { state: PlaygroundState }) {
         )}
 
         {error && (
-          <div className="error-banner" role="alert">
+          <div className="notice notice-blocked playground-banner" role="alert">
             <span>{error}</span>
             <Button variant="ghost" onClick={() => setError(null)}>Dismiss</Button>
           </div>
@@ -326,6 +328,7 @@ export function Playground({ state }: { state: PlaygroundState }) {
                   </div>
                 </div>
 
+                <div className="composer-wrap">
                 <form className="composer" onSubmit={(event) => void sendMessage(event)}>
                   <textarea
                     aria-label="Message to the agent"
@@ -350,6 +353,7 @@ export function Playground({ state }: { state: PlaygroundState }) {
                     <Button type="submit" variant="primary" disabled={!prompt.trim() || composerClosed}>Send</Button>
                   </div>
                 </form>
+                </div>
               </div>
 
               {(showWorkspace || showSafetyPanel) && (
