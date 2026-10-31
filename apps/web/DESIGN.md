@@ -131,7 +131,9 @@ export function Members() {
 Every data view needs loading, empty and error states. Put page-specific CSS in its own
 file with plain class names and import it from `src/main.tsx` before `primitives.css`,
 so primitives win by order. Use tokens, never raw colours. Use `Link` or `navigate` for
-in-app links, never `window.location`.
+in-app links, never `window.location`. A page that belongs to a workspace reads it from
+`useCurrentWorkspace()`, which the top bar's switcher controls. The choice is a view
+preference; the server still checks access on every request.
 
 ## Primitives
 

@@ -222,9 +222,9 @@ default `token` mode is unchanged, and `npm run dev:demo` still runs the simulat
 demo.
 
 Not built yet, by owner:
-- **P3:** an admin screen for members (users and workspaces stay on the command
-  line), and tenant isolation beyond workspace roles (every workspace's Runs share
-  one host).
+- **P3:** tenant isolation beyond workspace roles (every workspace's Runs share one
+  host). Members has a web page; creating users and workspaces stays on the command
+  line.
 - **P4:** the app shell, Dashboard and the full Run Detail composition.
 
 Orchestration test and load results are in
