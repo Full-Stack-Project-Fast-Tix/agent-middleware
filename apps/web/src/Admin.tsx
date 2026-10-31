@@ -246,7 +246,7 @@ function outcomeMark(outcome: AdminOverview["interventions"][number]["outcome"])
 function InterventionList({ interventions, onViewRun }: { interventions: AdminOverview["interventions"]; onViewRun: (agentId: string, runId: string) => void }) {
   return <ol className="safety-list">{interventions.map((event) => (
     <li className="safety-event" key={event.id}>
-      <div className="safety-event-mark">{outcomeMark(event.outcome)}</div>
+      <div>{outcomeMark(event.outcome)}</div>
       <div className="safety-event-body">
         <p>{event.summary}</p>
         <div className="cluster meta">

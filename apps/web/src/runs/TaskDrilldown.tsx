@@ -21,7 +21,8 @@ function TraceDownload({ runId, executionId, truncated }: { runId: string; execu
       link.href = url;
       link.download = `trace-${executionId}.jsonl`;
       link.click();
-      URL.revokeObjectURL(url);
+      // Revoking straight away can cancel the download before it starts.
+      window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
       // A log that was altered has to say so.
       if (redactions > 0) setNote(`${redactions} ${redactions === 1 ? "value" : "values"} redacted`);
     } catch (reason) {

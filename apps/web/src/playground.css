@@ -453,6 +453,15 @@
   width: 100%;
 }
 
+.technical-trace-head {
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.technical-trace-head h3 {
+  margin: 0;
+}
+
 .technical-details > .button {
   width: auto;
   padding-inline: 0;
