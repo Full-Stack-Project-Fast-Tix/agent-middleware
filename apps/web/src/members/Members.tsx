@@ -139,9 +139,11 @@ function WorkspaceMembers({ workspaceId, workspaceName, viewerId, reloadWorkspac
     };
   }, [load]);
 
+  // Only the page that opened with the notice clears it, not the one being left.
+  const [openedWithNotice] = useState(initialNotice !== null);
   useEffect(() => {
-    if (initialNotice !== null) onNoticeShown();
-  }, [initialNotice, onNoticeShown]);
+    if (openedWithNotice) onNoticeShown();
+  }, [openedWithNotice, onNoticeShown]);
 
   // A closed confirmation gives focus back to the control that opened it.
   useEffect(() => {

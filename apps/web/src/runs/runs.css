@@ -171,6 +171,10 @@
   .waiting-on-you td:nth-child(3) {
     display: none;
   }
+
+  .waiting-on-you .data-table .cell-prompt {
+    max-width: 16ch;
+  }
 }
 
 .list-stale {
