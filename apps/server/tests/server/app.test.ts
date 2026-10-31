@@ -27,6 +27,28 @@ describe("HTTP boundary", () => {
     await app.close();
   });
 
+  it("says plainly that the Playground needs Codex under the Claude provider", async () => {
+    let sent = false;
+    const app = await createApp(
+      loadConfig({ NODE_ENV: "test", MODEL_PROVIDER: "anthropic", ANTHROPIC_API_KEY: "sk-ant-test" }),
+      {
+        sendMessage: async () => {
+          sent = true;
+        },
+      } as unknown as AgentService,
+    );
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/agents/00000000-0000-4000-8000-000000000001/messages",
+      payload: { content: "hello" },
+    });
+    expect(response.statusCode).toBe(503);
+    expect(response.json().error).toContain("Codex");
+    expect(response.json().error).toContain("MODEL_PROVIDER=anthropic");
+    expect(sent).toBe(false);
+    await app.close();
+  });
+
   it("preserves Fastify client error status codes", async () => {
     const app = await createApp(loadConfig({ NODE_ENV: "test" }), service);
     const malformed = await app.inject({

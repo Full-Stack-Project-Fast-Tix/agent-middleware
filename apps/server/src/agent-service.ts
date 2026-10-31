@@ -268,6 +268,21 @@ export class AgentService {
   }
 
   async systemInfo(): Promise<Record<string, unknown>> {
+    if (this.config.modelProvider === "anthropic") {
+      // Same fields, so the web app can tell from `modelProvider` that the
+      // Playground, which needs Codex, is unavailable here.
+      return {
+        arkConfigured: isModelConfigured(this.config),
+        modelProvider: this.config.modelProvider,
+        arkBaseUrl: this.config.anthropicBaseUrl ?? "https://api.anthropic.com",
+        arkModel: this.config.modelName,
+        codexAvailable: false,
+        codexSandboxMode: this.config.codexSandboxMode,
+        runtimeProvider: this.config.runtimeProvider,
+        containerEngine: this.config.runtimeProvider === "container" ? this.config.containerEngine : null,
+        runtime: "Claude on Runs only; the Playground needs Codex",
+      };
+    }
     return {
       arkConfigured: isModelConfigured(this.config),
       modelProvider: this.config.modelProvider,

@@ -4,7 +4,7 @@ import { startArkProxy, type ArkProxy } from "./ark-proxy.js";
 import { createApp } from "./app.js";
 import { signedInUser } from "./auth-routes.js";
 import { createDemoRuns, seedDemo, type DemoRuns, type DemoStore } from "./dev/demo-runs.js";
-import { loadConfig, writeCodexConfig } from "./config.js";
+import { assertModelProviderReady, loadConfig, writeCodexConfig } from "./config.js";
 import { openDatabase } from "./db/pool.js";
 import { PostgresIdentity } from "./db/postgres-identity.js";
 import { PostgresRunStore } from "./db/postgres-run-store.js";
@@ -17,14 +17,28 @@ import { WorkspaceManager } from "./workspace.js";
 
 const config = loadConfig();
 
+// `--runs-demo` (npm run dev:demo) or RUNS_DEMO=1 mounts the multi-agent run
+// routes with a simulated runtime and middleware (dev/demo-runs.ts), so the
+// Runs UI can be developed against the real orchestrator before P1's
+// middleware exists. Nothing in it executes.
+const runsDemo = process.argv.includes("--runs-demo") || process.env.RUNS_DEMO === "1";
+if (runsDemo && config.nodeEnv === "production") {
+  throw new Error("RUNS_DEMO uses simulated security decisions and must not run in production.");
+}
+
+// The simulated demo calls no model, so it needs no key.
+if (!runsDemo) assertModelProviderReady(config);
+
 // Start the provider adapter before writing config.toml, so Codex is pointed at
 // it rather than at Ark directly. Without this, only the first turn of a thread
-// succeeds. See ark-proxy.ts.
+// succeeds. See ark-proxy.ts. Claude uses neither Codex nor its home.
 let arkProxy: ArkProxy | null = null;
 if (config.arkProxyEnabled) {
   arkProxy = await startArkProxy(config);
 }
-await writeCodexConfig(config, arkProxy?.baseUrlForCodex ?? config.arkBaseUrl);
+if (config.modelProvider !== "anthropic") {
+  await writeCodexConfig(config, arkProxy?.baseUrlForCodex ?? config.arkBaseUrl);
+}
 
 const store = new JsonStore(path.join(config.dataDirectory, "launchpad.json"));
 const workspaces = new WorkspaceManager(config.workspaceRoot);
@@ -35,18 +49,10 @@ await service.initialize();
 // The orchestrator publishes RunEvents here; browsers follow them over SSE.
 const runEvents = new RunEventHub();
 
-// `--runs-demo` (npm run dev:demo) or RUNS_DEMO=1 mounts the multi-agent run
-// routes with a simulated runtime and middleware (dev/demo-runs.ts), so the
-// Runs UI can be developed against the real orchestrator before P1's
-// middleware exists. Nothing in it executes.
-const runsDemo = process.argv.includes("--runs-demo") || process.env.RUNS_DEMO === "1";
-if (runsDemo && config.nodeEnv === "production") {
-  throw new Error("RUNS_DEMO uses simulated security decisions and must not run in production.");
-}
-
 // With DATABASE_URL set, the schema is migrated here and Runs are kept in
 // Postgres. With APP_AUTH_MODE=password as well, users sign in (db:admin adds
-// them) and Runs are real: P1's middleware, the model planner and Codex containers.
+// them) and Runs are real: P1's middleware, the model planner and one disposable
+// container per execution, on Claude or Codex depending on MODEL_PROVIDER.
 if (config.authMode === "password" && (runsDemo || !process.env.DATABASE_URL)) {
   throw new Error("APP_AUTH_MODE=password needs DATABASE_URL, and does not combine with RUNS_DEMO.");
 }
@@ -79,6 +85,11 @@ const app = await createApp(config, service, {
 });
 if (identity !== null && runs === null) {
   app.log.warn("Multi-agent runs need RUNTIME_PROVIDER=container, so their routes are off.");
+}
+if (config.modelProvider === "anthropic" && runs === null) {
+  app.log.warn(
+    "MODEL_PROVIDER=anthropic only runs multi-agent Runs, which need APP_AUTH_MODE=password, DATABASE_URL and RUNTIME_PROVIDER=container. Nothing here can run an agent as configured.",
+  );
 }
 let stopApprovalSweep = () => {};
 if (runs !== null) {
