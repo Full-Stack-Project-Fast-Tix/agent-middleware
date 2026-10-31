@@ -10,13 +10,18 @@
 // terminal run.updated.
 //
 //   npx tsx --conditions=development scripts/measure-orchestration.ts \
-//     [--runs 1,10,50,100] [--pause 0] [--out results.json]
+//     [--runs 1,10,50,100] [--pause 0] [--store memory|postgres] [--out results.json]
 //
 // --pause scales the demo's simulated thinking time: 0 measures pure
 // orchestration overhead, 1 is the pace you see in the browser demo.
+//
+// --store postgres keeps Runs in PostgresRunStore, in a throwaway schema of the
+// database TEST_DATABASE_URL names, on a pool sized as index.ts leaves it.
 
+import { randomUUID } from "node:crypto";
 import { writeFileSync } from "node:fs";
 import type { AddressInfo } from "node:net";
+import pg from "pg";
 import {
   apiPaths,
   followRunEvents,
@@ -28,7 +33,10 @@ import {
 import type { AgentService } from "../src/agent-service.js";
 import { createApp } from "../src/app.js";
 import { loadConfig } from "../src/config.js";
-import { createDemoRuns, DEMO_WORKSPACE } from "../src/dev/demo-runs.js";
+import { openDatabase } from "../src/db/pool.js";
+import { PostgresRunStore } from "../src/db/postgres-run-store.js";
+import { createDemoRuns, DEMO_WORKSPACE, seedDemo, type DemoStore } from "../src/dev/demo-runs.js";
+import { InMemoryRunStore } from "../src/orchestrator/in-memory-run-store.js";
 import { RunEventHub } from "../src/run-events.js";
 
 function argument(name: string, fallback: string): string {
@@ -39,6 +47,48 @@ function argument(name: string, fallback: string): string {
 const LEVELS = argument("runs", "1,10,50,100").split(",").map(Number).filter((value) => value > 0);
 const PAUSE = Number(argument("pause", "0"));
 const OUT = argument("out", "");
+const STORE = argument("store", "memory");
+if (STORE !== "memory" && STORE !== "postgres") throw new Error(`--store must be memory or postgres, not ${STORE}`);
+
+/** Where a level's Runs live, and how to count a Run's security decisions there. */
+interface Backend {
+  open(hub: RunEventHub): DemoStore;
+  decisions(store: DemoStore, runId: string): Promise<number>;
+  close(): Promise<void>;
+}
+
+const memoryBackend: Backend = {
+  open: (hub) => new InMemoryRunStore(hub),
+  decisions: async (store, runId) =>
+    (store as InMemoryRunStore).auditEvents(runId).filter((event) => event.eventType === "security.decision").length,
+  close: async () => undefined,
+};
+
+async function postgresBackend(): Promise<Backend> {
+  const url = process.env.TEST_DATABASE_URL;
+  if (!url) throw new Error("--store postgres needs TEST_DATABASE_URL.");
+  const schema = `measure_${randomUUID().replaceAll("-", "")}`;
+  const admin = new pg.Client({ connectionString: url });
+  await admin.connect();
+  await admin.query(`CREATE SCHEMA ${schema}`);
+  await admin.end();
+  const pool = await openDatabase({ connectionString: url, options: `-c search_path=${schema}` });
+  await seedDemo(pool);
+  return {
+    open: (hub) => new PostgresRunStore(pool, hub),
+    decisions: async (_store, runId) => {
+      const { rows } = await pool.query<{ count: string }>(
+        "SELECT count(*) FROM audit_events WHERE run_id = $1 AND event_type = 'security.decision'",
+        [runId],
+      );
+      return Number(rows[0]!.count);
+    },
+    close: async () => {
+      await pool.query(`DROP SCHEMA ${schema} CASCADE`);
+      await pool.end();
+    },
+  };
+}
 
 interface RunSample {
   status: string;
@@ -57,11 +107,11 @@ async function timed<T>(work: () => Promise<T>): Promise<[T, number]> {
   return [result, performance.now() - start];
 }
 
-async function measureLevel(concurrency: number) {
+async function measureLevel(concurrency: number, backend: Backend) {
   const hub = new RunEventHub({ bufferSize: 10_000 });
-  const demo = createDemoRuns(hub, { pauseScale: PAUSE });
+  const demo = createDemoRuns(hub, { pauseScale: PAUSE, store: backend.open(hub) });
   const app = await createApp(loadConfig({ NODE_ENV: "test", LOG_LEVEL: "silent" }), {} as AgentService, {
-    runEvents: { hub, canReadRun: (runId) => demo.store.snapshot(runId) !== null },
+    runEvents: { hub, canReadRun: async (runId) => (await demo.store.getRun(runId)) !== null },
     runs: demo.routes,
   });
   await app.listen({ host: "127.0.0.1", port: 0 });
@@ -117,7 +167,7 @@ async function measureLevel(concurrency: number) {
 
     const [snapshotResponse, snapshotMs] = await timed(() => fetch(base + apiPaths.runSnapshot(run.id)));
     runSnapshotResponseSchema.parse(await snapshotResponse.json());
-    const decisions = demo.store.auditEvents(run.id).filter((event) => event.eventType === "security.decision").length;
+    const decisions = await backend.decisions(demo.store, run.id);
     return { status, createMs, durationMs, snapshotMs, resolveMs, eventLagMs, events, decisions };
   };
 
@@ -136,10 +186,11 @@ const ms = (value: number) => (Number.isNaN(value) ? "—" : value < 10 ? value.
 
 async function main() {
   const results = [];
+  const backend = STORE === "postgres" ? await postgresBackend() : memoryBackend;
   // One small warm-up so JIT and module loading do not count against level 1.
-  await measureLevel(2);
+  await measureLevel(2, backend);
   for (const level of LEVELS) {
-    const { concurrency, wallMs, samples } = await measureLevel(level);
+    const { concurrency, wallMs, samples } = await measureLevel(level, backend);
     const completed = samples.filter((sample) => sample.status === "completed").length;
     const all = (pick: (sample: RunSample) => number[]) => samples.flatMap(pick);
     const row = {
@@ -161,8 +212,9 @@ async function main() {
     };
     results.push(row);
   }
+  await backend.close();
 
-  console.log(`\nOrchestration over HTTP + SSE, simulated agents, pause scale ${PAUSE}. Times in ms.\n`);
+  console.log(`\nOrchestration over HTTP + SSE, simulated agents, ${STORE} store, pause scale ${PAUSE}. Times in ms.\n`);
   console.log("| Runs at once | Completed | Create p50 / p95 | Approve p50 / p95 | Snapshot p95 | Event lag p95 / max | Run p50 / p95 | Per decision* | Runs/s | Events/s |");
   console.log("| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |");
   for (const row of results) {
@@ -171,7 +223,7 @@ async function main() {
     );
   }
   console.log("\n* Run duration divided by the security decisions in it: orchestration cost per gated action, including the approval round trip.");
-  if (OUT) writeFileSync(OUT, JSON.stringify({ pauseScale: PAUSE, node: process.version, results }, null, 2));
+  if (OUT) writeFileSync(OUT, JSON.stringify({ store: STORE, pauseScale: PAUSE, node: process.version, results }, null, 2));
 }
 
 await main();

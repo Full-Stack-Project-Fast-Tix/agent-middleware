@@ -1,22 +1,30 @@
+import { randomUUID } from "node:crypto";
 import { writeFileSync } from "node:fs";
-import { afterAll, describe, expect, it } from "vitest";
+import pg from "pg";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   auditEventSchema,
   isTerminalExecutionStatus,
   type AgentCapabilities,
+  type AuditEvent,
   type ProposedAction,
   type RunEvent,
+  type RunSnapshot,
   type SecurityContext,
   type SecurityDecision,
 } from "@launchpad/shared";
+import { openDatabase } from "../../src/db/pool.js";
+import { PostgresRunStore } from "../../src/db/postgres-run-store.js";
+import { fromRow, insertRow } from "../../src/db/rows.js";
 import { RunEventHub } from "../../src/run-events.js";
 import { InMemoryRunStore } from "../../src/orchestrator/in-memory-run-store.js";
 import { Orchestrator } from "../../src/orchestrator/orchestrator.js";
 import type { SupervisorPlan } from "../../src/orchestrator/plan.js";
-import type { ExecutionOutcome, ExecutionRequest, ExecutionRuntime } from "../../src/orchestrator/ports.js";
+import type { ExecutionOutcome, ExecutionRequest, ExecutionRuntime, RunStore } from "../../src/orchestrator/ports.js";
 import type { ExecutionGuard, ResolvedPolicy, SecurityMiddleware } from "../../src/security-middleware.js";
+import { CAPABILITIES as PROFILE_CAPABILITIES } from "../integration/harness/factories.js";
 import { checkRunInvariants } from "../integration/harness/invariants.js";
-import { AGENTS, FakeDirectory, StaticPlanner, USER_ID, WORKSPACE_ID } from "./fixtures.js";
+import { AGENTS, FakeDirectory, StaticPlanner, USER_ID, WORKSPACE_ID, makeAgent } from "./fixtures.js";
 
 // Randomised end-to-end runs of the orchestrator. Each seed builds a random
 // plan, random actions with random security decisions, random crashes,
@@ -33,6 +41,10 @@ import { AGENTS, FakeDirectory, StaticPlanner, USER_ID, WORKSPACE_ID } from "./f
 // counts only situations a scenario forces whatever the timing (for example
 // the "absent" approver makes timeouts certain), never ones that need a race
 // to go a particular way.
+//
+// Every seed runs on InMemoryRunStore. With TEST_DATABASE_URL set they run on
+// PostgresRunStore too, in a fresh schema, because real transactions and
+// connection waits interleave in ways the in-memory store cannot.
 
 const RUNS = Number(process.env.FUZZ_RUNS ?? 250);
 const FIRST_SEED = Number(process.env.FUZZ_SEED ?? 1);
@@ -300,10 +312,12 @@ function scenario(seed: number) {
   };
 }
 
-async function play(seed: number) {
+type FuzzStore = RunStore & { snapshot(runId: string): RunSnapshot | null | Promise<RunSnapshot | null> };
+
+async function play(seed: number, open: (hub: RunEventHub) => FuzzStore) {
   const setup = scenario(seed);
   const hub = new RunEventHub();
-  const store = new InMemoryRunStore(hub);
+  const store = open(hub);
   const middleware = new FuzzMiddleware(setup.gateDelegations);
   const runtime = new FuzzRuntime(seed, setup.scripts, setup.random);
   const errors: unknown[] = [];
@@ -374,7 +388,7 @@ async function play(seed: number) {
 }
 
 /** How often each situation came up across the seeds; a fuzzer that never reaches one tests nothing about it. */
-const coverage = {
+const newCoverage = () => ({
   completed: 0,
   failed: 0,
   cancelled: 0,
@@ -387,12 +401,73 @@ const coverage = {
   parallel: 0,
   skippedTasks: 0,
   withheldHandoffs: 0,
-};
+});
 
-describe("orchestrator under randomised plans, decisions, failures, approvals and cancels", () => {
+const url = process.env.TEST_DATABASE_URL;
+const schema = `test_${randomUUID().replaceAll("-", "")}`;
+let pool: pg.Pool | undefined;
+
+/** The rows the store's foreign keys need: the fixtures' user, workspace, profiles and agents. */
+async function seedFixtures(db: pg.Pool): Promise<void> {
+  const stamps = { createdAt: "2026-10-01T00:00:00.000Z", updatedAt: "2026-10-01T00:00:00.000Z" };
+  await insertRow(db, "users", { id: USER_ID, email: "user@example.test", name: "User", authSubject: "user", ...stamps });
+  await insertRow(db, "workspaces", { id: WORKSPACE_ID, name: "Workspace", createdByUserId: USER_ID, ...stamps });
+  const roles = Object.keys(AGENTS) as Array<keyof typeof AGENTS>;
+  for (const [index, role] of roles.entries()) {
+    const profileId = `00000000-0000-4000-8000-00000000000${index + 1}`;
+    await insertRow(db, "agent_profiles", {
+      id: profileId, workspaceId: WORKSPACE_ID, name: role, capabilities: PROFILE_CAPABILITIES[role], version: 1, ...stamps,
+    });
+    await insertRow(db, "agents", makeAgent(role, { profileId }));
+  }
+}
+
+const targets: Array<{
+  name: string;
+  open: (hub: RunEventHub) => FuzzStore;
+  audit: (store: FuzzStore, runId: string) => Promise<AuditEvent[]>;
+}> = [
+  {
+    name: "InMemoryRunStore",
+    open: (hub) => new InMemoryRunStore(hub),
+    audit: async (store, runId) => (store as InMemoryRunStore).auditEvents(runId),
+  },
+  ...(url
+    ? [{
+        name: "PostgresRunStore",
+        open: (hub: RunEventHub) => new PostgresRunStore(pool!, hub),
+        // Rows as stored: the test below is what checks them against the schema.
+        audit: async (_store: FuzzStore, runId: string) =>
+          (await pool!.query("SELECT * FROM audit_events WHERE run_id = $1 ORDER BY created_at, id", [runId])).rows.map(fromRow) as AuditEvent[],
+      }]
+    : []),
+];
+
+const report: Record<string, ReturnType<typeof newCoverage>> = {};
+
+beforeAll(async () => {
+  if (!url) return;
+  const admin = new pg.Client({ connectionString: url });
+  await admin.connect();
+  await admin.query(`CREATE SCHEMA ${schema}`);
+  await admin.end();
+  pool = await openDatabase({ connectionString: url, options: `-c search_path=${schema}`, max: 10 });
+  await seedFixtures(pool);
+});
+
+afterAll(async () => {
+  // FUZZ_REPORT=<file> keeps the numbers, e.g. for the evaluation write-up.
+  if (process.env.FUZZ_REPORT) writeFileSync(process.env.FUZZ_REPORT, JSON.stringify({ seeds: SEEDS.length, coverage: report }, null, 2));
+  if (!pool) return;
+  await pool.query(`DROP SCHEMA ${schema} CASCADE`);
+  await pool.end();
+});
+
+describe.each(targets)("orchestrator on $name under randomised plans, decisions, failures, approvals and cancels", (target) => {
+  const coverage = newCoverage();
+  report[target.name] = coverage;
+
   afterAll(() => {
-    // FUZZ_REPORT=<file> keeps the numbers, e.g. for the evaluation write-up.
-    if (process.env.FUZZ_REPORT) writeFileSync(process.env.FUZZ_REPORT, JSON.stringify({ seeds: SEEDS.length, coverage }, null, 2));
     if (SEEDS.length < 100) return;
     for (const [situation, seen] of Object.entries(coverage)) {
       expect(seen, `the fuzzer should reach "${situation}"`).toBeGreaterThanOrEqual(3);
@@ -400,9 +475,9 @@ describe("orchestrator under randomised plans, decisions, failures, approvals an
   });
 
   it.each(SEEDS)("seed %i keeps every invariant and safety property", async (seed) => {
-    const { setup, store, middleware, runtime, errors, run, events, outcome } = await play(seed);
+    const { setup, store, middleware, runtime, errors, run, events, outcome } = await play(seed, target.open);
     {
-      const snapshot = store.snapshot(run.id)!;
+      const snapshot = (await store.snapshot(run.id))!;
       const status = snapshot.run.status;
       if (status === "completed" || status === "failed" || status === "cancelled") coverage[status] += 1;
       for (const approval of snapshot.approvals) {
@@ -420,7 +495,7 @@ describe("orchestrator under randomised plans, decisions, failures, approvals an
     expect(outcome, "the run must settle").toBe("settled");
     expect(errors, "no unrecorded orchestration errors").toEqual([]);
 
-    const snapshot = store.snapshot(run.id)!;
+    const snapshot = (await store.snapshot(run.id))!;
     // Lifecycle, dependency order, write serialisation, references, end state, events = snapshot.
     expect(checkRunInvariants(run.id, events, snapshot)).toEqual([]);
 
@@ -454,7 +529,11 @@ describe("orchestrator under randomised plans, decisions, failures, approvals an
 
     // The end state means what it says.
     const failedTasks = snapshot.tasks.filter((task) => task.status === "failed");
-    if (snapshot.run.status === "completed") expect(failedTasks).toEqual([]);
+    if (snapshot.run.status === "completed") {
+      expect(failedTasks).toEqual([]);
+      // Only a failure can skip work, so a completed run did everything it planned.
+      expect(snapshot.tasks.filter((task) => task.status === "skipped")).toEqual([]);
+    }
     if (snapshot.run.status === "cancelled") expect(snapshot.run.cancelRequestedAt).not.toBeNull();
     if (snapshot.run.status === "failed") expect(snapshot.run.error).not.toBeNull();
     if (setup.cancelAfterMs === null && !setup.cancelOnApproval && !setup.cancelDuringEvaluation) {
@@ -462,7 +541,7 @@ describe("orchestrator under randomised plans, decisions, failures, approvals an
     }
 
     // The audit trail is complete and valid.
-    const audit = store.auditEvents(run.id);
+    const audit = await target.audit(store, run.id);
     for (const event of audit) expect(auditEventSchema.safeParse(event).success).toBe(true);
     const started = audit.filter((event) => event.eventType === "execution.started").map((event) => event.executionId);
     const finished = audit.filter((event) => event.eventType === "execution.finished").map((event) => event.executionId);
