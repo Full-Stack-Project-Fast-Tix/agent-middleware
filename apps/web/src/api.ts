@@ -52,6 +52,7 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ email, password }),
     }),
+  signOut: () => request<unknown>("/api/auth/session", { method: "DELETE" }),
   system: () => request<SystemInfo>("/api/system"),
   adminOverview: () => request<AdminOverview>("/api/admin/overview"),
   listAgents: () => request<{ agents: Agent[] }>("/api/agents"),

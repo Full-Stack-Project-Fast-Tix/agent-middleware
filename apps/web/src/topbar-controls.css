@@ -1,0 +1,170 @@
+/* The workspace switcher and account menu in the graphite bar. */
+
+.topbar-slot:empty,
+.topbar-menu .topbar-slot:empty {
+  display: none;
+}
+
+.workspace-switcher {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  color: var(--topbar-quiet);
+  font-size: var(--text-13);
+  font-weight: 400;
+}
+
+.workspace-switcher-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.workspace-switcher-name {
+  max-width: 180px;
+  overflow: hidden;
+  color: var(--surface);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-switcher select {
+  width: auto;
+  max-width: 200px;
+  border-color: var(--topbar-edge);
+  background-color: var(--graphite);
+  color: var(--surface);
+}
+
+.account-menu {
+  position: relative;
+}
+
+.account-menu-trigger {
+  max-width: 180px;
+  min-height: 32px;
+  overflow: hidden;
+  padding: 0 8px;
+  border: 1px solid var(--topbar-edge);
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--surface);
+  cursor: pointer;
+  font-size: var(--text-13);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-menu-trigger:hover,
+.account-menu-open .account-menu-trigger {
+  border-color: var(--topbar-quiet);
+}
+
+.account-menu-panel {
+  --focus: var(--cobalt);
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 20;
+  display: none;
+  justify-items: start;
+  gap: 12px;
+  width: max-content;
+  min-width: 220px;
+  max-width: min(320px, calc(100vw - 32px));
+  padding: 12px;
+  border: 1px solid var(--graphite);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  color: var(--graphite);
+}
+
+.account-menu-open .account-menu-panel {
+  display: grid;
+}
+
+.account-menu-who {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.account-menu-who strong {
+  font-size: var(--text-14);
+  font-weight: 600;
+}
+
+.account-menu-who span {
+  color: var(--steel);
+  font-size: var(--text-13);
+}
+
+/* Inside the phone menu these are plain rows on graphite. */
+.topbar-menu .topbar-slot {
+  display: block;
+  padding-top: 12px;
+  border-top: 1px solid var(--topbar-edge);
+}
+
+.topbar-menu .workspace-switcher {
+  display: grid;
+  gap: 4px;
+}
+
+.topbar-menu .workspace-switcher-label {
+  position: static;
+  width: auto;
+  height: auto;
+  overflow: visible;
+  clip-path: none;
+}
+
+.topbar-menu .workspace-switcher-name {
+  max-width: none;
+  font-size: var(--text-14);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.topbar-menu .workspace-switcher select {
+  width: 100%;
+  max-width: none;
+  min-height: 44px;
+}
+
+.topbar-menu .account-menu-trigger {
+  display: none;
+}
+
+.topbar-menu .account-menu-panel {
+  --focus: var(--surface);
+  position: static;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  width: auto;
+  max-width: none;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--surface);
+}
+
+.topbar-menu .account-menu-who {
+  flex: 1 1 160px;
+}
+
+.topbar-menu .account-menu-who span {
+  color: var(--topbar-quiet);
+}
+
+.topbar-menu .account-menu-panel .button {
+  min-height: 44px;
+}
