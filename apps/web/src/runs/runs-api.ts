@@ -14,7 +14,7 @@ import {
   type WorkspaceSummary,
   workspacesResponseSchema,
 } from "@launchpad/shared";
-import { authHeaders, request } from "../api";
+import { ApiError, authHeaders, request } from "../api";
 
 // The Run API from packages/shared/src/api.ts. Every response is validated
 // against the shared schema, so a server that drifts from the contract fails
@@ -42,6 +42,17 @@ export const runsApi = {
     approvalResponseSchema.parse(
       await request(apiPaths.resolveApproval(approvalId), { method: "POST", body: JSON.stringify({ decision }) }),
     ).approval,
+
+  /** One attempt's raw trace, and how many values the server redacted from it. */
+  trace: async (runId: string, executionId: string): Promise<{ text: string; redactions: number }> => {
+    const response = await fetch(apiPaths.executionTrace(runId, executionId), { headers: authHeaders() });
+    if (!response.ok) {
+      const { error } = (await response.json().catch(() => ({}))) as { error?: string };
+      throw new ApiError(error ?? "Request failed", response.status);
+    }
+    const redactions = Number(response.headers.get("x-redactions") ?? 0);
+    return { text: await response.text(), redactions: Number.isFinite(redactions) ? redactions : 0 };
+  },
 
   /** Follow the Run's events until `signal` aborts; reconnects and resyncs on its own. */
   follow: (

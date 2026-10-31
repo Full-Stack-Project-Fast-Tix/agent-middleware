@@ -219,7 +219,9 @@ the platform baseline policy) and members. A `security_admin` can also manage
 their workspace's members over the API (contract decision 15). Failed sign-ins
 are limited per account and per source address, in this process's memory. The
 default `token` mode is unchanged, and `npm run dev:demo` still runs the simulated
-demo.
+demo. An attempt's bounded, redacted raw trace is read through
+`GET /api/runs/:runId/executions/:executionId/trace`, under the same workspace
+check as the other run routes.
 
 Not built yet, by owner:
 - **P3:** an admin screen for members (users and workspaces stay on the command

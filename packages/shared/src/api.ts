@@ -106,6 +106,7 @@ export type MeResponse = z.infer<typeof meResponseSchema>;
  *   GET  /api/runs/:runId/events             Server-Sent Events (RunEvent)
  *   POST /api/runs/:runId/cancel                                -> 202 { run }
  *   POST /api/approvals/:approvalId/resolve  ResolveApprovalRequest -> { approval }
+ *   GET  /api/runs/:runId/executions/:executionId/trace         -> application/x-ndjson
  *
  * The workspaces are the caller's own. Reading needs any role in the
  * workspace; starting or cancelling a run and answering an approval need
@@ -131,6 +132,8 @@ export const apiPaths = {
   workspaceMembers: (workspaceId: string) => `/api/workspaces/${encodeURIComponent(workspaceId)}/members`,
   workspaceMember: (workspaceId: string, userId: string) =>
     `/api/workspaces/${encodeURIComponent(workspaceId)}/members/${encodeURIComponent(userId)}`,
+  executionTrace: (runId: string, executionId: string) =>
+    `/api/runs/${encodeURIComponent(runId)}/executions/${encodeURIComponent(executionId)}/trace`,
 } as const;
 
 /** A workspace as listings show it; where its source lives stays on the server. */

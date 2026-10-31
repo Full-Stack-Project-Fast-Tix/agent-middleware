@@ -1,10 +1,15 @@
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
 import type { Approval, RunSnapshot, WorkspaceRole } from "@launchpad/shared";
+import { apiPaths } from "@launchpad/shared";
 import type { AgentService } from "../../src/agent-service.js";
 import { createApp } from "../../src/app.js";
 import { loadConfig } from "../../src/config.js";
 import type { RunRoutesOptions } from "../../src/run-routes.js";
+import { traceFilePath } from "../../src/trace.js";
 
 // Authorisation in the run routes. A run or approval in a workspace the caller
 // may not access must look exactly like one that does not exist, and must not
@@ -58,6 +63,80 @@ async function start(runWorkspace: string, role: WorkspaceRole = "developer") {
 
 const inject = (method: "GET" | "POST", url: string, payload?: object) =>
   app.inject({ method, url, ...(payload === undefined ? {} : { payload }) });
+
+describe("an attempt's trace", () => {
+  const EXECUTION = "00000000-0000-4000-8000-0000000000f1";
+  const UNTRACED = "00000000-0000-4000-8000-0000000000f2";
+  const OTHER_RUNS = "00000000-0000-4000-8000-0000000000f3";
+  const SECRET = "sk_live_ABCDEFGHIJKLMNOP1234";
+  let directory: string;
+
+  afterEach(async () => {
+    await rm(directory, { recursive: true, force: true });
+  });
+
+  /** A Run with two executions, one traced; another Run's trace also sits on disk. */
+  async function startWithTrace(runWorkspace: string, role: WorkspaceRole = "developer") {
+    directory = await mkdtemp(path.join(tmpdir(), "run-trace-"));
+    const config = loadConfig({ NODE_ENV: "test", APP_DATA_DIR: directory });
+    const line = JSON.stringify({ seq: 1, dir: "in", method: "codex/event", payload: { stdout: `STRIPE_KEY=${SECRET}` } });
+    await mkdir(path.dirname(traceFilePath(config.dataDirectory, EXECUTION)), { recursive: true });
+    await writeFile(traceFilePath(config.dataDirectory, EXECUTION), `${line}\n`, "utf8");
+    await writeFile(traceFilePath(config.dataDirectory, OTHER_RUNS), `${line}\n`, "utf8");
+    const options = {
+      snapshot: async (runId: string) =>
+        runId === RUN ? ({ run: { id: RUN, workspaceId: runWorkspace }, executions: [{ id: EXECUTION }, { id: UNTRACED }] } as RunSnapshot) : null,
+      currentUserId: () => "00000000-0000-4000-8000-0000000000ee",
+      workspaceRole: async (workspaceId: string) => (workspaceId === MINE ? role : null),
+    } as unknown as RunRoutesOptions;
+    app = await createApp(config, {} as AgentService, { runs: options });
+  }
+
+  it("serves the attempt's trace redacted, as JSON Lines, to any role in the workspace", async () => {
+    await startWithTrace(MINE, "auditor");
+    const response = await inject("GET", apiPaths.executionTrace(RUN, EXECUTION));
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers["content-type"]).toContain("application/x-ndjson");
+    expect(response.body).not.toContain(SECRET);
+    expect(response.headers["x-redactions"]).toBe("1");
+    expect(() => JSON.parse(response.body.trim())).not.toThrow();
+  });
+
+  it("answers 404 for a run in another workspace, like one that does not exist", async () => {
+    await startWithTrace(THEIRS);
+    const response = await inject("GET", apiPaths.executionTrace(RUN, EXECUTION));
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json().error).toBe("Run not found");
+    expect(response.body).not.toContain(SECRET);
+  });
+
+  it("serves only an execution of the named run, whatever is on disk", async () => {
+    await startWithTrace(MINE);
+    const response = await inject("GET", apiPaths.executionTrace(RUN, OTHER_RUNS));
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json().error).toBe("Execution not found");
+  });
+
+  it("answers 404 for an execution with no trace file", async () => {
+    await startWithTrace(MINE);
+    const response = await inject("GET", apiPaths.executionTrace(RUN, UNTRACED));
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json().error).toBe("No trace for this execution");
+  });
+
+  it("rejects an execution id that is not an id", async () => {
+    await startWithTrace(MINE);
+    for (const id of ["..%2F..%2Fetc%2Fpasswd", `..%2F${OTHER_RUNS}`, "not-an-id"]) {
+      const response = await inject("GET", `/api/runs/${RUN}/executions/${id}/trace`);
+      expect(response.statusCode, id).toBe(400);
+      expect(response.body).not.toContain(SECRET);
+    }
+  });
+});
 
 describe("run routes", () => {
   it("serves runs and approvals in the caller's own workspace", async () => {

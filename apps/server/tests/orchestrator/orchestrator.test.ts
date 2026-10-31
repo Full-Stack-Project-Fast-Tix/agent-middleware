@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
-import type { Approval, ProposedAction, RunSnapshot, SecurityDecision } from "@launchpad/shared";
+import type { Approval, ProposedAction, Run, RunSnapshot, SecurityDecision, Task } from "@launchpad/shared";
 import { HttpError } from "../../src/errors.js";
+import { InMemoryRunStore } from "../../src/orchestrator/in-memory-run-store.js";
 import type { ExecutionGuard, SecurityMiddleware } from "../../src/security-middleware.js";
 import { checkRunInvariants } from "../integration/harness/invariants.js";
 import { AGENTS, USER_ID, WORKSPACE_ID, startHarness, waitFor, type Harness, type ScriptStep } from "./fixtures.js";
@@ -67,6 +68,26 @@ const findingsOf = (snapshot: RunSnapshot, title: string) => {
 const executedTypes = () => harness.runtime.executed.map(({ action }) => action.type);
 const runStatuses = (events: ReturnType<Harness["record"]>) =>
   events.flatMap((event) => (event.type === "run.updated" ? [event.payload.run.status] : []));
+
+const pauseFor = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** Hands back what it read only after a pause, like a database round trip. */
+class SlowReadStore extends InMemoryRunStore {
+  override async listTasks(runId: string): Promise<Task[]> {
+    const tasks = await super.listTasks(runId);
+    await pauseFor(30);
+    return tasks;
+  }
+}
+
+/** The cancel is committed and published well before the caller gets its answer. */
+class SlowCancelStore extends InMemoryRunStore {
+  override async updateRun(...args: Parameters<InMemoryRunStore["updateRun"]>): Promise<Run> {
+    const run = await super.updateRun(...args);
+    if (args[1].cancelRequestedAt !== undefined) await pauseFor(30);
+    return run;
+  }
+}
 
 /** Adds rules on top of the scripted middleware. */
 function withRule(rule: (action: ProposedAction) => SecurityDecision | null) {
@@ -355,6 +376,19 @@ describe("scheduling", () => {
     expect(harness.runtime.maxActive).toBeLessThanOrEqual(3);
     expect(harness.runtime.maxActiveWriters).toBe(1);
   });
+
+  it("does not skip a task whose dependency finishes while the scheduler is reading", async () => {
+    const analyst = (key: string, dependsOn: string[] = []) => ({ key, title: key, objective: key, agentId: AGENTS.analyst, dependsOn });
+    const { run, events } = await start("auto", {
+      plan: { tasks: [analyst("quick"), analyst("slower"), analyst("next", ["slower"])] },
+      script: { quick: { delayMs: 5 }, slower: { delayMs: 25 } },
+      store: (hub) => new SlowReadStore(hub),
+    });
+    const snapshot = await settle(run.id, events);
+
+    expect(snapshot.tasks.find((task) => task.title === "next")?.status).toBe("completed");
+    expect(snapshot.run.status).toBe("completed");
+  });
 });
 
 describe("working copies and approvals over time", () => {
@@ -429,6 +463,49 @@ describe("cancellation and misuse", () => {
 
     expect(snapshot.run.status).toBe("cancelled");
     expect(snapshot.executions.map((execution) => execution.status)).toEqual(["cancelled"]);
+  });
+
+  it("records one cancel when two arrive together", async () => {
+    const { run, events } = await start("single", { script: { [PROMPT]: { delayMs: 5_000 } } });
+    const [first, second] = await Promise.all([harness.orchestrator.cancel(run.id), harness.orchestrator.cancel(run.id, USER_ID)]);
+    const snapshot = await settle(run.id, events);
+
+    expect(second.cancelRequestedAt).toBe(first.cancelRequestedAt);
+    expect(snapshot.run.status).toBe("cancelled");
+    expect(harness.store.auditEvents(run.id).filter((event) => event.eventType === "run.cancel_requested")).toHaveLength(1);
+  });
+
+  it("asks nobody to approve anything once the cancel is written", async () => {
+    const { run, events } = await start("single", {
+      script: {
+        [PROMPT]: {
+          delayMs: 5,
+          actions: [{ type: "file_change", changes: [{ path: "src/signup.ts", kind: "update", movePath: null, diff: "+ validate(body)" }] }],
+        },
+      },
+      store: (hub) => new SlowCancelStore(hub),
+    });
+    await harness.orchestrator.cancel(run.id);
+    const snapshot = await settle(run.id, events);
+
+    expect(snapshot.run.status).toBe("cancelled");
+    expect(snapshot.approvals).toEqual([]);
+  });
+
+  it("ends a run cancelled when the cancel lands during the scheduler's last pass", async () => {
+    const analyst = (key: string) => ({ key, title: key, objective: key, agentId: AGENTS.analyst, dependsOn: [] });
+    const { run, events } = await start("auto", {
+      plan: { tasks: [analyst("broken"), analyst("working")] },
+      script: { broken: { failAttempts: Infinity }, working: { delayMs: 5_000 } },
+      limits: { maxAttempts: 1 },
+      store: (hub) => new SlowReadStore(hub),
+    });
+    await waitFor(() => harness.store.snapshot(run.id)?.tasks.some((task) => task.status === "failed"));
+    await harness.orchestrator.cancel(run.id);
+    const snapshot = await settle(run.id, events);
+
+    expect(snapshot.run.status).toBe("cancelled");
+    expect(snapshot.tasks.find((task) => task.title === "working")?.status).toBe("cancelled");
   });
 
   it("answers misuse with HTTP errors", async () => {
