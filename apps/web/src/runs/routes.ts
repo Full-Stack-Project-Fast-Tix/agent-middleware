@@ -1,37 +1,4 @@
-import { useEffect, useState } from "react";
-
-// Runs pages live under the URL hash, so a Run Detail link can be shared and
-// the back button works, without adding a router dependency. P4's app shell
-// can replace this when it lands.
-
-export type RunsRoute = { page: "new" } | { page: "run"; runId: string };
-
-const RUN_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-export function parseRunsHash(hash: string): RunsRoute | null {
-  const path = hash.replace(/^#/, "");
-  if (path === "/runs" || path === "/runs/" || path === "/runs/new") return { page: "new" };
-  const match = /^\/runs\/([^/?#]+)$/.exec(path);
-  if (match && RUN_ID.test(match[1]!)) return { page: "run", runId: match[1]! };
-  return null;
-}
-
-export const runHash = (runId: string): string => `#/runs/${runId}`;
-export const NEW_RUN_HASH = "#/runs/new";
-
-export function navigate(hash: string): void {
-  if (window.location.hash !== hash) window.location.hash = hash;
-}
-
-export function useRunsRoute(): RunsRoute | null {
-  const [route, setRoute] = useState(() => parseRunsHash(window.location.hash));
-  useEffect(() => {
-    const update = () => setRoute(parseRunsHash(window.location.hash));
-    window.addEventListener("hashchange", update);
-    return () => window.removeEventListener("hashchange", update);
-  }, []);
-  return route;
-}
+import { RUN_ID } from "../router";
 
 // Runs you started in this browser. There is no "list runs" route in the
 // contract yet (the Dashboard is P4's), so this is a per-browser convenience

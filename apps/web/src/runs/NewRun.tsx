@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import type { Agent, OrchestrationMode } from "@launchpad/shared";
 import { ApiError } from "../api";
-import { navigate, readRecentRuns, rememberRun, runHash } from "./routes";
+import { Link, navigate, paths } from "../router";
+import { readRecentRuns, rememberRun } from "./routes";
 import { runsApi, type WorkspaceSummary } from "./runs-api";
 
 const EXAMPLES = [
@@ -61,7 +62,7 @@ export function NewRun() {
         ...(agentId ? { agentId } : {}),
       });
       rememberRun({ id: run.id, prompt: run.userPrompt, createdAt: run.createdAt });
-      navigate(runHash(run.id));
+      navigate(paths.run(run.id));
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
@@ -166,7 +167,7 @@ export function NewRun() {
           <ul>
             {recent.map((item) => (
               <li key={item.id}>
-                <a href={runHash(item.id)}>{item.prompt}</a>
+                <Link to={paths.run(item.id)}>{item.prompt}</Link>
                 <span>{new Date(item.createdAt).toLocaleString()}</span>
               </li>
             ))}

@@ -1,17 +1,6 @@
-import type { Agent, FindingSeverity } from "@launchpad/shared";
+import type { Agent } from "@launchpad/shared";
 
-export function StatusBadge({ status }: { status: string }) {
-  return (
-    <span className={"run-status run-status-" + status}>
-      <span className="run-status-dot" />
-      {status.replace("_", " ")}
-    </span>
-  );
-}
-
-export function SeverityBadge({ severity }: { severity: FindingSeverity }) {
-  return <span className={"severity severity-" + severity}>{severity}</span>;
-}
+export { SeverityBadge, StatusBadge } from "../ui";
 
 export function formatClock(value: string | null): string {
   if (value === null) return "—";

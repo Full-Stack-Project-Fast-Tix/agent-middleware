@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import type { Agent, Approval } from "@launchpad/shared";
 import { MessageContent } from "../MessageContent";
 import { formatClock, StatusBadge } from "./format";
-import { NEW_RUN_HASH } from "./routes";
+import { paths } from "../router";
+import { ButtonLink } from "../ui";
 import { runsApi } from "./runs-api";
 import { focusTaskId, isRunActive, pendingApprovals } from "./run-view";
 import { TaskDrilldown } from "./TaskDrilldown";
@@ -45,7 +46,7 @@ export function RunDetail({ runId }: { runId: string }) {
     return (
       <div className="runs-page">
         <div className="error-banner" role="alert"><span>{loadError}</span></div>
-        <a className="button button-ghost" href={NEW_RUN_HASH}>Start a new run</a>
+        <ButtonLink to={paths.newRun}>Start a new run</ButtonLink>
       </div>
     );
   }
@@ -92,7 +93,7 @@ export function RunDetail({ runId }: { runId: string }) {
           </div>
         </div>
         <div className="header-actions">
-          <a className="button button-ghost" href={NEW_RUN_HASH}>New run</a>
+          <ButtonLink to={paths.newRun}>New run</ButtonLink>
           {active && !confirmingCancel && (
             <button className="button button-danger" onClick={() => setConfirmingCancel(true)} disabled={run.cancelRequestedAt !== null}>
               Cancel run
