@@ -43,7 +43,8 @@ const envSchema = z.object({
   CODEX_MAX_OUTPUT_BYTES: z.coerce.number().int().min(65_536).default(2_097_152),
   RUNTIME_PROVIDER: z.enum(["local-process", "container"]).default("local-process"),
   CONTAINER_ENGINE: z.string().min(1).default("docker"),
-  CONTAINER_RUNTIME_IMAGE: z.string().min(1).default("volc-agent-runtime:local"),
+  /** Defaults by provider: the Claude runtime image contains no Codex. */
+  CONTAINER_RUNTIME_IMAGE: z.string().min(1).optional(),
   CONTAINER_CPU_LIMIT: z.coerce.number().positive().default(2),
   CONTAINER_MEMORY_LIMIT: z
     .string()
@@ -75,10 +76,37 @@ const envSchema = z.object({
    * "ark" is the legacy BytePlus ModelArk compatibility path, and needs the adapter in
    * ark-proxy.ts because Ark rejects Codex's multi-turn requests.
    * "openai" is Codex's own native provider, so it needs no adapter.
+   * "anthropic" is Claude, for multi-agent Runs only: the agent loop runs here on
+   * the host (claude-execution-runtime.ts), and the legacy Playground, which
+   * needs Codex, reports itself unavailable. It is the documented choice in
+   * .env.example; the schema default stays "ark" so an unconfigured
+   * `npm run dev:demo` keeps starting.
    */
-  MODEL_PROVIDER: z.enum(["ark", "openai"]).default("ark"),
+  MODEL_PROVIDER: z.enum(["ark", "openai", "anthropic"]).default("ark"),
   OPENAI_API_KEY: z.string().optional(),
   OPENAI_MODEL: z.string().default("gpt-5.1-codex"),
+  ANTHROPIC_API_KEY: z.string().optional(),
+  ANTHROPIC_MODEL: z.string().trim().min(1).default("claude-opus-5-5"),
+  /** Only for a test double or a gateway. The API key is sent to this address. */
+  ANTHROPIC_BASE_URL: z.string().url().optional(),
+  /** How hard Claude works on each turn of an execution. */
+  CLAUDE_EFFORT: z.enum(["low", "medium", "high", "xhigh", "max"]).default("high"),
+  /** Model turns per execution, including resumed pause_turn responses. */
+  CLAUDE_MAX_ITERATIONS: z.coerce.number().int().min(1).default(40),
+  /** Sent as max_tokens. Thinking counts toward it. */
+  CLAUDE_MAX_TOKENS_PER_CALL: z.coerce.number().int().min(1_024).default(32_000),
+  /** Output tokens across one execution. */
+  CLAUDE_MAX_TOTAL_OUTPUT_TOKENS: z.coerce.number().int().min(1_024).default(200_000),
+  /** Input tokens across one execution, counting cache reads and writes. */
+  CLAUDE_MAX_TOTAL_INPUT_TOKENS: z.coerce.number().int().min(1_024).default(2_000_000),
+  /** Model and tool time for one execution. Waiting on a person does not count. */
+  CLAUDE_EXECUTION_TIMEOUT_MS: z.coerce.number().int().min(1_000).default(900_000),
+  /** One shell command, enforced inside the container. */
+  CLAUDE_COMMAND_TIMEOUT_MS: z.coerce.number().int().min(1_000).default(120_000),
+  /** Bytes of one tool's output that reach the model and the trace. */
+  CLAUDE_TOOL_OUTPUT_MAX_BYTES: z.coerce.number().int().min(1_024).default(32_768),
+  /** The largest file the editor tool reads or writes. */
+  CLAUDE_MAX_EDIT_FILE_BYTES: z.coerce.number().int().min(1_024).default(1_048_576),
   ARK_API_KEY: z.string().optional(),
   ARK_MODEL: z.string().optional(),
   ARK_BASE_URL: z
@@ -162,7 +190,10 @@ const envSchema = z.object({
     .string()
     .default("false")
     .transform((value) => value === "true" || value === "1"),
-  /** Empty means use the same configured provider model as the coding Agent. */
+  /**
+   * Empty means use the same configured provider model as the coding Agent.
+   * With MODEL_PROVIDER=anthropic this is a Claude model id.
+   */
   GUARDRAIL_SEMANTIC_MODEL: z.string().default(""),
   GUARDRAIL_SEMANTIC_TIMEOUT_MS: z.coerce.number().int().min(1_000).default(15_000),
   /** Delegate only explicitly selected Runtime effects to a person. */
@@ -210,7 +241,9 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env) {
     codexMaxOutputBytes: env.CODEX_MAX_OUTPUT_BYTES,
     runtimeProvider: env.RUNTIME_PROVIDER,
     containerEngine: env.CONTAINER_ENGINE,
-    containerRuntimeImage: env.CONTAINER_RUNTIME_IMAGE,
+    containerRuntimeImage:
+      env.CONTAINER_RUNTIME_IMAGE ??
+      (env.MODEL_PROVIDER === "anthropic" ? "agentguard-claude-runtime:local" : "volc-agent-runtime:local"),
     containerCpuLimit: env.CONTAINER_CPU_LIMIT,
     containerMemoryLimit: env.CONTAINER_MEMORY_LIMIT,
     containerPidsLimit: env.CONTAINER_PIDS_LIMIT,
@@ -221,14 +254,39 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env) {
     modelProvider: env.MODEL_PROVIDER,
     // The key, the model name, and the environment variable Codex reads the
     // key from, all resolved for whichever provider is selected. Everything
-    // downstream uses these rather than provider-specific fields.
+    // downstream uses these rather than provider-specific fields. Nothing reads
+    // modelApiKeyEnvName under anthropic, which never starts Codex: that key
+    // stays on the host, outside every container.
     modelApiKey:
-      env.MODEL_PROVIDER === "openai"
-        ? (env.OPENAI_API_KEY?.trim() ?? "")
-        : (env.ARK_API_KEY?.trim() ?? ""),
+      env.MODEL_PROVIDER === "anthropic"
+        ? (env.ANTHROPIC_API_KEY?.trim() ?? "")
+        : env.MODEL_PROVIDER === "openai"
+          ? (env.OPENAI_API_KEY?.trim() ?? "")
+          : (env.ARK_API_KEY?.trim() ?? ""),
     modelName:
-      env.MODEL_PROVIDER === "openai" ? env.OPENAI_MODEL.trim() : (env.ARK_MODEL?.trim() ?? ""),
-    modelApiKeyEnvName: env.MODEL_PROVIDER === "openai" ? "OPENAI_API_KEY" : "ARK_API_KEY",
+      env.MODEL_PROVIDER === "anthropic"
+        ? env.ANTHROPIC_MODEL
+        : env.MODEL_PROVIDER === "openai"
+          ? env.OPENAI_MODEL.trim()
+          : (env.ARK_MODEL?.trim() ?? ""),
+    modelApiKeyEnvName:
+      env.MODEL_PROVIDER === "anthropic"
+        ? "ANTHROPIC_API_KEY"
+        : env.MODEL_PROVIDER === "openai"
+          ? "OPENAI_API_KEY"
+          : "ARK_API_KEY",
+    anthropicBaseUrl: env.ANTHROPIC_BASE_URL ?? null,
+    claude: {
+      effort: env.CLAUDE_EFFORT,
+      maxIterations: env.CLAUDE_MAX_ITERATIONS,
+      maxTokensPerCall: env.CLAUDE_MAX_TOKENS_PER_CALL,
+      maxTotalOutputTokens: env.CLAUDE_MAX_TOTAL_OUTPUT_TOKENS,
+      maxTotalInputTokens: env.CLAUDE_MAX_TOTAL_INPUT_TOKENS,
+      executionTimeoutMs: env.CLAUDE_EXECUTION_TIMEOUT_MS,
+      commandTimeoutMs: env.CLAUDE_COMMAND_TIMEOUT_MS,
+      toolOutputMaxBytes: env.CLAUDE_TOOL_OUTPUT_MAX_BYTES,
+      maxEditFileBytes: env.CLAUDE_MAX_EDIT_FILE_BYTES,
+    },
     arkApiKey: env.ARK_API_KEY?.trim() ?? "",
     arkModel: env.ARK_MODEL?.trim() ?? "",
     arkBaseUrl: env.ARK_BASE_URL.replace(/\/+$/, ""),
@@ -261,6 +319,19 @@ export function isModelConfigured(config: AppConfig): boolean {
     config.modelName.length > 0 &&
     !config.modelName.includes("replace-")
   );
+}
+
+/**
+ * Called once at startup for real work. A simulated demo needs no key, so it
+ * does not call this.
+ */
+export function assertModelProviderReady(config: AppConfig): void {
+  if (config.modelProvider !== "anthropic") return;
+  if (config.modelApiKey === "" || config.modelApiKey.startsWith("replace-")) {
+    throw new Error(
+      "MODEL_PROVIDER=anthropic needs ANTHROPIC_API_KEY. Set it in .env or in the server's environment, then restart.",
+    );
+  }
 }
 
 /**
