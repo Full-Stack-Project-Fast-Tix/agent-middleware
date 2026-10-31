@@ -20,6 +20,7 @@ The proof of concept currently includes:
 - A **React + TypeScript** frontend and **Fastify + TypeScript** backend.
 - A single-agent execution lifecycle with workspace interaction, execution traces, and security findings.
 - Multi-agent Runs with task planning, dependency-aware scheduling, isolated working copies, and per-execution container runtimes in password-authenticated mode.
+- Strict specialist completion reports that distinguish a successfully ended model turn from a completed Task.
 - PostgreSQL-backed users, workspaces, workspace roles, and Run persistence for that mode.
 - Run and Task status views, approval handling, and live Run updates in the web app.
 - **Deterministic guards** for behavioral invariants (for example, detecting known credentials used in recognized outbound channels).
@@ -28,7 +29,7 @@ The proof of concept currently includes:
 - **Reflection memory** recording structured lessons from past security incidents.
 - Security findings surfaced in the execution trajectory, with replay/evaluation through an existing benchmark framework.
 
-The multi-agent and password-authenticated paths are implemented foundations, with workspace-role checks and capability ceilings. Admin management UI, configurable policy rules, stronger tenant isolation, and the full operations console remain unfinished. Run copies omit known environment-secret patterns and common credential stores/files by default; this filename-based filter is not general secret detection.
+The multi-agent and password-authenticated paths are implemented foundations, with workspace-role checks and capability ceilings. Password mode exposes only workspace-scoped multi-agent APIs; the legacy global single-agent APIs remain available in token mode. Admin management UI, configurable policy rules, stronger tenant isolation, artifact cleanup, and the full operations console remain unfinished. Run copies omit known environment-secret patterns and common credential stores/files by default; this filename-based filter is not general secret detection.
 
 ## Planned product capabilities
 

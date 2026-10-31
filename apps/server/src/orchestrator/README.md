@@ -19,7 +19,8 @@ always the middleware's decision
 | `plan.ts` | The supervisor plan schema and `validatePlan`: registered and enabled agents only, never the supervisor itself, no cycles, within `maxTasks`. Pure. |
 | `scheduler.ts` | `tasksToMarkReady`, `tasksToSkip`, `pickLaunches`: dependency order, skipping downstream of a failure, `maxParallel`, one writer at a time. Pure. |
 | `planner.ts` | `ModelPlanner`: one tool-less model call returning the plan as JSON. It sees the request and the agent catalogue, never workspace content. |
-| `task-prompt.ts` | What a specialist is told: its objective, plus earlier results fenced with a per-prompt nonce and marked as data. |
+| `task-prompt.ts` | What a specialist is told: its objective, earlier results fenced with a per-prompt nonce and marked as data, and the required final disposition report. |
+| `task-disposition.ts` | Strictly validates whether a specialist reports its Task complete or incomplete. |
 | `ports.ts` | The interfaces the orchestrator depends on: `RunStore`, `AgentDirectory`, `ExecutionRuntime`, `WorkingCopies` and `ActionGate`. |
 | `in-memory-run-store.ts` | `RunStore` in memory, publishing RunEvents with per-run seqs. Used by tests and by `dev:demo` without `DATABASE_URL`; real Runs use `PostgresRunStore`. |
 | `codex-execution-runtime.ts` | `CodexExecutionRuntime`: one execution, one disposable container, the Run's working copy at `/workspace`, its own trace file. Drives the turn with `../gated-turn.ts`. |
@@ -48,6 +49,10 @@ is created either. A blocked handoff withholds that result from the prompt.
   become a way around the middleware.
 - **Failures.** When a Task fails, its dependents are skipped. Running work
   finishes, nothing new starts, and the Run fails.
+- **Completion reports.** A Codex turn ending successfully completes its
+  AgentExecution. Its Task completes only when the final response is the strict
+  JSON disposition requested by `task-prompt.ts` with status `complete`.
+  `incomplete`, missing and malformed reports fail the Task without retrying.
 - **Approvals.** `Run.waiting_approval` is held while any approval is pending,
   and the Run returns to the phase it left. Approval bookkeeping is serialised
   per Run, so parallel executions cannot leave the Run status out of step with
@@ -122,10 +127,12 @@ recovers interrupted Runs before it listens, and starts the approval sweep.
 
 ## Still to do
 
-- **Working-copy retention:** copies are kept after a Run for inspection;
-  deleting old ones is a retention policy still to be decided.
+- **Artifact cleanup:** the policy is settled at 30 days after a Run becomes
+  terminal. P3 still needs to implement cleanup and an explicit expired-artifact
+  response while retaining audit rows, findings, statuses and task results.
 - **Nested delegation:** specialists cannot delegate yet, so the effective
-  depth is 1 whatever `maxDelegationDepth` allows.
+  depth is deliberately 1 whatever `maxDelegationDepth` allows. Enabling it
+  requires trusted parent/child lineage and middleware coverage at every hop.
 
 ## Tests
 

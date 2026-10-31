@@ -348,8 +348,13 @@ Two small writes make this possible, neither a schema change:
 | File lists on decisions saved before this change, unless the action went to a person. | `fileChanges.entriesWithoutFileList` | None; these rows age out of view. |
 | Strict order within one millisecond. `audit_events` has no creation sequence. | Not visible to clients | `ALTER TABLE audit_events ADD COLUMN created_seq bigint GENERATED ALWAYS AS IDENTITY`, as migration 002 did for tasks, executions, findings and approvals. |
 
-P3 owns migrations, so none of these were added here. P1 should decide whether
-command text may be stored at all before `gate_actions` is built.
+P3 owns migrations, so none of these were added here. P1 decided that command
+text will not be added to permanent audit rows or a `gate_actions` table for
+the current milestone. Commands can contain credentials and arbitrary source
+text, and a redaction miss in durable rows is harder to remove than a retained
+artifact. The timeline therefore keeps `proposed: null` for commands that did
+not require human approval. A future command-history feature needs a new P1
+review, bounded and erasable storage, and the artifact-retention rules below.
 
 **Why:** The gate-line view needs what was proposed and what was decided, from
 evidence that survives a restart. Saying "not saved" is more accurate than
@@ -386,8 +391,8 @@ email, which does not exist.
 
 ## 16. An attempt's trace is read through a run route
 
-**Decision:** Add `GET /api/runs/:runId/executions/:executionId/trace`
-(`apiPaths.executionTrace`). Any role in the Run's workspace may read it, and a
+**Decision (amended 31 October 2026):** Add `GET /api/runs/:runId/executions/:executionId/trace`
+(`apiPaths.executionTrace`). A `developer` or `security_admin` in the Run's workspace may read it, and a
 Run in a workspace the caller cannot access answers 404 like the other run
 routes. It serves the bounded raw trace as `application/x-ndjson`, read whole so
 the outbound redaction hook applies, and reports what it changed in
@@ -400,9 +405,43 @@ browser could open. Reading through the Run keeps workspace access in one place.
 
 **Limit:** Pattern redaction does not make a raw trace safe in general: it can
 still hold sensitive material the patterns miss, and a rolling trace is not a
-complete audit history. Read access for `auditor` follows "any role may read";
-the owners may want to narrow it for raw traces. Owners to review: P1 (exposure
-of trace content), P3 (access rule), P4 (contract).
+complete audit history. An `auditor` uses the bounded, redacted timeline and
+snapshot rather than this raw artifact. The narrower rule prevents a read-only
+role intended for durable audit evidence from gaining access to a more
+sensitive and incomplete debugging artifact.
+
+## 17. A completed turn must report whether its Task is complete
+
+**Decision (31 October 2026):** Every specialist's final response is exactly a
+strict JSON object with `status: "complete" | "incomplete"` and a non-empty,
+bounded `summary`. Markdown fences, surrounding prose, extra fields, a missing
+report and an invalid report do not satisfy the contract.
+
+The runtime validates the report. The `AgentExecution` is `completed` when the
+Codex turn itself ended successfully. The Task becomes `completed` only for a
+valid `complete` report. An `incomplete`, missing or invalid report stores the
+available output, marks the Task `failed`, skips its dependants and fails the
+Run. It is not retried: repeating a successfully ended turn is neither evidence
+of a transient runtime fault nor a safe way to obtain a different answer.
+
+This is an agent report, not independent proof that the work is correct. Tests,
+review and the security middleware remain separate evidence. The existing Task
+status and error fields express the result; no new shared lifecycle status is
+needed.
+
+## 18. Terminal execution artifacts expire after 30 days
+
+**Decision (31 October 2026):** Run working copies and raw execution traces are
+retained for 30 days after a Run reaches a terminal state. Cleanup must never
+remove artifacts for a queued, planning, running or approval-waiting Run. Audit
+rows, statuses, bounded findings and saved task results remain after artifact
+expiry. A missing expired artifact is reported as expired rather than as proof
+that no execution occurred.
+
+P2 owns these lifecycle semantics. P3 owns the cleanup job, storage operations
+and any schema needed to distinguish expiry from an unexpected missing file.
+The 30-day value is the fixed POC default; making it configurable is a later
+deployment feature.
 
 ## Guidance for P3's schema
 

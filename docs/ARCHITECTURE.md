@@ -138,7 +138,9 @@ single-agent path above, which is unchanged. These parts exist:
   - schedules tasks in dependency order, with limited parallelism and one
     write-capable execution at a time;
   - handles retries, approvals, cancellation and restart recovery, and writes
-    the audit trail.
+    the audit trail;
+  - validates each specialist's strict final disposition, so a successfully
+    ended turn cannot complete a Task that the specialist reports incomplete.
 - **Run routes** ([`run-routes.ts`](../apps/server/src/run-routes.ts)): create,
   snapshot, cancel and resolve-approval, as specified in `packages/shared/src/api.ts`.
 - **Gated Codex runtime**
@@ -205,8 +207,8 @@ sequenceDiagram
             Dev->>API: POST /api/approvals/:id/resolve
             API->>O: resolveApproval
         end
-        R-->>O: result, trace path
-        O->>S: execution and task completed
+        R-->>O: validated disposition, result, trace path
+        O->>S: execution completed; task completed or failed
     end
     O->>S: Run completed: the final tasks' results
     S-->>Dev: run.updated (SSE)
@@ -218,24 +220,30 @@ instead of the shared token, and `index.ts` composes the orchestrator with
 `PostgresRunStore`, `PostgresAgentDirectory`, P1's middleware on
 `PostgresSecuritySource`, the model planner and Codex containers
 ([`postgres-runs.ts`](../apps/server/src/postgres-runs.ts)). In a workspace,
-any role may read; `developer` and `security_admin` may also start and cancel
-Runs and answer approvals; `auditor` only reads. `npm run db:admin -w
+any role may read bounded Run data; `developer` and `security_admin` may also
+start and cancel Runs, answer approvals, and read redacted raw execution
+traces. An `auditor` reads snapshots and the bounded timeline, but not raw
+traces. `npm run db:admin -w
 @launchpad/server` adds users, workspaces (with the four standard agents and
 the platform baseline policy) and members. A `security_admin` can also manage
 their workspace's members over the API (contract decision 15). Failed sign-ins
 are limited per account and per source address, in this process's memory. The
 default `token` mode is unchanged, and `npm run dev:demo` still runs the simulated
-demo. An attempt's bounded, redacted raw trace is read through
+demo. For the two acting roles, an attempt's bounded, redacted raw trace is read through
 `GET /api/runs/:runId/executions/:executionId/trace`, under the same workspace
-check as the other run routes.
+check as the other run routes. Password mode rejects the legacy global
+`/api/agents`, `/api/admin`, `/api/system` and single-agent Run routes because
+their JSON store has no workspace identity to authorize against.
 
 Not built yet, by owner:
 - **P3:** tenant isolation beyond workspace roles (every workspace's Runs share one
   host). Members has a web page; creating users and workspaces stays on the command
   line.
-- **P1/P3:** command text and applied file changes on the gate timeline. Saved
-  data does not hold them, so the timeline says so (contract decision 14 gives the
-  schema each would need, and whether command text may be stored is P1's decision).
+- **P3:** artifact cleanup after the settled 30-day terminal-Run retention
+  window, including an explicit expired-artifact response.
+- **P3/P4:** applied file changes on the gate timeline. Saved data does not hold
+  them, so the timeline says so. Command text is deliberately not added to
+  permanent audit storage for this milestone (contract decision 14).
 - **P4:** views for Agents, Policies, Audit and Benchmarks. The console links only
   to views that exist.
 
