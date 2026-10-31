@@ -47,6 +47,7 @@ export function usePlayground() {
   const mountedRef = useRef(true);
   const pollingRunIds = useRef(new Set<string>());
   const safetyPanelOpenRef = useRef(false);
+  const tracedRunId = useRef<string | null>(null);
   selectedIdRef.current = selectedId;
   safetyPanelOpenRef.current = showSafetyPanel;
 
@@ -227,6 +228,24 @@ export function usePlayground() {
     setSteps(toSteps(records));
     setTraceRedactions(trace.redactions);
   };
+
+  // A finished run is never polled, so its trace is read once when it opens.
+  // Without this, the activity panel says a finished run took no action at all.
+  const finishedRun = activeRun !== null && !isActiveRun(activeRun) ? activeRun : null;
+  const finishedRunId = finishedRun?.id ?? null;
+  const finishedRunAgentId = finishedRun?.agentId ?? null;
+  useEffect(() => {
+    if (finishedRunId === null || finishedRunAgentId === null) return;
+    if (tracedRunId.current !== finishedRunId) {
+      setSteps([]);
+      setTraceRecords([]);
+      setTraceRedactions(0);
+    }
+    tracedRunId.current = finishedRunId;
+    void refreshTrace(finishedRunId, finishedRunAgentId).catch((reason) =>
+      setError(reason instanceof Error ? reason.message : String(reason)),
+    );
+  }, [finishedRunId, finishedRunAgentId]);
 
   const resolveApproval = async (decision: "approve" | "deny") => {
     const approval = activeRun?.pendingApproval;

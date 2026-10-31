@@ -98,6 +98,21 @@ export function toSteps(records: TraceRecord[]): TraceStep[] {
   return building.steps;
 }
 
+/**
+ * The step a record belongs to. A finding's evidence can point at either end of
+ * an item, its start or its completion, and a step keeps the seq of the first.
+ */
+export function stepForRecord(seq: number, steps: TraceStep[], records: TraceRecord[]): TraceStep | null {
+  const exact = steps.find((step) => step.seq === seq);
+  if (exact !== undefined) return exact;
+  const record = records.find((candidate) => candidate.seq === seq);
+  const item = record === undefined ? null : readItem(record);
+  const itemId = item === null ? null : asString(item.id);
+  if (itemId === null) return null;
+  const first = records.find((candidate) => asString(readItem(candidate)?.id) === itemId);
+  return first === undefined ? null : (steps.find((step) => step.seq === first.seq) ?? null);
+}
+
 /** A thing the agent did: a command, a file change, a search, a reply. */
 function handleItemEvent(record: TraceRecord, building: Building): boolean {
   if (record.method !== "item/started" && record.method !== "item/completed") return false;
