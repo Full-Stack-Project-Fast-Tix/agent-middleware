@@ -1,4 +1,6 @@
 import { execFile, spawn, type ChildProcess } from "node:child_process";
+import { chmod, copyFile, mkdtemp, rm } from "node:fs/promises";
+import { join } from "node:path";
 import { promisify } from "node:util";
 import { randomUUID } from "node:crypto";
 import { agentIntentCheck } from "./check-agent-intent.js";
@@ -65,7 +67,10 @@ export interface RuntimeSession {
 }
 
 export function buildContainerRunArgs(
-  request: Pick<RunnerRequest, "agentId" | "executionId" | "workspacePath"> & { disableWebSearch?: boolean },
+  request: Pick<RunnerRequest, "agentId" | "executionId" | "workspacePath"> & {
+    disableWebSearch?: boolean;
+    codexHomePath?: string;
+  },
   config: AppConfig,
 ): string[] {
   const name = containerName(request.executionId, config.runtimeInstanceId);
@@ -113,7 +118,7 @@ export function buildContainerRunArgs(
     "--mount",
     "type=bind,src=" + request.workspacePath + ",dst=/workspace",
     "--mount",
-    "type=bind,src=" + config.codexHome + ",dst=/codex-home",
+    "type=bind,src=" + (request.codexHomePath ?? config.codexHome) + ",dst=/codex-home",
     "--workdir",
     "/workspace",
     config.containerRuntimeImage,
@@ -323,9 +328,21 @@ export class ContainerCodexRunner implements AgentRunner {
       throw new Error("Execution already has an active Runtime container");
     }
 
+    // Never mount the host's shared Codex home into an agent container. It may
+    // contain credentials or session state. Each execution receives only the
+    // generated provider configuration and its own disposable home directory.
+    const executionCodexHome = await mkdtemp(join(this.config.codexHome, "execution-"));
+    try {
+      await copyFile(join(this.config.codexHome, "config.toml"), join(executionCodexHome, "config.toml"));
+      await chmod(join(executionCodexHome, "config.toml"), 0o600);
+    } catch (error) {
+      await rm(executionCodexHome, { recursive: true, force: true });
+      throw error;
+    }
+
     const child = spawn(
       this.config.containerEngine,
-      buildContainerRunArgs(request, this.config),
+      buildContainerRunArgs({ ...request, codexHomePath: executionCodexHome }, this.config),
       {
         cwd: request.workspacePath,
         env: this.childEnvironment(),
@@ -437,8 +454,9 @@ export class ContainerCodexRunner implements AgentRunner {
       throw attachTrace(this.describeFailure(error, active, stderr), await trace.close());
     } finally {
       clearTimeout(timeout);
-      void this.removeContainer(active);
+      await this.removeContainer(active);
       this.active.delete(request.executionId);
+      await rm(executionCodexHome, { recursive: true, force: true });
     }
   }
 

@@ -232,6 +232,15 @@ What it sets up: `agentguard.service`, and `agentguard-backup.timer`, which runs
 `AGENTGUARD_STATE_DIR`. Its `agentguard.env` holds the database password, readable
 only by you. `GET /api/health` answers 503 when the database is down.
 
+The multi-agent script requires Codex's `workspace-write` sandbox check to pass
+and rejects `CODEX_SANDBOX_MODE=danger-full-access`. Do not work around a failed
+check by relaxing the sandbox. Agent command networking relies on Codex sandbox
+controls; this deployment does not enforce provider-only egress at the host or
+Docker network layer. Runtime containers get an execution-specific Codex home
+with generated provider configuration only. Workspace roles and per-Run copies
+remain logical separation, not hardened isolation between mutually untrusted
+tenants.
+
 > [!IMPORTANT]
 > This script has not yet been run on a real ECS host: its checks and the backup
 > script were tested, the systemd steps were not. Terraform's cloud-init still deploys

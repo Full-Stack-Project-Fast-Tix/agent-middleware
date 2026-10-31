@@ -518,6 +518,40 @@ invent ownership for them. A deployment that needs old single-agent records keep
 them in token mode. This can be revisited if real single-agent data ever has to
 move.
 
+## 24. Specialist delegation stays one layer deep
+
+**Decision (1 November 2026, P1/P2):** The supervisor may delegate the
+validated plan's tasks to specialists, but a specialist cannot create another
+task or invoke another agent. The current orchestrator has one planning phase;
+recursive delegation would require a trusted lineage model, lifecycle and
+scheduling rules, and security checks at each hop. `maxDelegationDepth` remains
+a middleware-enforced ceiling, not a promise that recursive orchestration is
+implemented. Revisit this only with a separately reviewed design and tests
+covering every parent/child hop.
+
+## 25. Agent network access remains denied in the POC
+
+**Decision (1 November 2026, P1/P3):** Agent executions receive no general
+network capability. Provider traffic is runtime service traffic and is not an
+agent-granted network capability. This POC does not provide a host-enforced
+provider-only egress route, so it must not claim that provider calls are the
+only traffic reachable from a runtime container. The multi-agent deploy script
+fails closed when the configured Codex workspace-write sandbox cannot be
+verified; it must never silently substitute `danger-full-access`. A true
+provider-only network path requires a separate host/network design and live
+deployment validation.
+
+## 26. Tenant separation remains logical; runtime state is per execution
+
+**Decision (1 November 2026, P1/P3):** Workspace authorization and run-scoped
+working copies provide logical tenant separation in this POC. They do not
+establish a hardened tenant boundary: workspaces share the control-plane host
+and database. Each container execution must mount a private Codex home that
+contains only generated provider configuration, never the host's shared
+credentials or session state. Stronger OS, database, and network isolation
+requires a separate threat model and deployment design before production
+multi-tenant claims.
+
 ## Guidance for P3's schema
 
 These points are implementation guidance, not part of the contract:

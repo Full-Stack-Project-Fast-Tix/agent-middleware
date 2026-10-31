@@ -62,10 +62,12 @@ npm run build
 
 sandbox_mode="$(env_value CODEX_SANDBOX_MODE)"
 sandbox_mode="${sandbox_mode:-workspace-write}"
+if [[ "$sandbox_mode" == "danger-full-access" ]]; then
+  fail "CODEX_SANDBOX_MODE=danger-full-access is not supported by the multi-agent deployment."
+fi
 if [[ "$sandbox_mode" == "workspace-write" ]] \
   && ! docker run --rm "$runtime_image" codex sandbox linux --full-auto -- true >/dev/null 2>&1; then
-  echo "Codex Landlock is unavailable here, so executions rely on the disposable container boundary."
-  sandbox_mode=danger-full-access
+  fail "Codex Landlock is unavailable. Refusing to deploy with danger-full-access; install a runtime image/host combination that supports the configured workspace-write sandbox."
 fi
 
 public_port="$(env_value PUBLIC_PORT)"
@@ -85,6 +87,7 @@ CONTAINER_ENGINE=docker
 CONTAINER_RUNTIME_IMAGE=$runtime_image
 CONTAINER_USER=$(id -u):$(id -g)
 CODEX_SANDBOX_MODE=$sandbox_mode
+CODEX_NETWORK_ACCESS=false
 APP_DATA_DIR=$state_dir/data
 AGENT_WORKSPACE_ROOT=$state_dir/workspaces
 CODEX_HOME=$state_dir/codex-home

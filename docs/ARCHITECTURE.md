@@ -152,7 +152,9 @@ single-agent path above, which is unchanged. These parts exist:
   ([`gated-turn.ts`](../apps/server/src/gated-turn.ts),
   [`codex-execution-runtime.ts`](../apps/server/src/orchestrator/codex-execution-runtime.ts)):
   one container per execution, on the Run's own working copy. Every approval
-  request goes to the middleware, and it fails closed.
+  request goes to the middleware, and it fails closed. Each execution mounts a
+  disposable Codex home containing only generated provider configuration; the
+  shared host Codex home is not mounted into agent containers.
 - **Web console** ([`apps/web/src`](../apps/web/src), conventions in
   [`apps/web/DESIGN.md`](../apps/web/DESIGN.md)): a shared shell with real URLs
   (`/`, `/runs`, `/runs/new`, `/runs/:id`, `/playground`, `/safety`, `/members`;
@@ -288,4 +290,8 @@ Orchestration test and load results are in
 | Kill Switch | `AgentRunner` | Add threat-specific policy or a stronger sandbox. |
 
 The current container or ECS instance is the POC trust boundary. Ordinary
-containers are not hardened multi-tenant isolation.
+containers are not hardened multi-tenant isolation. Agent network access is
+denied in the Codex sandbox, but this is not a host-enforced provider-only
+egress path. The multi-agent deployment refuses `danger-full-access` and fails
+if its configured workspace-write sandbox cannot be verified; real-host
+deployment validation is still required.

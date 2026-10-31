@@ -31,8 +31,9 @@ that stops it was written by the guard, not by the model.
 > [!WARNING]
 > This is a proof of concept. By default it is single-user with a shared token;
 > `APP_AUTH_MODE=password` adds user accounts and workspace roles (see
-> [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)). It has no tenant isolation and
-> no hardened sandbox. Do not point it at production data or real credentials.
+> [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)). Workspace roles provide
+> logical separation, but there is no hardened tenant isolation or sandbox.
+> Do not point it at production data or real credentials.
 > Multi-agent run copies omit common environment-secret and credential-file
 > patterns, but that filename-based filter is not general secret detection.
 > See [SECURITY.md](SECURITY.md).
@@ -629,8 +630,8 @@ want the result without paying for the first two runs.
 | `APP_AUTH_TOKEN` | empty on loopback | Shared demo bearer token. 24+ random URL-safe chars required for a non-loopback production server. Not user identity. |
 | `RUNTIME_PROVIDER` | `local-process` | `container` for one disposable runtime container per turn (set by `npm run poc`). Only the container path is traced. |
 | `CONTAINER_ENGINE` | `docker` | `docker`, `podman`, … Colima exposes the Docker CLI so it uses `docker`. |
-| `CODEX_SANDBOX_MODE` | `workspace-write` | Codex inner sandbox for unguarded container turns. `danger-full-access` is capped at `workspace-write` unless network access is explicitly enabled. |
-| `CODEX_NETWORK_ACCESS` | `false` | Allow agent tool commands and built-in web search to use the network on unguarded container turns. Egress, semantic, and HITL guarded turns always deny network. This relies on Codex controls and is not host-level filtering. |
+| `CODEX_SANDBOX_MODE` | `workspace-write` | Codex inner sandbox for unguarded container turns. The multi-agent deployment rejects `danger-full-access` and refuses to deploy when its workspace-write sandbox check fails. |
+| `CODEX_NETWORK_ACCESS` | `false` | Allow agent tool commands and built-in web search to use the network on unguarded container turns. Egress, semantic, and HITL guarded turns always deny network. This relies on Codex controls and is not host-level filtering or provider-only egress. |
 | `CODEX_TIMEOUT_MS` | `600000` | Max duration of one turn. |
 | `CODEX_MAX_OUTPUT_BYTES` | `2097152` | Crash guard on runtime stdout. |
 | `GUARDRAIL_EGRESS_ENABLED` | `false` | Run the sensitive-egress + outbound-blob checks against every container turn. Also puts the turn on the `workspace-write` + `untrusted` policy with network denied, so file-edit proposals and commands that are not known-safe reads pause at an approval the guard can inspect. |
@@ -817,11 +818,13 @@ false negative puts a live credential on a projector.
 ### Platform limitations
 
 Shared demo token by default (`APP_AUTH_MODE=password` adds user accounts and
-workspace roles, with no limit on sign-in attempts yet); no tenant isolation;
-no CSRF protection; no per-Agent container boundary in ECS mode; ordinary local
-containers rather than hardened multi-tenant sandboxes; broad outbound network
-access on unguarded turns; the model key is available to the server and the
-active runtime container. See [SECURITY.md](SECURITY.md).
+workspace roles); process-local sign-in throttling; logical workspace separation
+but no hardened tenant isolation; no CSRF protection; no per-Agent container
+boundary in ECS mode; ordinary local containers rather than hardened
+multi-tenant sandboxes; unguarded single-agent turns may have outbound network
+access when explicitly enabled. Multi-agent agent network access is denied by
+Codex sandbox controls, not host-level filtering. The model key is available to
+the server and active runtime container. See [SECURITY.md](SECURITY.md).
 
 ---
 

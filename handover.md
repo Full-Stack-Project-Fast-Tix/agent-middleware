@@ -1,6 +1,6 @@
 # Team handover: current state and next steps
 
-**Updated:** 31 October 2026
+**Updated:** 1 November 2026
 
 **Repository state reviewed:** `main` after the P1/P2 closure work. This is a
 proof of concept and does not claim production-grade tenant isolation.
@@ -52,15 +52,16 @@ proof of concept and does not claim production-grade tenant isolation.
 
 ## Deliberate POC boundaries
 
-- The container uses a bridge network so Codex can reach the model provider.
-  Agent command networking is denied by the Codex sandbox and web search is
-  disabled by policy, but there is no host-enforced provider-only egress path.
-  Building one requires a P1/P3 threat model and deployment design.
-- Shared-host workspace roles are not hardened isolation for mutually untrusted
-  tenants. A production tenant boundary needs its own security review.
-- Nested delegation will be considered only after trusted parent/child lineage,
-  depth enforcement, cross-workspace rejection and middleware evaluation are
-  tested at every hop.
+- **Settled P1/P3:** agents have no general network capability. Provider-only
+  egress is not implemented or claimed; the deploy script now fails closed if
+  the Codex workspace-write sandbox cannot be verified (decision 25).
+- **Settled P1/P3:** PostgreSQL workspace roles and run-scoped working copies
+  provide logical separation, not hardened isolation between production
+  tenants. Runtime containers now receive an execution-specific Codex home;
+  stronger OS, database and network isolation needs separate review (decision 26).
+- **Settled P1/P2:** specialist delegation stays one layer deep for this POC.
+  Recursive delegation needs a separate lineage, lifecycle, scheduling and
+  security design (decision 24).
 - Raw traces may contain sensitive values missed by pattern redaction and are
   incomplete when rolled. They are debugging artifacts, not the audit record.
 - The concrete middleware has a focused multi-agent integration scenario, and
@@ -97,12 +98,14 @@ P2 should:
 - Terminal artifact cleanup is implemented (`run-retention.ts`); P2 reviews it
   against the lifecycle rules.
 - Run `scripts/deploy-multi-agent.sh` on a real ECS host. Its systemd steps have
-  not been exercised yet.
+  not been exercised yet; verify its fail-closed sandbox check and network
+  behavior on the target host.
 - Decide whether sign-in throttling must move from process memory to a shared
   store before deploying multiple replicas.
 - Continue admin workflows for creating users and workspaces; these currently
   use `db:admin`.
-- Lead any stronger tenant-isolation or provider-only egress design with P1.
+- Lead any future stronger tenant-isolation or provider-only egress design with
+  P1; current POC boundaries are settled in decisions 25–26.
 
 ### P4
 
@@ -120,9 +123,9 @@ P2 should:
 | Work | Dependency |
 | --- | --- |
 | P3 artifact cleanup | Implemented. P2 reviews lifecycle behavior. |
-| Nested delegation | Waits for joint P1/P2 design and security regression coverage. It is outside the current milestone. |
-| Provider-only egress | Waits for a joint P1/P3 threat model and deployment design. |
-| Production tenant isolation | Waits for a separately scoped P1/P3 architecture and threat-model review. |
+| Nested delegation | Settled: disabled beyond the supervisor's one planning layer for this POC (decision 24). Revisit only with a separately reviewed design. |
+| Provider-only egress | Settled: not claimed or implemented; agents remain network-denied. A host-enforced route needs live deployment design and validation (decision 25). |
+| Production tenant isolation | Settled: current separation is logical only. The per-execution Codex home is implemented; stronger isolation requires a separate design (decision 26). |
 
 ## Settled references
 
