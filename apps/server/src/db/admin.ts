@@ -234,7 +234,7 @@ export async function changeMemberRole(
   });
 }
 
-/** Takes effect on the member's next request: access is read from this table every time. */
+/** Takes effect on the member's next request, and within 30 seconds on an open event stream. */
 export async function removeMember(
   pool: pg.Pool,
   input: { workspaceId: string; actorUserId: string; userId: string },

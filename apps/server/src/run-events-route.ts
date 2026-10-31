@@ -18,6 +18,8 @@ export interface RunEventStreamOptions {
   lastEventSeq?: (runId: string) => number | Promise<number>;
   /** Comment sent on idle connections so proxies do not close them. */
   heartbeatMs?: number;
+  /** How often an open stream rechecks canReadRun, so a removed member stops receiving events. */
+  accessRecheckMs?: number;
   /**
    * A client whose unsent backlog grows past this is disconnected. It
    * reconnects with Last-Event-ID and catches up from the replay buffer,
@@ -40,6 +42,7 @@ const query = z.object({ after: seqSchema.optional() });
  */
 export function registerRunEventStream(app: FastifyInstance, options: RunEventStreamOptions): void {
   const heartbeatMs = options.heartbeatMs ?? 15_000;
+  const accessRecheckMs = options.accessRecheckMs ?? 30_000;
   const maxBufferedBytes = options.maxBufferedBytes ?? 1_048_576;
   const open = new Set<ServerResponse>();
 
@@ -90,8 +93,15 @@ export function registerRunEventStream(app: FastifyInstance, options: RunEventSt
 
     open.add(response);
     const heartbeat = setInterval(() => send(": ping\n\n"), heartbeatMs);
+    // If the check itself fails, close too: the client's reconnect is checked again.
+    const accessRecheck = setInterval(() => {
+      void Promise.resolve()
+        .then(() => options.canReadRun(id, request))
+        .then((allowed) => allowed || response.destroy(), () => response.destroy());
+    }, accessRecheckMs);
     response.on("close", () => {
       clearInterval(heartbeat);
+      clearInterval(accessRecheck);
       subscription.unsubscribe();
       open.delete(response);
     });

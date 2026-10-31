@@ -235,7 +235,7 @@ describe("GET /api/runs/:id/events", () => {
     await Promise.all(apps.splice(0).map((app) => app.close()));
   });
 
-  async function start(options: { authToken?: string; heartbeatMs?: number; durable?: Record<string, number> } = {}) {
+  async function start(options: { authToken?: string; heartbeatMs?: number; accessRecheckMs?: number; canRead?: () => boolean; durable?: Record<string, number> } = {}) {
     const hub = new RunEventHub();
     const app = await createApp(
       loadConfig({ NODE_ENV: "test", ...(options.authToken ? { APP_AUTH_TOKEN: options.authToken } : {}) }),
@@ -243,9 +243,10 @@ describe("GET /api/runs/:id/events", () => {
       {
         runEvents: {
           hub,
-          canReadRun: (id) => hub.has(id) || options.durable?.[id] !== undefined,
+          canReadRun: (id) => (options.canRead?.() ?? true) && (hub.has(id) || options.durable?.[id] !== undefined),
           lastEventSeq: (id) => options.durable?.[id] ?? 0,
           ...(options.heartbeatMs ? { heartbeatMs: options.heartbeatMs } : {}),
+          ...(options.accessRecheckMs ? { accessRecheckMs: options.accessRecheckMs } : {}),
         },
       },
     );
@@ -362,6 +363,19 @@ describe("GET /api/runs/:id/events", () => {
     const { text } = await read(url(), {}, (_frames, received) => received.includes(": ping"));
     expect(text).toContain(": ping");
     await vi.waitFor(() => expect(hub.listenerCount(runId)).toBe(0));
+  });
+
+  it("closes an open stream once the caller can no longer read the Run", async () => {
+    let allowed = true;
+    const { hub, publish, url } = await start({ accessRecheckMs: 10, canRead: () => allowed });
+    publish(runUpdated());
+    const response = await fetch(url());
+    expect(response.status).toBe(200);
+    expect(hub.listenerCount(runId)).toBe(1);
+
+    allowed = false;
+    await vi.waitFor(() => expect(hub.listenerCount(runId)).toBe(0));
+    await response.text().catch(() => undefined);
   });
 
   it("ends open streams so the server can shut down", async () => {
