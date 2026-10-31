@@ -476,6 +476,11 @@ Full detail: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 ## Quick start
 
+The two steps here, and the Playground below, run Codex. With a `.env` copied from
+`.env.example`, set `MODEL_PROVIDER=ark` first, because that template now documents
+Claude. To run multi-agent Runs on Claude instead, see
+[Run on Claude](#run-on-claude).
+
 Two steps.
 
 **1. Watch a real agent get caught.**
@@ -678,9 +683,11 @@ npm run dev
 - Web UI: <http://localhost:5173>
 - API: <http://localhost:3000>
 
-Set local paths in `.env` when running outside Docker:
+Set the Codex provider and local paths in `.env` when running outside Docker:
 
 ```dotenv
+MODEL_PROVIDER=openai
+RUNTIME_PROVIDER=local-process
 APP_DATA_DIR=.data
 AGENT_WORKSPACE_ROOT=workspaces
 CODEX_HOME=codex-home
@@ -694,9 +701,17 @@ CODEX_HOME=codex-home
 
 ```bash
 ./scripts/bootstrap-local.sh        # creates .env
-# set OPENAI_API_KEY and a 24+ char APP_AUTH_TOKEN
+# set OPENAI_API_KEY and a 24+ char APP_AUTH_TOKEN, plus the three lines below
 docker compose up --build           # http://localhost:3000
 docker compose down                 # stop, keeping Agent data
+```
+
+This image runs Codex, so `.env` needs:
+
+```dotenv
+MODEL_PROVIDER=openai
+RUNTIME_PROVIDER=local-process
+CONTAINER_RUNTIME_IMAGE=volc-agent-runtime:local
 ```
 
 ### Deploy to Volcengine ECS
