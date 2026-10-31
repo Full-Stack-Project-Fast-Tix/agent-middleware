@@ -12,5 +12,5 @@ fi
 mkdir -p data workspaces codex-home
 
 echo "Next:"
-echo "  1. Fill OPENAI_API_KEY in .env"
+echo "  1. Fill ANTHROPIC_API_KEY in .env (or set MODEL_PROVIDER and use Codex)"
 echo "  2. Run: docker compose up --build"
