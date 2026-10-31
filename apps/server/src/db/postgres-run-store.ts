@@ -3,7 +3,6 @@ import {
   approvalSchema,
   auditEventSchema,
   RUN_LIST_DEFAULT_LIMIT,
-  RUN_SUMMARY_PROMPT_LENGTH,
   runSchema,
   runSummarySchema,
   securityFindingSchema,
@@ -27,7 +26,7 @@ import type pg from "pg";
 import { HttpError } from "../errors.js";
 import type { AuditFor, RunAudit, RunReads, RunStore } from "../orchestrator/ports.js";
 import type { RunEventHub } from "../run-events.js";
-import { decodeRunCursor, encodeRunCursor } from "../run-list.js";
+import { decodeRunCursor, encodeRunCursor, RUN_SUMMARY_PROMPT_READ_LENGTH, summaryPrompt } from "../run-list.js";
 import { fromRow, insertRow, updateRow } from "./rows.js";
 
 const DEPENDENCIES =
@@ -211,7 +210,7 @@ export class PostgresRunStore implements RunStore, RunReads {
       this.pool.query(
         `SELECT r.id, r.workspace_id, r.created_by_user_id, r.orchestration_mode, r.status, r.cancel_requested_at,
                 r.created_at, r.updated_at, r.started_at, r.completed_at,
-                CASE WHEN char_length(r.user_prompt) <= $6 THEN r.user_prompt ELSE left(r.user_prompt, $6 - 1) || '…' END AS user_prompt,
+                left(r.user_prompt, $6) AS user_prompt,
                 (SELECT count(*)::int FROM tasks t WHERE t.run_id = r.id) AS task_count,
                 (SELECT count(*)::int FROM approvals a WHERE a.run_id = r.id AND a.status = 'pending') AS pending_approval_count,
                 (SELECT count(*)::int FROM security_findings f WHERE f.run_id = r.id) AS finding_count
@@ -221,7 +220,7 @@ export class PostgresRunStore implements RunStore, RunReads {
             AND ($3::timestamptz IS NULL OR (r.created_at, r.id) < ($3::timestamptz, $4::uuid))
           ORDER BY r.created_at DESC, r.id DESC
           LIMIT $5`,
-        [workspaceId, query.status ?? null, after?.createdAt ?? null, after?.id ?? null, limit + 1, RUN_SUMMARY_PROMPT_LENGTH],
+        [workspaceId, query.status ?? null, after?.createdAt ?? null, after?.id ?? null, limit + 1, RUN_SUMMARY_PROMPT_READ_LENGTH],
       ),
       this.pool.query<{ count: number }>(
         `SELECT count(*)::int AS count FROM approvals a JOIN runs r ON r.id = a.run_id
@@ -229,7 +228,9 @@ export class PostgresRunStore implements RunStore, RunReads {
         [workspaceId],
       ),
     ]);
-    const runs = rows.slice(0, limit).map((row) => runSummarySchema.parse(fromRow(row)));
+    const runs = rows.slice(0, limit).map((row) =>
+      runSummarySchema.parse({ ...fromRow(row), userPrompt: summaryPrompt(String(row.user_prompt)) }),
+    );
     const last = runs.at(-1);
     return {
       runs,

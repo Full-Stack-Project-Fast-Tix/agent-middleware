@@ -129,7 +129,7 @@ for (const target of targets) {
       const at = (minute: number) => `2026-10-09T10:${String(minute).padStart(2, "0")}:00.000Z`;
       // Two runs share a timestamp: the id must keep paging exact.
       const [oldest, tiedA, tiedB, newest] = [at(1), at(2), at(2), at(3)].map((createdAt) =>
-        makeRun({ workspaceId, createdAt, updatedAt: createdAt, userPrompt: "x".repeat(600) }),
+        makeRun({ workspaceId, createdAt, updatedAt: createdAt, userPrompt: "word ".repeat(120) }),
       );
       for (const run of [oldest!, tiedB!, newest!, tiedA!]) await store.createRun(run);
       const task = makeTask(oldest!.id);

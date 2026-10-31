@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { RUN_SUMMARY_PROMPT_LENGTH } from "@launchpad/shared";
+import { redactText } from "./redaction/index.js";
 import { HttpError } from "./errors.js";
 
 // What both run stores share for GET /api/workspaces/:workspaceId/runs. The
@@ -20,6 +21,11 @@ export function decodeRunCursor(cursor: string): RunCursor {
   }
 }
 
+/** How much of a prompt to load for a summary: enough that a secret crossing the cut still matches its pattern. */
+export const RUN_SUMMARY_PROMPT_READ_LENGTH = RUN_SUMMARY_PROMPT_LENGTH + 512;
+
+/** Redacts first: cutting first could shorten a secret until its pattern no longer matches. */
 export function summaryPrompt(prompt: string): string {
-  return prompt.length <= RUN_SUMMARY_PROMPT_LENGTH ? prompt : prompt.slice(0, RUN_SUMMARY_PROMPT_LENGTH - 1) + "…";
+  const { text } = redactText(prompt);
+  return text.length <= RUN_SUMMARY_PROMPT_LENGTH ? text : text.slice(0, RUN_SUMMARY_PROMPT_LENGTH - 1) + "…";
 }
