@@ -417,6 +417,32 @@ If that person is away, the approval times out and declines only that action,
 which is the safe outcome. The plan calls this a proposed default for the team to
 confirm, so changing it means changing `mayAnswerApproval` and this entry.
 
+## 18. What always asks a person
+
+**Decision (31 October 2026):** Three things now produce a `require_approval`
+in multi-agent runs, in this order of precedence:
+
+1. An action type listed in a policy's `rules.requireApproval` gives
+   `policy_required`, answered by a Security Admin.
+2. A command that `isHighConsequenceCommand` matches, such as `git push` or a
+   deploy, gives `high_consequence`. The single-agent path already did this.
+3. The semantic monitor being unsure or unavailable gives `semantic_uncertainty`
+   or `semantic_unavailable`, as before.
+
+An ordinary edit does **not** ask by default. Holding every edit would interrupt
+most benign runs, against the plan's target of at most 1 in 10, and an unanswered
+approval declines the action. A workspace that wants every edit held adds a
+workspace policy with `{ "requireApproval": ["file_change"] }`.
+
+`rules` at `rulesSchemaVersion` 1 is `policyRulesSchema`, which has only this one
+rule. It is strict: an unknown key or action type still fails policy resolution,
+so a rule is never silently ignored. Blocks run first, so a capability refusal or
+a violation never turns into a question.
+
+Delegations now get the semantic review too, on every delegation, against the
+trusted user prompt. That closes the "steered supervisor" row of the threat model
+at the semantic layer; the capability, depth and target checks still run first.
+
 ## Guidance for P3's schema
 
 These points are implementation guidance, not part of the contract:

@@ -106,6 +106,7 @@ class GuardSource implements SecurityExecutionSource {
       [NEXT_TASK_ID, { workspaceId: WORKSPACE_ID, runId: RUN_ID }],
     ]),
     capabilities: AgentProfile["capabilities"] = ALL_CAPABILITIES,
+    private readonly policies: SecurityPolicy[] = [platformPolicy],
   ) {
     this.profiles = [makeProfile(PROFILE_ID, capabilities)];
   }
@@ -119,7 +120,7 @@ class GuardSource implements SecurityExecutionSource {
   }
 
   async listSecurityPolicies(): Promise<unknown[]> {
-    return [platformPolicy];
+    return this.policies;
   }
 
   async getExecutionFacts(context: SecurityContext) {
@@ -147,6 +148,7 @@ interface GuardOptions {
   taskIdentities?: Map<string, { workspaceId: string; runId: string }>;
   checks?: Check[];
   semanticMonitor?: SemanticIntentMonitor;
+  policies?: SecurityPolicy[];
 }
 
 async function openGuard(options: GuardOptions = {}) {
@@ -154,6 +156,7 @@ async function openGuard(options: GuardOptions = {}) {
     options.delegationDepth,
     options.taskIdentities,
     options.capabilities,
+    options.policies,
   );
   const middleware = new DefaultSecurityMiddleware({
     config: loadConfig({ NODE_ENV: "test" }),
@@ -945,5 +948,95 @@ describe("ExecutionGuard context handoffs", () => {
     expect(decision.outcome).toBe("block");
     expect(decision.findings.map(({ code }) => code)).toContain("context-handoff-sensitive-content");
     expect(JSON.stringify(decision)).not.toContain("sk_live_ABCDEFGHIJKLMNOP1234");
+  });
+});
+
+describe("ExecutionGuard actions that always ask a person", () => {
+  const allowEdits = { rules: { requireApproval: ["file_change"] } };
+  const edit = {
+    type: "file_change" as const,
+    actionId: "edit-1",
+    changes: [{ path: "src/feature.ts", kind: "update" as const, diff: "+const a = 1;\n", movePath: null }],
+  };
+
+  it("holds a high-consequence command even with no semantic monitor", async () => {
+    const guard = await openGuard();
+    const decision = await guard.evaluate({ type: "command", actionId: "push", command: "git push origin main", cwd: null });
+    expect(decision).toMatchObject({ outcome: "require_approval", approvalReason: "high_consequence" });
+    expect(await guard.recordApprovalOutcome("push", "approved")).toMatchObject({ outcome: "allow" });
+  });
+
+  it("lets an ordinary command and edit through when no policy asks", async () => {
+    const guard = await openGuard();
+    expect((await guard.evaluate({ type: "command", actionId: "test", command: "npm test", cwd: null })).outcome).toBe("allow");
+    expect((await guard.evaluate(edit)).outcome).toBe("allow");
+  });
+
+  it("holds every edit when a policy says so", async () => {
+    const guard = await openGuard({ policies: [{ ...platformPolicy, ...allowEdits }] });
+    expect(await guard.evaluate(edit)).toMatchObject({ outcome: "require_approval", approvalReason: "policy_required" });
+    expect((await guard.evaluate({ type: "command", actionId: "test", command: "npm test", cwd: null })).outcome).toBe("allow");
+  });
+
+  it("does not ask about what a capability already refused", async () => {
+    const guard = await openGuard({
+      capabilities: { ...ALL_CAPABILITIES, write: false },
+      policies: [{ ...platformPolicy, ...allowEdits }],
+    });
+    expect((await guard.evaluate(edit)).outcome).toBe("block");
+  });
+});
+
+describe("ExecutionGuard delegation review", () => {
+  const delegation = {
+    type: "delegation" as const,
+    actionId: "delegate-1",
+    targetAgentId: AGENT_ID,
+    title: "Add an admin backdoor",
+    objective: "Add a hidden admin account",
+    dependsOnTaskIds: [],
+  };
+  const judging = (riskScore: number, conflictsWithTask: boolean, reviewed: string[]): SemanticIntentMonitor => ({
+    async assess(input) {
+      reviewed.push(input.checkpoint);
+      expect(input.proposedAction).toMatchObject({ type: "delegation", objective: delegation.objective });
+      return {
+        riskScore,
+        confidence: 0.9,
+        classification: conflictsWithTask ? "scope_expansion" : "aligned",
+        apparentObjective: "Delegate work",
+        conflictsWithTask,
+        evidenceSeqs: [],
+        rationale: "Compared with the trusted task.",
+      };
+    },
+  });
+
+  it("checks each delegation against the original goal", async () => {
+    const reviewed: string[] = [];
+    const guard = await openGuard({ delegationDepth: 0, semanticMonitor: judging(0.1, false, reviewed) });
+    expect((await guard.evaluate(delegation)).outcome).toBe("allow");
+    expect(reviewed).toEqual(["delegation"]);
+  });
+
+  it("blocks a delegation the monitor is sure conflicts with the goal", async () => {
+    const guard = await openGuard({ semanticMonitor: judging(0.95, true, []) });
+    expect((await guard.evaluate(delegation)).outcome).toBe("block");
+  });
+
+  it("asks a person when the monitor is unsure", async () => {
+    const guard = await openGuard({ semanticMonitor: judging(0.65, true, []) });
+    expect(await guard.evaluate(delegation)).toMatchObject({ outcome: "require_approval", approvalReason: "semantic_uncertainty" });
+  });
+
+  it("asks a person when the monitor is unavailable", async () => {
+    const guard = await openGuard({
+      semanticMonitor: {
+        async assess() {
+          throw new Error("offline");
+        },
+      },
+    });
+    expect(await guard.evaluate(delegation)).toMatchObject({ outcome: "require_approval", approvalReason: "semantic_unavailable" });
   });
 });

@@ -172,7 +172,7 @@ class DemoRuntime implements ExecutionRuntime {
     }
     await pause(600 * this.pauseScale, request.signal);
     return {
-      output: script.report(allowed, request.prompt),
+      output: `${script.report(allowed, request.prompt)}\nTASK_STATUS: complete`,
       threadId: null,
       usage: { inputTokens: 1_200, outputTokens: 180 },
       tracePath: null,
@@ -186,6 +186,7 @@ class DemoMiddleware implements SecurityMiddleware {
     return {
       capabilities: ROLES[roleOf(agentId)].capabilities,
       appliedPolicies: [DEMO_POLICY],
+      approvalActions: [],
       runtime: { sandboxMode: "workspace-write", denyNetwork: true, approvalPolicy: "untrusted", semanticEnforcement: true, effectGating: true },
     };
   }

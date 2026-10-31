@@ -2,7 +2,9 @@ import {
   agentProfileSchema,
   agentSchema,
   effectivePolicySchema,
+  policyRulesSchema,
   securityPolicySchema,
+  type ActionType,
   type AgentCapabilities,
   type AgentProfile,
   type Agent,
@@ -23,6 +25,8 @@ export interface ResolvedAgentPolicy {
   policies: SecurityPolicy[];
   capabilities: AgentCapabilities;
   appliedPolicies: Array<{ policyId: string; version: number }>;
+  /** Action types a policy says must always go to a person. */
+  approvalActions: ActionType[];
 }
 
 /**
@@ -59,12 +63,15 @@ export async function resolveAgentPolicy(
     throw new Error("Security policy resolution failed: no active mandatory platform policy");
   }
 
-  // Until a rules engine is defined, silently ignoring a nonempty policy rules
-  // object would create a misleading effective-permissions result.
+  // Silently ignoring a rule would create a misleading effective-permissions
+  // result, so anything policyRulesSchema does not know fails closed.
+  const approvalActions = new Set<ActionType>();
   for (const policy of [...platformPolicies, ...workspacePolicies]) {
-    if (policy.rulesSchemaVersion !== 1 || Object.keys(policy.rules).length > 0) {
+    const rules = policy.rulesSchemaVersion === 1 ? policyRulesSchema.safeParse(policy.rules) : null;
+    if (rules === null || !rules.success) {
       throw new Error(`Security policy resolution failed: unsupported rules in policy ${policy.id}`);
     }
+    for (const action of rules.data.requireApproval ?? []) approvalActions.add(action);
   }
 
   const orderedPolicies = [...platformPolicies, ...workspacePolicies];
@@ -86,6 +93,7 @@ export async function resolveAgentPolicy(
     appliedPolicies: orderedPolicies.map(({ id, version }) => ({ policyId: id, version })),
   });
   return {
+    approvalActions: [...approvalActions],
     agent,
     profile,
     policies: orderedPolicies,

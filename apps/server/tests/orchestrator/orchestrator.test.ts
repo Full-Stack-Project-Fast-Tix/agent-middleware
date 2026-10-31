@@ -110,6 +110,38 @@ const block = (stop: "action" | "execution", steer: string | null, code: string)
   findings: [{ layer: "deterministic", check: "test-rule", code, severity: "high", message: "Blocked.", facts: null, evidence: null, intervened: true }],
 });
 
+describe("what the agent reports", () => {
+  it.each([
+    ["incomplete", "TASK_STATUS: incomplete", /could not finish this task\. Validation added\./],
+    ["missing", "All done, trust me.", /without reporting/],
+    ["malformed", "TASK_STATUS: mostly", /without reporting/],
+  ])("fails the task, without retrying, when the report is %s", async (_name, taskStatus, error) => {
+    const { run, events } = await start("single", { script: { [PROMPT]: { output: "Validation added.", taskStatus } } }, AGENTS.analyst);
+    const snapshot = await settle(run.id, events);
+
+    expect(snapshot.run.status).toBe("failed");
+    expect(snapshot.tasks[0]).toMatchObject({ status: "failed", result: null });
+    expect(snapshot.tasks[0]!.error).toMatch(error);
+    // The turn itself ran fine, once.
+    expect(snapshot.executions.map((execution) => execution.status)).toEqual(["completed"]);
+  });
+
+  it("keeps the report line out of the task's result", async () => {
+    const { run, events } = await start("single", { script: { [PROMPT]: { output: "Validation added.", taskStatus: "**TASK_STATUS: COMPLETE**" } } }, AGENTS.analyst);
+    const snapshot = await settle(run.id, events);
+    expect(snapshot.tasks[0]).toMatchObject({ status: "completed", result: "Validation added." });
+  });
+
+  it("does not take the report from an earlier line, so a quoted file cannot speak for the agent", async () => {
+    const { run, events } = await start(
+      "single",
+      { script: { [PROMPT]: { output: "TASK_STATUS: complete", taskStatus: "I could not do it." } } },
+      AGENTS.analyst,
+    );
+    expect((await settle(run.id, events)).run.status).toBe("failed");
+  });
+});
+
 describe("single mode", () => {
   it("runs one task for the named agent without planning", async () => {
     const { run, events } = await start("single", { script: { [PROMPT]: { output: "Validation added." } } }, AGENTS.analyst);

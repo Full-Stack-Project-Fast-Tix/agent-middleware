@@ -101,6 +101,8 @@ type ScriptedAction = Omit<CommandAction, "actionId"> | Omit<FileChangeAction, "
 export interface ScriptStep {
   actions?: ScriptedAction[];
   output?: string;
+  /** The agent's last line. Defaults to reporting the task complete. */
+  taskStatus?: string;
   /** Throw on this many attempts before succeeding; Infinity always throws. */
   failAttempts?: number;
   /** Throw after the actions instead of before them. */
@@ -150,7 +152,7 @@ export class ScriptedRuntime implements ExecutionRuntime {
       }
       if (failing) throw new Error(`${title}: runtime crashed`);
       return {
-        output: step.output ?? `${title}: done`,
+        output: `${step.output ?? `${title}: done`}\n${step.taskStatus ?? "TASK_STATUS: complete"}`,
         threadId: `thread-${request.execution.id}`,
         usage: null,
         tracePath: null,

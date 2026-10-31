@@ -43,6 +43,9 @@ import type {
   RunUsage,
 } from "./types.js";
 
+/** Delegation is the orchestrator's; a single-agent turn never proposes one. */
+type GatedAction = Exclude<SemanticProposedAction, { type: "delegation" }>;
+
 /**
  * Most soft warning corrections one turn may receive from deterministic checks.
  *
@@ -403,7 +406,7 @@ export async function runTurn(options: TurnOptions): Promise<TurnOutcome> {
     kind: "command" | "file_change",
     params: Record<string, unknown>,
     id: number | string,
-    knownAction?: SemanticProposedAction,
+    knownAction?: GatedAction,
   ): void | Promise<void> {
     const action = knownAction ?? proposedActionOf(kind, params, records);
     if (
@@ -422,7 +425,7 @@ export async function runTurn(options: TurnOptions): Promise<TurnOutcome> {
     kind: "command" | "file_change",
     params: Record<string, unknown>,
     id: number | string,
-    action: SemanticProposedAction,
+    action: GatedAction,
     reason: HumanApprovalReason,
   ): Promise<void> {
     if (requestHumanApproval === undefined) {
@@ -729,7 +732,7 @@ function proposedActionOf(
   kind: "command" | "file_change",
   params: Record<string, unknown>,
   records: TraceRecord[],
-): SemanticProposedAction | null {
+): GatedAction | null {
   const itemId = typeof params.itemId === "string" ? params.itemId : "";
   if (kind === "command") {
     const existing = commandsOf(records)
@@ -764,7 +767,7 @@ function proposedActionOf(
   return { type: "file_change", seq: latestSeq, itemId, changes };
 }
 
-function humanActionIdentity(action: SemanticProposedAction): string {
+function humanActionIdentity(action: GatedAction): string {
   if (action.type === "command") {
     return `command:${action.command.replace(/\s+/g, " ").trim()}`;
   }
@@ -776,7 +779,7 @@ function humanActionIdentity(action: SemanticProposedAction): string {
 
 function humanApprovalDraft(
   reason: HumanApprovalReason,
-  action: SemanticProposedAction,
+  action: GatedAction,
 ): HumanApprovalDraft {
   if (action.type === "command") {
     const command = boundedSafeText(action.command, 1_200);
@@ -822,7 +825,7 @@ function boundedSafeText(text: string, maximum: number): string {
 function humanApprovalFinding(
   code: string,
   reason: HumanApprovalReason,
-  action: SemanticProposedAction,
+  action: GatedAction,
   outcome: "requested" | HumanApprovalResolution["outcome"],
 ): Finding {
   const messages: Record<typeof outcome, string> = {

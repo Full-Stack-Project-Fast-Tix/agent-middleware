@@ -30,7 +30,7 @@ import { validatePlan } from "./plan.js";
 import type { Planner } from "./planner.js";
 import type { ActionGate, AgentDirectory, AuditFor, ExecutionRuntime, RunStore, WorkingCopies } from "./ports.js";
 import { pickLaunches, tasksToMarkReady, tasksToSkip, type LaunchCandidate } from "./scheduler.js";
-import { buildTaskPrompt, type TaskInput, type WithheldInput } from "./task-prompt.js";
+import { buildTaskPrompt, parseTaskStatus, type TaskInput, type WithheldInput } from "./task-prompt.js";
 
 // Runs one user request (a Run) as Tasks executed by Agents.
 //
@@ -601,7 +601,17 @@ export class Orchestrator {
         traceTruncated: outcome.traceTruncated,
         completedAt: this.now(),
       });
-      await this.moveTask(taskId, "completed", { result: outcome.output, completedAt: this.now() });
+      // The turn ran, so the execution completed; the task still needs the agent to
+      // say it did the work. Not retried: asking again would not make the work possible.
+      const reported = parseTaskStatus(outcome.output);
+      if (reported?.status !== "complete") {
+        const error = reported === null
+          ? "The agent ended without reporting whether it finished this task."
+          : `The agent reported it could not finish this task. ${safeText(reported.result).slice(0, 500)}`.trimEnd();
+        await this.moveTask(taskId, "failed", { error, completedAt: this.now() });
+        return "failed";
+      }
+      await this.moveTask(taskId, "completed", { result: reported.result, completedAt: this.now() });
       return "completed";
     } catch (error) {
       if (state.cancelRequested) return "cancelled";

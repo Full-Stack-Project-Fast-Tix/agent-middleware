@@ -84,6 +84,7 @@ export class ScriptedMiddleware implements SecurityMiddleware {
     return {
       capabilities: CAPABILITIES[roleOf(agentId)],
       appliedPolicies: [PLATFORM_POLICY],
+      approvalActions: [],
       runtime: {
         sandboxMode: "workspace-write",
         denyNetwork: true,
@@ -287,7 +288,7 @@ export class StandInRuntime implements ExecutionRuntime {
       if (decision.outcome === "block" && decision.stop === "execution") break;
     }
     return {
-      output: `${request.task.title}: done`,
+      output: `${request.task.title}: done\nTASK_STATUS: complete`,
       threadId: null,
       usage: null,
       tracePath: null,
