@@ -1,11 +1,11 @@
 import { Fragment, useEffect, useRef } from "react";
 import { api } from "./api";
 import { MessageContent } from "./MessageContent";
-import type { Agent } from "./types";
 import { ReflectionList } from "./Reflections";
 import { Trajectory } from "./Trajectory";
 import { Workspace } from "./Workspace";
 import { AgentSafetyDetails } from "./Admin";
+import { Button, EmptyState, ErrorState, Foreign, Loading, StatusBadge } from "./ui";
 import { emptyForm, isActiveRun, type PlaygroundState } from "./usePlayground";
 
 const starterPrompts = [
@@ -21,17 +21,67 @@ function formatTime(value: string): string {
   }).format(new Date(value));
 }
 
-function StatusPill({ status }: { status: Agent["status"] }) {
-  return (
-    <span className={"status status-" + status}>
-      <span className="status-dot" />
-      {status}
-    </span>
-  );
-}
+function CreateAgentDialog({ state }: { state: PlaygroundState }) {
+  const { form, setForm, busy, error, createAgent, setShowCreate } = state;
+  const dialog = useRef<HTMLDialogElement>(null);
 
-function Spinner() {
-  return <span className="spinner" aria-label="Loading" />;
+  // A native modal gives us the focus trap, Escape and the inert page for free.
+  useEffect(() => {
+    dialog.current?.showModal();
+  }, []);
+
+  return (
+    <dialog
+      className="dialog"
+      ref={dialog}
+      aria-labelledby="create-agent-title"
+      onClose={() => setShowCreate(false)}
+      onMouseDown={(event) => {
+        if (event.target === dialog.current) setShowCreate(false);
+      }}
+    >
+      <form className="form-stack" onSubmit={(event) => void createAgent(event)}>
+        <div className="dialog-heading">
+          <h2 id="create-agent-title">Create an agent</h2>
+          <p className="meta">Each agent gets a persistent folder and a resumable Codex session.</p>
+        </div>
+        {error && <div className="state-error" role="alert">{error}</div>}
+        <label>
+          Name
+          <input
+            autoFocus
+            placeholder="Frontend Builder"
+            value={form.name}
+            onChange={(event) => setForm({ ...form, name: event.target.value })}
+            required
+            maxLength={80}
+          />
+        </label>
+        <label>
+          Description
+          <input
+            placeholder="Builds polished React prototypes"
+            value={form.description}
+            onChange={(event) => setForm({ ...form, description: event.target.value })}
+            maxLength={500}
+          />
+        </label>
+        <label>
+          Instructions
+          <textarea
+            value={form.instructions}
+            onChange={(event) => setForm({ ...form, instructions: event.target.value })}
+            rows={6}
+            maxLength={10_000}
+          />
+        </label>
+        <div className="form-actions">
+          <Button type="submit" variant="primary" busy={busy}>Create agent</Button>
+          <Button variant="ghost" onClick={() => setShowCreate(false)}>Cancel</Button>
+        </div>
+      </form>
+    </dialog>
+  );
 }
 
 /** The legacy single-agent chat: pick or create an agent, then work with it. */
@@ -44,13 +94,18 @@ export function Playground({ state }: { state: PlaygroundState }) {
     busy, error, setError, resolvingApprovalId,
     adminOverview, showSafetyPanel, setShowSafetyPanel, showWorkspace, setShowWorkspace,
     safetyMemoryUpdated, openSafetyPanel,
-    createAgent, saveAgent, toggleAgent, deleteAgent, resolveApproval, sendMessage,
+    saveAgent, toggleAgent, deleteAgent, resolveApproval, sendMessage,
   } = state;
   const messageEnd = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     messageEnd.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, activeRun]);
+  }, [messages, activeRun, steps.length]);
+
+  const openCreate = () => {
+    setForm(emptyForm);
+    setShowCreate(true);
+  };
 
   const activityForActiveRun = () =>
     activeRun === null ? null : (
@@ -67,132 +122,116 @@ export function Playground({ state }: { state: PlaygroundState }) {
           approvalBusy={resolvingApprovalId === activeRun.pendingApproval?.id}
           onApprovalDecision={(decision) => void resolveApproval(decision)}
         />
-        {safetyMemoryUpdated && (
-          <div className="safety-memory-updated">Safety memory updated</div>
-        )}
+        {safetyMemoryUpdated && <p className="meta">Safety memory updated</p>}
       </>
     );
+
+  const composerClosed = selected?.status === "stopped" || selected?.status === "busy" || isActiveRun(activeRun);
 
   return (
     <div className="playground-page">
       <aside className="agent-pane" aria-label="Your agents">
-        <button
-          className="button button-primary create-button"
-          onClick={() => {
-            setForm(emptyForm);
-            setShowCreate(true);
-          }}
-        >
-          Create agent
-        </button>
-
-        <div className="sidebar-label">
-          <span>Your agents</span>
-          <span>{agents.length}</span>
+        <div className="agent-pane-head">
+          <h2>Agents <span className="meta tabular">{agents.length}</span></h2>
+          <Button variant="primary" onClick={openCreate}>Create agent</Button>
         </div>
-        <nav className="agent-list">
-          {agents.map((agent) => (
-            <button
-              className={"agent-card " + (agent.id === selectedId ? "selected" : "")}
-              key={agent.id}
-              onClick={() => setSelectedId(agent.id)}
-            >
-              <div className="agent-card-copy">
-                <strong>{agent.name}</strong>
-                <span>{agent.description || "Coding Agent"}</span>
-              </div>
-              <span className={"mini-dot mini-" + agent.status} />
-            </button>
-          ))}
-          {agents.length === 0 && (
-            <div className="empty-sidebar">
-              <span>◇</span>
-              Create your first coding Agent.
-            </div>
-          )}
-        </nav>
 
-        <div className="runtime-card">
-          <span className="eyebrow">Runtime</span>
-          <strong>{system?.runtime ?? "Checking…"}</strong>
-          <span>
-            {system?.arkModel ?? "Ark model not configured"}
-            {system?.containerEngine ? " · " + system.containerEngine : ""}
-          </span>
-        </div>
+        {agents.length === 0 ? (
+          <p className="meta agent-pane-empty">No agents yet.</p>
+        ) : (
+          <>
+            <label className="agent-select">
+              Agent
+              <select value={selectedId ?? ""} onChange={(event) => setSelectedId(event.target.value)}>
+                {agents.map((agent) => (
+                  <option key={agent.id} value={agent.id}>
+                    {agent.name}{agent.status === "ready" ? "" : ` (${agent.status})`}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <ul className="agent-list">
+              {agents.map((agent) => (
+                <li key={agent.id}>
+                  <button
+                    type="button"
+                    className="agent-row"
+                    aria-current={agent.id === selectedId ? "true" : undefined}
+                    onClick={() => setSelectedId(agent.id)}
+                  >
+                    <span className="agent-row-name">{agent.name}</span>
+                    <span className="agent-row-note">
+                      {agent.status === "ready" ? agent.description || "Coding agent" : <StatusBadge status={agent.status} live={agent.status === "busy"} />}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+
+        <dl className="runtime-facts">
+          <div><dt>Runtime</dt><dd>{system?.runtime ?? "Checking"}</dd></div>
+          <div><dt>Model</dt><dd>{system === null ? "Checking" : system.arkModel ?? "Not configured"}</dd></div>
+          {system?.containerEngine && <div><dt>Container engine</dt><dd>{system.containerEngine}</dd></div>}
+        </dl>
       </aside>
 
       <div className="playground-main">
-        {!system?.arkConfigured || !system?.codexAvailable ? (
-          <div className="config-banner">
-            <span>!</span>
-            <div>
-              <strong>Runtime configuration needed</strong>
-              <p>
-                {!system?.arkConfigured
-                  ? "Set MODEL_PROVIDER=openai and OPENAI_API_KEY in .env before using the Playground."
-                  : system.runtimeProvider === "container"
-                    ? "The local container engine or Agent Runtime image is unavailable. Rerun npm run poc."
-                    : "Codex CLI was not found. Use the Docker image or install @openai/codex."}
-              </p>
-            </div>
+        {system !== null && (!system.arkConfigured || !system.codexAvailable) && (
+          <div className="runtime-notice" role="status">
+            <strong>The runtime needs configuring</strong>
+            <p>
+              {!system.arkConfigured
+                ? "Set MODEL_PROVIDER=openai and OPENAI_API_KEY in .env before using the Playground."
+                : system.runtimeProvider === "container"
+                  ? "The local container engine or Agent Runtime image is unavailable. Rerun npm run poc."
+                  : "Codex CLI was not found. Use the Docker image or install @openai/codex."}
+            </p>
           </div>
-        ) : null}
+        )}
 
         {error && (
           <div className="error-banner" role="alert">
             <span>{error}</span>
-            <button onClick={() => setError(null)}>×</button>
+            <Button variant="ghost" onClick={() => setError(null)}>Dismiss</Button>
           </div>
         )}
 
         {selected ? (
           <>
             <header className="agent-header">
-              <div>
-                <div className="header-title-row">
+              <div className="agent-header-copy">
+                <div className="cluster">
                   <h1>{selected.name}</h1>
-                  <StatusPill status={selected.status} />
+                  <StatusBadge status={selected.status} live={selected.status === "busy"} />
+                  <span className="meta">{selected.codexThreadId ? "Session connected" : "New session"}</span>
                 </div>
-                <p>{selected.description || "A Codex coding Agent in an isolated workspace."}</p>
+                <p className="meta">{selected.description || "A Codex coding agent in an isolated workspace."}</p>
                 <ReflectionList reflections={selected.reflections ?? []} />
               </div>
-              <div className="header-actions">
-                <div className="agent-management-actions">
-                  <button
-                    className="button button-ghost"
-                    onClick={() => setShowSettings((value) => !value)}
-                    disabled={busy || selected.status === "busy"}
-                  >
-                    Settings
-                  </button>
-                  <button
-                    className="button button-ghost"
-                    onClick={toggleAgent}
-                    disabled={busy}
-                  >
-                    {selected.status === "stopped" ? "Start" : "Stop"}
-                  </button>
-                  <button
-                    className="button button-danger"
-                    onClick={deleteAgent}
-                    disabled={busy || selected.status === "busy"}
-                  >
-                    Delete
-                  </button>
-                </div>
+              <div className="agent-header-actions">
+                <Button aria-pressed={showWorkspace} onClick={() => setShowWorkspace((value) => !value)}>Workspace</Button>
+                <Button aria-pressed={showSafetyPanel} onClick={openSafetyPanel}>Safety</Button>
+                <Button
+                  aria-expanded={showSettings}
+                  onClick={() => setShowSettings((value) => !value)}
+                  disabled={busy || selected.status === "busy"}
+                >
+                  Settings
+                </Button>
+                <Button onClick={() => void toggleAgent()} disabled={busy}>
+                  {selected.status === "stopped" ? "Start" : "Stop"}
+                </Button>
+                <Button variant="danger" onClick={() => void deleteAgent()} disabled={busy || selected.status === "busy"}>
+                  Delete
+                </Button>
               </div>
             </header>
 
             {showSettings && (
-              <form className="settings-panel" onSubmit={saveAgent}>
-                <div className="settings-title">
-                  <div>
-                    <span className="eyebrow">Agent configuration</span>
-                    <h2>Instructions and identity</h2>
-                  </div>
-                  <button type="button" onClick={() => setShowSettings(false)}>×</button>
-                </div>
+              <form className="settings-panel form-stack" onSubmit={(event) => void saveAgent(event)}>
+                <h2>Instructions and identity</h2>
                 <div className="form-grid">
                   <label>
                     Name
@@ -207,9 +246,7 @@ export function Playground({ state }: { state: PlaygroundState }) {
                     Description
                     <input
                       value={form.description}
-                      onChange={(event) =>
-                        setForm({ ...form, description: event.target.value })
-                      }
+                      onChange={(event) => setForm({ ...form, description: event.target.value })}
                       maxLength={500}
                     />
                   </label>
@@ -218,251 +255,143 @@ export function Playground({ state }: { state: PlaygroundState }) {
                   System instructions
                   <textarea
                     value={form.instructions}
-                    onChange={(event) =>
-                      setForm({ ...form, instructions: event.target.value })
-                    }
+                    onChange={(event) => setForm({ ...form, instructions: event.target.value })}
                     rows={5}
                     maxLength={10_000}
                   />
                 </label>
-                <div className="panel-footer">
-                  <code>{selected.workspacePath}</code>
-                  <button className="button button-primary" disabled={busy}>
-                    {busy ? <Spinner /> : "Save changes"}
-                  </button>
+                <p className="meta">Workspace folder: {selected.workspacePath}</p>
+                <div className="form-actions">
+                  <Button type="submit" variant="primary" busy={busy}>Save changes</Button>
+                  <Button variant="ghost" onClick={() => setShowSettings(false)}>Close</Button>
                 </div>
               </form>
             )}
 
-            <section
-              className={
-                "playground " +
-                (showSafetyPanel || showWorkspace ? "playground-with-safety" : "")
-              }
-            >
+            <section className={showSafetyPanel || showWorkspace ? "playground playground-with-side" : "playground"}>
               <div className="chat-column">
-              <div className="playground-topbar">
-                <div>
-                  <span className="eyebrow">Playground</span>
-                  <h2>Build something with your Agent</h2>
-                </div>
-                <div className="topbar-actions">
-                  <div className="session-info">
-                    <span className="pulse" />
-                    {selected.codexThreadId ? "Session connected" : "New session"}
-                  </div>
-                  <button
-                    className="safety-toggle"
-                    onClick={() => setShowWorkspace((value) => !value)}
-                  >
-                    Workspace
-                  </button>
-                  <button className="safety-toggle" onClick={openSafetyPanel}>
-                    Safety
-                  </button>
-                </div>
-              </div>
-
-              <div className="messages">
-                {messages.length === 0 && !activeRun ? (
-                  <div className="welcome">
-                    <div className="welcome-orbit">
-                      <div>⌁</div>
-                    </div>
-                    <h3>What should {selected.name} build?</h3>
-                    <p>
-                      The Agent can inspect files, write code, run commands, and continue the
-                      same Codex session across messages.
-                    </p>
-                    <div className="prompt-grid">
-                      {starterPrompts.map((item) => (
-                        <button key={item} onClick={() => setPrompt(item)}>
-                          <span>↗</span>
-                          {item}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                ) : (
-                  messages.map((message) => (
-                    <Fragment key={message.id}>
-                      {message.role === "assistant" && message.runId === activeRun?.id &&
-                        activityForActiveRun()}
-                      <article className={"message message-" + message.role}>
-                        <div className="message-meta">
-                          <strong>{message.role === "user" ? "You" : selected.name}</strong>
-                          <span>{formatTime(message.createdAt)}</span>
-                        </div>
-                        <MessageContent
-                          content={message.content}
-                          rich={message.role === "assistant"}
-                        />
-                      </article>
-                    </Fragment>
-                  ))
-                )}
-                {activeRun !== null &&
-                  !messages.some(
-                    (message) => message.role === "assistant" && message.runId === activeRun.id,
-                  ) &&
-                  activityForActiveRun()}
-
-                {activeRun?.status === "failed" && (
-                  <article className="run-error">
-                    <strong>Run failed</strong>
-                    <span>{activeRun.error}</span>
-                  </article>
-                )}
-                <div ref={messageEnd} />
-              </div>
-
-              <form className="composer" onSubmit={sendMessage}>
-                <textarea
-                  value={prompt}
-                  onChange={(event) => setPrompt(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" && !event.shiftKey) {
-                      event.preventDefault();
-                      event.currentTarget.form?.requestSubmit();
-                    }
-                  }}
-                  placeholder={
-                    selected.status === "stopped"
-                      ? "Start this Agent to continue…"
-                      : "Describe what you want the Agent to do…"
-                  }
-                  disabled={
-                    selected.status === "stopped" ||
-                    selected.status === "busy" ||
-                    isActiveRun(activeRun)
-                  }
-                  rows={3}
-                />
-                <div className="composer-footer">
-                  <span>
-                    Enter to send · Shift + Enter for newline · {system?.codexSandboxMode ?? "checking sandbox"}
-                  </span>
-                  <button
-                    className="send-button"
-                    disabled={
-                      !prompt.trim() ||
-                      selected.status === "stopped" ||
-                      selected.status === "busy" ||
-                      isActiveRun(activeRun)
-                    }
-                    aria-label="Send message"
-                  >
-                    ↑
-                  </button>
-                </div>
-              </form>
-              </div>
-              {showWorkspace && (
-                <Workspace
-                  agentId={selected.id}
-                  reflections={selected.reflections ?? []}
-                  onClose={() => setShowWorkspace(false)}
-                />
-              )}
-              {showSafetyPanel && (
-                <aside className="chat-safety-panel" aria-label={`${selected.name} safety`}>
-                  <header className="chat-safety-header">
-                    <div><span className="eyebrow">Live safety</span><strong>{selected.name}</strong></div>
-                    <button onClick={() => setShowSafetyPanel(false)} aria-label="Close safety panel">×</button>
-                  </header>
-                  <div className="chat-safety-scroll">
-                    {adminOverview === null ? <p className="muted-copy">Loading safety evidence…</p> : (
-                      <AgentSafetyDetails overview={adminOverview} agent={selected} onViewRun={(agentId, runId) => {
-                        setShowSafetyPanel(false);
-                        setSelectedId(agentId);
-                        void api.run(runId).then(({ run }) => setActiveRun(run));
-                      }} />
+                <div className="messages">
+                  <div className="messages-inner">
+                    {messages.length === 0 && !activeRun ? (
+                      <div className="welcome">
+                        <h2>What should {selected.name} build?</h2>
+                        <p className="meta">
+                          The agent can inspect files, write code, run commands and continue the
+                          same Codex session across messages.
+                        </p>
+                        <ul className="starter-list" aria-label="Example requests">
+                          {starterPrompts.map((item) => (
+                            <li key={item}>
+                              <button type="button" className="starter" onClick={() => setPrompt(item)}>{item}</button>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : (
+                      messages.map((message) => (
+                        <Fragment key={message.id}>
+                          {message.role === "assistant" && message.runId === activeRun?.id &&
+                            activityForActiveRun()}
+                          {message.role === "user" ? (
+                            <article className="message-user">
+                              <div className="cluster meta">
+                                <strong>You</strong>
+                                <time dateTime={message.createdAt}>{formatTime(message.createdAt)}</time>
+                              </div>
+                              <MessageContent content={message.content} />
+                            </article>
+                          ) : (
+                            <article>
+                              <Foreign
+                                label={selected.name}
+                                note={`${formatTime(message.createdAt)}, not verified by AgentGuard`}
+                              >
+                                <MessageContent content={message.content} rich />
+                              </Foreign>
+                            </article>
+                          )}
+                        </Fragment>
+                      ))
                     )}
+                    {activeRun !== null &&
+                      !messages.some(
+                        (message) => message.role === "assistant" && message.runId === activeRun.id,
+                      ) &&
+                      activityForActiveRun()}
+
+                    {activeRun?.status === "failed" && (
+                      <ErrorState title="Run failed" message={activeRun.error ?? "The run stopped without giving a reason. Check Technical details for the trace."} />
+                    )}
+                    <div ref={messageEnd} />
                   </div>
-                </aside>
+                </div>
+
+                <form className="composer" onSubmit={(event) => void sendMessage(event)}>
+                  <textarea
+                    aria-label="Message to the agent"
+                    value={prompt}
+                    onChange={(event) => setPrompt(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" && !event.shiftKey) {
+                        event.preventDefault();
+                        event.currentTarget.form?.requestSubmit();
+                      }
+                    }}
+                    placeholder={
+                      selected.status === "stopped"
+                        ? "Start this agent to continue"
+                        : "Describe what you want the agent to do"
+                    }
+                    disabled={composerClosed}
+                    rows={2}
+                  />
+                  <div className="composer-footer">
+                    <span className="meta">Enter sends, Shift + Enter adds a line. Sandbox: {system?.codexSandboxMode ?? "checking"}</span>
+                    <Button type="submit" variant="primary" disabled={!prompt.trim() || composerClosed}>Send</Button>
+                  </div>
+                </form>
+              </div>
+
+              {(showWorkspace || showSafetyPanel) && (
+                <div className="playground-side">
+                  {showWorkspace && (
+                    <Workspace
+                      agentId={selected.id}
+                      reflections={selected.reflections ?? []}
+                      onClose={() => setShowWorkspace(false)}
+                    />
+                  )}
+                  {showSafetyPanel && (
+                    <aside className="side-panel" aria-label={`${selected.name} safety`}>
+                      <header className="side-panel-head">
+                        <h2>Safety for {selected.name}</h2>
+                        <Button variant="ghost" onClick={() => setShowSafetyPanel(false)}>Close</Button>
+                      </header>
+                      <div className="side-panel-scroll">
+                        {adminOverview === null ? <Loading label="Loading safety records" /> : (
+                          <AgentSafetyDetails overview={adminOverview} agent={selected} onViewRun={(agentId, runId) => {
+                            setShowSafetyPanel(false);
+                            setSelectedId(agentId);
+                            void api.run(runId).then(({ run }) => setActiveRun(run));
+                          }} />
+                        )}
+                      </div>
+                    </aside>
+                  )}
+                </div>
               )}
             </section>
           </>
         ) : (
           <div className="no-agent">
-            <h1>Your runtime is ready for an Agent.</h1>
-            <p>Create a workspace, give Codex a job, and continue the conversation here.</p>
-            <button
-              className="button button-primary"
-              onClick={() => {
-                setForm(emptyForm);
-                setShowCreate(true);
-              }}
-            >
-              Create your first Agent
-            </button>
+            <EmptyState title="Create an agent to get started" action={<Button variant="primary" page onClick={openCreate}>Create your first agent</Button>}>
+              An agent gets its own workspace. Give Codex a job, then continue the conversation here.
+            </EmptyState>
           </div>
         )}
       </div>
 
-      {showCreate && (
-        <div className="modal-backdrop" onMouseDown={() => setShowCreate(false)}>
-          <form
-            className="modal"
-            onSubmit={createAgent}
-            onMouseDown={(event) => event.stopPropagation()}
-          >
-            <div className="modal-heading">
-              <div>
-                <span className="eyebrow">New workspace</span>
-                <h2>Create an Agent</h2>
-                <p>Each Agent gets a persistent folder and a resumable Codex session.</p>
-              </div>
-              <button type="button" onClick={() => setShowCreate(false)}>×</button>
-            </div>
-            <label>
-              Name
-              <input
-                autoFocus
-                placeholder="Frontend Builder"
-                value={form.name}
-                onChange={(event) => setForm({ ...form, name: event.target.value })}
-                required
-                maxLength={80}
-              />
-            </label>
-            <label>
-              Description
-              <input
-                placeholder="Builds polished React prototypes"
-                value={form.description}
-                onChange={(event) =>
-                  setForm({ ...form, description: event.target.value })
-                }
-                maxLength={500}
-              />
-            </label>
-            <label>
-              Instructions
-              <textarea
-                value={form.instructions}
-                onChange={(event) =>
-                  setForm({ ...form, instructions: event.target.value })
-                }
-                rows={6}
-                maxLength={10_000}
-              />
-            </label>
-            <div className="modal-footer">
-              <button
-                type="button"
-                className="button button-ghost"
-                onClick={() => setShowCreate(false)}
-              >
-                Cancel
-              </button>
-              <button className="button button-primary" disabled={busy}>
-                {busy ? <Spinner /> : "Create Agent"}
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
+      {showCreate && <CreateAgentDialog state={state} />}
     </div>
   );
 }

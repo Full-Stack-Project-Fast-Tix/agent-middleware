@@ -6,47 +6,44 @@
 // is kept, so there is no sentence to show.
 
 import type { Reflection } from "./types";
+import { ForeignInline } from "./ui";
 
 /** Plain-language description of what a reflection watches. */
-function subjectOf(reflection: Reflection): { label: string; value: string } {
+function subjectOf(reflection: Reflection): { label: string; value: string | null } {
   const destination = reflection.facts.destination;
   if (destination !== undefined) {
-    return { label: "destination", value: destination };
+    return { label: "Watch destination", value: destination };
   }
 
   const source = reflection.facts.source;
   if (source !== undefined) {
-    return { label: "file", value: source };
+    return { label: "Watch file", value: source };
   }
 
-  return { label: reflection.code, value: "—" };
+  return { label: reflection.code, value: null };
 }
 
 const WHEN: Record<string, string> = {
-  "sensitive-read": "after a secret is read",
-  "encoded-blob": "when the payload is encoded",
-  "untrusted-source-read": "whenever it is read",
-  none: "always",
+  "sensitive-read": "After a secret is read",
+  "encoded-blob": "When the payload is encoded",
+  "untrusted-source-read": "Whenever it is read",
+  none: "Always",
 };
 
 export function ReflectionList({ reflections }: { reflections: Reflection[] }) {
   return (
-    <details className="reflections safety-memory">
+    <details className="safety-memory">
       <summary>
-        <strong>Safety memory</strong>
-        <span aria-hidden="true">·</span>
-        <span>{reflections.length}</span>
+        Safety memory <span className="tabular">{reflections.length}</span>
       </summary>
 
       {reflections.length === 0 ? (
-        <p className="reflections-empty">
-          No persistent safety lessons yet.
-        </p>
+        <p className="meta">No safety lessons yet.</p>
       ) : (
         <ul className="reflection-items">
           {reflections.map((reflection) => {
             const subject = subjectOf(reflection);
-            const when = WHEN[reflection.facts.precondition ?? "none"] ?? "always";
+            const when = WHEN[reflection.facts.precondition ?? "none"] ?? "Always";
             const seen = reflection.sightings.length;
             // Mirrors tierOf on the server. An absent list predates thread
             // tracking and counts as recurring, so an upgrade never demotes.
@@ -56,41 +53,28 @@ export function ReflectionList({ reflections }: { reflections: Reflection[] }) {
 
             return (
               <li className="reflection-item" key={`${reflection.code}:${subject.value}:${when}`}>
-                <div className="reflection-subject">
-                  <span className="reflection-kind">watch {subject.label}</span>
-                  <code>{subject.value}</code>
+                <div className="cluster">
+                  <span>{subject.label}</span>
+                  {subject.value !== null && <ForeignInline>{subject.value}</ForeignInline>}
                   {recurring && (
-                    <span className="reflection-tier" title="Seen in more than one conversation">
-                      recurring
-                    </span>
+                    <span className="badge" title="Seen in more than one conversation">Recurring</span>
                   )}
                   {needsAttention && (
                     <span
-                      className="reflection-attention"
+                      className="badge badge-held"
                       title="This Agent has been stopped here in three separate conversations. Steering it again is unlikely to help."
                     >
-                      needs a look
+                      Needs a look
                     </span>
                   )}
                 </div>
-                <div className="reflection-meta">
+                <div className="cluster meta">
                   <span>{when}</span>
-                  <span aria-hidden="true">·</span>
-                  <span>
-                    seen in {seen} run{seen === 1 ? "" : "s"}
-                  </span>
+                  <span>Seen in {seen} run{seen === 1 ? "" : "s"}</span>
                   {conversations !== undefined && conversations > 1 && (
-                    <>
-                      <span aria-hidden="true">·</span>
-                      <span>across {conversations} conversations</span>
-                    </>
+                    <span>Across {conversations} conversations</span>
                   )}
-                  {reflection.facts.channel !== undefined && (
-                    <>
-                      <span aria-hidden="true">·</span>
-                      <span>over {reflection.facts.channel}</span>
-                    </>
-                  )}
+                  {reflection.facts.channel !== undefined && <span>Over {reflection.facts.channel}</span>}
                 </div>
               </li>
             );
@@ -98,9 +82,9 @@ export function ReflectionList({ reflections }: { reflections: Reflection[] }) {
         </ul>
       )}
 
-      <p className="reflections-note">
-        Stored as guard settings, not as text in the prompt — so they cost no tokens and the
-        Agent is never asked to agree to them.
+      <p className="meta">
+        Stored as guard settings, not as text in the prompt, so they cost no tokens and the
+        agent is never asked to agree to them.
       </p>
     </details>
   );

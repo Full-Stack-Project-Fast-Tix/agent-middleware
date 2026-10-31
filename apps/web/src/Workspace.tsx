@@ -11,7 +11,7 @@
 //   * It does not hide sensitive files. Seeing that `.env` sits next to a skill
 //     that mentions it is the entire point. The API redacts credential-shaped
 //     values on the way out, so the file can be shown without the secret being
-//     rendered — which is also why the badge says "watched", not "hidden".
+//     rendered — which is also why the badge says "Watched", not "Hidden".
 //   * It does not warn about what you type. The guards run on what the Agent
 //     does, not on what a person writes, and a linter here would imply the
 //     protection lives in the editor. It does not.
@@ -19,6 +19,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, ApiError } from "./api";
 import type { Reflection, WorkspaceEntry, WorkspaceFile } from "./types";
+import { Button, Foreign, ForeignInline } from "./ui";
 
 /**
  * Filename fragments the egress guard treats as a credential read.
@@ -145,66 +146,50 @@ export function Workspace({
   };
 
   return (
-    <aside className="workspace-panel" aria-label="Agent workspace">
-      <div className="workspace-head">
-        <div>
-          <span className="eyebrow">Workspace</span>
-          <h2>What the Agent can read</h2>
+    <aside className="side-panel workspace-panel" aria-label="Agent workspace">
+      <header className="side-panel-head">
+        <h2>What the agent can read</h2>
+        <div className="cluster">
+          <Button onClick={startNew}>Add a file</Button>
+          <Button variant="ghost" onClick={onClose}>Close</Button>
         </div>
-        <div className="workspace-head-actions">
-          <button className="button button-ghost" onClick={startNew}>
-            Add a file
-          </button>
-          <button onClick={onClose} aria-label="Close workspace panel">
-            ×
-          </button>
-        </div>
-      </div>
+      </header>
 
-      {error !== null && (
-        <p className="workspace-error" role="alert">
-          {error}
-        </p>
-      )}
+      {error !== null && <div className="state-error workspace-error" role="alert">{error}</div>}
 
       <div className="workspace-body">
-        <ul className="workspace-tree">
-          {files.length === 0 && <li className="workspace-empty">No files yet.</li>}
-          {files.map((file) => (
-            <li key={file.path}>
-              <button
-                className={"workspace-file" + (open?.path === file.path ? " is-open" : "")}
-                onClick={() => void openFile(file.path)}
-              >
-                <span className="workspace-file-path">{file.path}</span>
-                <span className="workspace-file-meta">
-                  {watched.has(file.path) && (
-                    <span
-                      className="workspace-badge workspace-badge-watched"
-                      title="This Agent has been stopped over this file before"
-                    >
-                      watched
-                    </span>
-                  )}
-                  {isSensitive(file.path) && (
-                    <span
-                      className="workspace-badge workspace-badge-sensitive"
-                      title="The egress guard treats reading this as a credential read"
-                    >
-                      sensitive
-                    </span>
-                  )}
-                  <span className="workspace-size">{formatSize(file.size)}</span>
-                </span>
-              </button>
-            </li>
-          ))}
-        </ul>
+        {files.length === 0 ? (
+          <p className="meta workspace-empty">No files yet. Add one for the agent to find.</p>
+        ) : (
+          <ul className="workspace-tree">
+            {files.map((file) => (
+              <li key={file.path}>
+                <button
+                  type="button"
+                  className="workspace-file"
+                  aria-current={open?.path === file.path ? "true" : undefined}
+                  onClick={() => void openFile(file.path)}
+                >
+                  <ForeignInline>{file.path}</ForeignInline>
+                  <span className="workspace-file-facts">
+                    {watched.has(file.path) && (
+                      <span className="badge badge-held" title="This agent has been stopped over this file before">Watched</span>
+                    )}
+                    {isSensitive(file.path) && (
+                      <span className="badge" title="The egress guard treats reading this as a credential read">Sensitive</span>
+                    )}
+                    <span className="meta tabular">{formatSize(file.size)}</span>
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
 
         <div className="workspace-view">
           {editing ? (
-            <div className="workspace-editor">
-              <label className="workspace-path-field">
+            <div className="form-stack">
+              <label>
                 Path
                 <input
                   value={draftPath}
@@ -213,53 +198,42 @@ export function Workspace({
                   spellCheck={false}
                 />
               </label>
-              <textarea
-                className="workspace-textarea"
-                value={draftBody}
-                onChange={(event) => setDraftBody(event.target.value)}
-                spellCheck={false}
-                rows={18}
-                placeholder={"# deploy-helper\n\n## 1. Check the build\n\nRun the tests."}
-              />
-              <div className="workspace-editor-actions">
-                <button
-                  className="button button-ghost"
-                  onClick={() => setEditing(false)}
-                  disabled={busy}
-                >
-                  Cancel
-                </button>
-                <button className="button button-primary" onClick={() => void save()} disabled={busy}>
-                  {busy ? "Saving…" : "Save to workspace"}
-                </button>
+              <label>
+                Contents
+                <textarea
+                  className="workspace-textarea"
+                  value={draftBody}
+                  onChange={(event) => setDraftBody(event.target.value)}
+                  spellCheck={false}
+                  rows={14}
+                  placeholder={"# deploy-helper\n\n## 1. Check the build\n\nRun the tests."}
+                />
+              </label>
+              <div className="form-actions">
+                <Button variant="primary" busy={busy} onClick={() => void save()}>Save to workspace</Button>
+                <Button variant="ghost" disabled={busy} onClick={() => setEditing(false)}>Cancel</Button>
               </div>
-              <p className="workspace-note">
-                Saved straight into the Agent&apos;s workspace. Nothing here is checked — the
-                guards run on what the Agent <em>does</em> with it, on the next run.
+              <p className="meta">
+                Saved straight into the agent's workspace. Nothing here is checked: the guards run
+                on what the agent does with it, on the next run.
               </p>
             </div>
           ) : open !== null ? (
             <>
               <div className="workspace-view-head">
-                <code>{open.path}</code>
-                <button className="button button-ghost" onClick={startEdit}>
-                  Edit
-                </button>
+                <ForeignInline>{open.path}</ForeignInline>
+                <Button onClick={startEdit}>Edit</Button>
               </div>
               {saved === open.path && (
-                <p className="workspace-saved">Saved. The Agent will see this on its next run.</p>
+                <p className="workspace-saved" role="status">Saved. The agent will see this on its next run.</p>
               )}
-              <pre className="workspace-content">{open.content}</pre>
+              <Foreign preformatted>{open.content}</Foreign>
               {open.truncated && (
-                <p className="workspace-note">
-                  Showing the first 256 KB of {formatSize(open.size)}.
-                </p>
+                <p className="meta">Showing the first 256 KB of {formatSize(open.size)}.</p>
               )}
             </>
           ) : (
-            <p className="workspace-placeholder">
-              Pick a file to read it, or add one for the Agent to find.
-            </p>
+            <p className="meta">Pick a file to read it, or add one for the agent to find.</p>
           )}
         </div>
       </div>
