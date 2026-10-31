@@ -28,7 +28,7 @@ The proof of concept currently includes:
 - **Reflection memory** recording structured lessons from past security incidents.
 - Security findings surfaced in the execution trajectory, with replay/evaluation through an existing benchmark framework.
 
-The multi-agent and password-authenticated paths are implemented foundations, with workspace-role checks and capability ceilings. Admin management UI, sign-in throttling, configurable policy rules, stronger tenant isolation, and the full operations console remain unfinished. Run copies omit known environment-secret patterns and common credential stores/files by default; this filename-based filter is not general secret detection.
+The multi-agent and password-authenticated paths are implemented foundations, with workspace-role checks and capability ceilings. Admin management UI, configurable policy rules, stronger tenant isolation, and the full operations console remain unfinished. Run copies omit known environment-secret patterns and common credential stores/files by default; this filename-based filter is not general secret detection.
 
 ## Planned product capabilities
 

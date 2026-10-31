@@ -21,6 +21,7 @@ export const API_ERROR_CODES = [
   "forbidden",
   "not_found",
   "conflict",
+  "rate_limited",
   "internal",
   "unavailable",
 ] as const;
@@ -54,7 +55,8 @@ export type PageQuery = z.infer<typeof pageQuerySchema>;
  * which kind: the operator's shared token, or a session from signing in.
  *
  *   GET    /api/auth                    -> AuthInfo
- *   POST   /api/auth/session  SignInRequest -> 201 Session (401 on a wrong email or password)
+ *   POST   /api/auth/session  SignInRequest -> 201 Session (401 on a wrong email or password,
+ *                                         429 with Retry-After after too many failed attempts)
  *   DELETE /api/auth/session            -> 204, ends the session in the Authorization header
  *   GET    /api/auth/me                 -> { user }
  */

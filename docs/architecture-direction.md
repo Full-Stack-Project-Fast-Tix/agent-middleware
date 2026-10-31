@@ -33,5 +33,5 @@ The current single-agent runtime remains supported alongside the multi-agent pat
   ([`apps/server/tests/integration`](../apps/server/tests/integration/README.md))
   checks Gate 1 scenarios and Run invariants. Its default scenarios use
   stand-ins for persistence and middleware; it is not a full production-stack
-  test. The app shell, dashboard, admin workflows, sign-in throttling, and
-  stronger tenant isolation remain unfinished.
+  test. The app shell, dashboard, admin workflows, and stronger tenant isolation
+  remain unfinished.

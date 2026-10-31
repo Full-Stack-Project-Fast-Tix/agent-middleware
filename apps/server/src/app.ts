@@ -18,6 +18,7 @@ import {
 import type { AgentService } from "./agent-service.js";
 import { registerRunEventStream, type RunEventStreamOptions } from "./run-events-route.js";
 import { registerRunRoutes, type RunRoutesOptions } from "./run-routes.js";
+import type { SignInThrottle } from "./sign-in-throttle.js";
 import { registerSessionAuth, type Identity } from "./auth-routes.js";
 
 /**
@@ -57,6 +58,8 @@ export interface AppExtensions {
   runs?: RunRoutesOptions;
   /** Signed-in users with sessions, instead of the shared APP_AUTH_TOKEN. */
   identity?: Identity;
+  /** Limits on sign-in attempts. Omitted, each app gets its own. */
+  signInThrottle?: SignInThrottle;
 }
 
 export async function createApp(
@@ -80,7 +83,7 @@ export async function createApp(
   });
 
   // Signed-in sessions replace the shared token when the server has identity.
-  if (extensions.identity) registerSessionAuth(app, extensions.identity);
+  if (extensions.identity) registerSessionAuth(app, extensions.identity, extensions.signInThrottle);
   app.addHook("onRequest", async (request, reply) => {
     if (
       extensions.identity !== undefined ||

@@ -44,13 +44,16 @@ export class PostgresIdentity {
   constructor(
     private readonly pool: pg.Pool,
     private readonly now: () => Date = () => new Date(),
-  ) {}
+  ) {
+    // Made up front: making it during the first miss would make that miss slower than a wrong password.
+    decoy ??= hashPassword(randomUUID());
+  }
 
   /** A new session for a matching email and password, otherwise null. The token is never stored. */
   async signIn(email: string, password: string): Promise<Session | null> {
     const { rows } = await this.pool.query("SELECT * FROM users WHERE lower(email) = lower($1)", [email]);
     const row = rows[0] as { id: string; password_hash: string | null } | undefined;
-    const matches = await verifyPassword(password, row?.password_hash ?? (await (decoy ??= hashPassword(randomUUID()))));
+    const matches = await verifyPassword(password, row?.password_hash ?? (await decoy!));
     if (row === undefined || row.password_hash === null || !matches) return null;
 
     const token = randomBytes(32).toString("base64url");

@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import { signInRequestSchema, type User } from "@launchpad/shared";
 import type { Session } from "./db/postgres-identity.js";
 import { HttpError } from "./errors.js";
+import { SignInThrottle } from "./sign-in-throttle.js";
 
 // Sessions for signed-in users, as specified in packages/shared/src/api.ts.
 // With sessions on, they replace the operator's shared APP_AUTH_TOKEN: every
@@ -36,7 +37,7 @@ export function signedInUser(request: FastifyRequest): User {
   return request.user;
 }
 
-export function registerSessionAuth(app: FastifyInstance, identity: Identity): void {
+export function registerSessionAuth(app: FastifyInstance, identity: Identity, throttle = new SignInThrottle()): void {
   app.decorateRequest("user", null);
 
   app.addHook("onRequest", async (request, reply) => {
@@ -51,11 +52,23 @@ export function registerSessionAuth(app: FastifyInstance, identity: Identity): v
     if (request.user === null) return reply.code(401).send({ error: "Authentication required", code: "unauthenticated" });
   });
 
-  // ponytail: no attempt limit; scrypt makes each guess slow, but add per-email throttling before this faces the internet.
   app.post("/api/auth/session", { config: { redact: false } }, async (request, reply) => {
     const { email, password } = signInRequestSchema.parse(request.body);
-    const session = await identity.signIn(email, password);
+    // request.ip is the connecting peer: this app does not trust X-Forwarded-For.
+    const retryAfter = throttle.admit(email, request.ip);
+    if (retryAfter !== null) {
+      request.log.warn({ ip: request.ip }, "Sign-in attempts throttled");
+      return reply
+        .code(429)
+        .header("retry-after", String(retryAfter))
+        .send({ error: "Too many sign-in attempts. Try again later.", code: "rate_limited" });
+    }
+    const session = await identity.signIn(email, password).catch((error: unknown) => {
+      throttle.abandoned(email, request.ip);
+      throw error;
+    });
     if (session === null) throw new HttpError(401, "The email or password is not right.");
+    throttle.succeeded(email, request.ip);
     return reply.code(201).send(session);
   });
 

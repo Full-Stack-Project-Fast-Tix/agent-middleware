@@ -125,6 +125,11 @@ Deploy updates with `git pull --ff-only`, then rerun the deployment script.
 - Allow TCP 22 only from administrator IP addresses.
 - Allow outbound HTTPS to Ark and package registries.
 - Add HTTPS before using `APP_AUTH_TOKEN` across an untrusted network.
+- In password mode, failed sign-ins are limited to 5 per account and 30 per
+  source address every 15 minutes. The source is the connecting peer, so behind a
+  reverse proxy every user shares the proxy's limit until the app is configured
+  to trust that proxy. The counters are in memory: they reset on restart and do
+  not work across more than one server.
 
 Stop the application without deleting Agent data:
 
