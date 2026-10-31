@@ -67,6 +67,9 @@ export interface ExecutionGuard {
    */
   recordApprovalOutcome(actionId: string, outcome: Exclude<ApprovalStatus, "pending">): Promise<SecurityDecision>;
 
+  /** Fold deterministic findings into the Agent's bounded, structured reflection memory. */
+  complete?(threadId: string | null): Promise<void>;
+
   close(): Promise<void>;
 }
 

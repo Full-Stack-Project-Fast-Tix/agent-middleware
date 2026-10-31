@@ -1,6 +1,8 @@
+import { randomUUID } from "node:crypto";
 import type { SecurityContext } from "@launchpad/shared";
 import type pg from "pg";
 import type { SecurityExecutionFacts, SecurityExecutionSource } from "../security-middleware-impl.js";
+import { learnFrom, reflectionKey, type LearnInput, type Reflection } from "../reflections.js";
 import { fromRow } from "./rows.js";
 
 /**
@@ -77,6 +79,7 @@ export class PostgresSecuritySource implements SecurityExecutionSource {
     );
     if (rows[0] === undefined) return null;
     const facts = fromRow(rows[0]);
+    const reflections = await this.listReflections(this.pool, context.agentId);
     return {
       workspaceId: facts.workspaceId as string,
       runId: facts.runId as string,
@@ -86,7 +89,85 @@ export class PostgresSecuritySource implements SecurityExecutionSource {
       taskObjective: facts.taskObjective as string,
       agentInstructions: facts.instructions as string,
       delegationDepth: facts.delegationDepth as number,
+      reflections,
     };
+  }
+
+  private async listReflections(db: Pick<pg.Pool, "query">, agentId: string): Promise<Reflection[]> {
+    const { rows } = await db.query<{
+      code: string;
+      facts: Record<string, string>;
+      first_seen_at: Date | string;
+      last_seen_at: Date | string;
+      sightings: string[] | null;
+      threads: string[] | null;
+      legacy: boolean;
+    }>(
+      `SELECT r.code, r.facts, r.first_seen_at, r.last_seen_at,
+              array_agg(DISTINCT s.run_id::text) FILTER (WHERE s.run_id IS NOT NULL) AS sightings,
+              array_agg(DISTINCT s.thread_id ORDER BY s.thread_id) FILTER (WHERE s.thread_id IS NOT NULL) AS threads,
+              COALESCE(bool_or(s.id IS NOT NULL AND s.run_id IS NULL AND s.thread_id IS NULL), false) AS legacy
+         FROM reflections r LEFT JOIN reflection_sightings s ON s.reflection_id = r.id
+        WHERE r.agent_id = $1
+        GROUP BY r.id ORDER BY r.first_seen_at, r.dedup_key`,
+      [agentId],
+    );
+    return rows.map((row) => ({
+      code: row.code,
+      facts: row.facts,
+      sightings: row.sightings ?? [],
+      ...(row.legacy ? {} : { threads: row.threads ?? [] }),
+      firstSeenAt: new Date(row.first_seen_at).toISOString(),
+      lastSeenAt: new Date(row.last_seen_at).toISOString(),
+    }));
+  }
+
+  /** Fold against the latest Agent memory while holding its row lock. */
+  async foldReflections(agentId: string, input: Omit<LearnInput, "reflections">): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const { rows } = await client.query("SELECT id FROM agents WHERE id = $1 FOR UPDATE", [agentId]);
+      if (rows[0] === undefined) throw new Error("Reflection owner no longer exists");
+      const reflections = learnFrom({ ...input, reflections: await this.listReflections(client, agentId) }).reflections;
+      await client.query("DELETE FROM reflection_sightings WHERE reflection_id IN (SELECT id FROM reflections WHERE agent_id = $1)", [agentId]);
+      await client.query("DELETE FROM reflections WHERE agent_id = $1", [agentId]);
+      for (const reflection of reflections) {
+        const id = randomUUID();
+        await client.query(
+          `INSERT INTO reflections (id, agent_id, code, facts, dedup_key, first_seen_at, last_seen_at)
+           VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7)`,
+          [id, agentId, reflection.code, JSON.stringify(reflection.facts), reflectionKey(reflection.code, reflection.facts), reflection.firstSeenAt, reflection.lastSeenAt],
+        );
+        for (const runId of reflection.sightings) {
+          await client.query(
+            `INSERT INTO reflection_sightings (id, reflection_id, run_id, thread_id, seen_at)
+             VALUES ($1, $2, $3, NULL, $4)`,
+            [randomUUID(), id, runId, reflection.lastSeenAt],
+          );
+        }
+        for (const threadId of reflection.threads ?? []) {
+          await client.query(
+            `INSERT INTO reflection_sightings (id, reflection_id, run_id, thread_id, seen_at)
+             VALUES ($1, $2, NULL, $3, $4)`,
+            [randomUUID(), id, threadId, reflection.lastSeenAt],
+          );
+        }
+        if (reflection.threads === undefined) {
+          await client.query(
+            `INSERT INTO reflection_sightings (id, reflection_id, run_id, thread_id, seen_at)
+             VALUES ($1, $2, NULL, NULL, $3)`,
+            [randomUUID(), id, reflection.firstSeenAt],
+          );
+        }
+      }
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   async getTaskIdentity(taskId: string): Promise<{ workspaceId: string; runId: string } | null> {

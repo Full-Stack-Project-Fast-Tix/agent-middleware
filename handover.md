@@ -26,6 +26,10 @@ proof of concept and does not claim production-grade tenant isolation.
   table for this milestone. The timeline explicitly reports unsaved proposals.
 - Arbitrary `SecurityPolicy.rules` remain unsupported and fail closed. A future
   rules feature requires a versioned schema and enforcement semantics.
+- Multi-agent reflection memory now loads from and saves to the existing
+  PostgreSQL reflection tables, using the same structured `learnFrom` rules as
+  token mode. It is not prompt text, and its live efficacy still needs benchmark
+  evidence.
 
 ### P2 — Orchestration
 
@@ -82,8 +86,8 @@ multi-agent efficacy claims. The remaining P1 work is:
 - review any future rule schema, nested delegation, provider-only egress, or
   production tenant-isolation proposal before it is enabled;
 - maintain the secret-copy marker parity test as sensitive markers change.
-- decide separately whether and when multi-agent reflection memory is worth
-  implementing; it remains unused and is not needed to run the benchmark.
+- review reflection behavior and failure handling as part of the first live
+  Run/Task benchmark; the wiring is implemented but efficacy is unmeasured.
 
 ### P2
 
@@ -103,9 +107,11 @@ a missing directory. Remaining P2 work:
 - Run `scripts/deploy-multi-agent.sh` on a real ECS host. Its systemd steps have
   not been exercised yet; verify its fail-closed sandbox check and network
   behavior on the target host.
-- Password-mode throttling now uses shared PostgreSQL fixed-window counters.
-  The rest of the app still assumes one instance because Run event delivery is
-  process-local; do not add replicas until that is addressed.
+- Password-mode throttling uses shared PostgreSQL fixed-window counters. Open
+  Run streams detect another instance's durable event cursor and resync the
+  client snapshot. This does not support multi-instance operation: orchestration
+  waiters, cancellation, approval coordination and run-scoped taint are local.
+  Keep deployment single-instance until those are shared.
 - First-account bootstrap and host project path registration remain
   operator-only. Workspace security admins can create accounts attached to their
   workspace, manage roles, and create empty workspaces in Members. The CLI lists

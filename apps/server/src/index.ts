@@ -74,7 +74,7 @@ const app = await createApp(config, service, {
       if (run === null || identity === null) return run !== null;
       return (await identity.workspaceRole(run.workspaceId, signedInUser(request).id)) !== null;
     },
-    lastEventSeq: async (runId) => (await runs?.store.snapshot(runId))?.lastEventSeq ?? 0,
+    lastEventSeq: async (runId) => (await runs?.store.getLastEventSeq(runId)) ?? 0,
   },
   ...(runs === null ? {} : { runs: runs.routes }),
   ...(identity === null ? {} : { identity, memberDatabase: database!, signInThrottle: new PostgresSignInThrottle(database!) }),

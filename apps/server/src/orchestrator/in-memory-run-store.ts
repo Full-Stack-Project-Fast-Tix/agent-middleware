@@ -239,6 +239,10 @@ export class InMemoryRunStore implements RunStore, RunReads {
     };
   }
 
+  getLastEventSeq(runId: string): number {
+    return this.lastEventSeq.get(runId) ?? 0;
+  }
+
   private touch<T extends { updatedAt: string }>(entity: T, changes: Partial<T>): T {
     return { ...entity, ...changes, updatedAt: this.now() };
   }

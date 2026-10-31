@@ -569,8 +569,27 @@ in PostgreSQL and update counters transactionally under row locks. Account and
 source keys are SHA-256 digests; raw passwords are never involved. Successful
 authentication clears that account's failures and gives the successful attempt
 back to the source-address budget. This makes authentication limits consistent
-across restarts and app replicas. It does not make the whole application
-multi-replica-ready: Run event delivery remains process-local.
+across restarts and app replicas.
+
+## 28. Multi-agent reflections reuse the deterministic memory contract
+
+**Decision (1 November 2026, P1):** The multi-agent execution guard loads an
+Agent's bounded reflections from PostgreSQL before building deterministic
+checks, then folds that execution's structured findings and trace with the
+existing `learnFrom` rules after the turn. Raw trace text, model narration and
+semantic findings do not author reflection facts. Failed persistence is logged
+and does not retry a completed execution. Reflections are guard parameters,
+never prompt instructions.
+
+## 29. Cross-instance Run streams resync from the durable cursor
+
+**Decision (1 November 2026, P3):** Open Run event streams poll the durable
+PostgreSQL event cursor. If it advances beyond the instance's local hub, that
+stream closes with a resync frame so the client reloads the authorized
+snapshot. This avoids storing event payloads in a second durable event log.
+It does not make the application multi-instance-ready: orchestration waiters,
+cancellation, approval coordination and run-scoped taint remain process-local.
+Keep deployment single-instance until those lifecycle boundaries are shared.
 
 ## Guidance for P3's schema
 

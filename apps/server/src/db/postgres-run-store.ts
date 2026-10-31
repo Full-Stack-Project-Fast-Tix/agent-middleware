@@ -61,6 +61,11 @@ export class PostgresRunStore implements RunStore, RunReads {
     return this.one("SELECT * FROM runs WHERE id = $1", [runId], runSchema);
   }
 
+  async getLastEventSeq(runId: string): Promise<number> {
+    const { rows } = await this.pool.query<{ last_event_seq: string }>("SELECT last_event_seq FROM runs WHERE id = $1", [runId]);
+    return rows[0] === undefined ? 0 : Number(rows[0].last_event_seq);
+  }
+
   async listActiveRuns(): Promise<Run[]> {
     return this.many(
       "SELECT * FROM runs WHERE status NOT IN ('completed', 'failed', 'cancelled') ORDER BY created_at, id",

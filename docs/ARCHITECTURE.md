@@ -125,7 +125,9 @@ single-agent path above, which is unchanged. These parts exist:
   [contract-decisions.md](contract-decisions.md).
 - **Live run events:** `RunEventHub` fans out each committed event, with its
   durable seq, and `GET /api/runs/:id/events` streams them as Server-Sent
-  Events. Each frame is redacted, and clients resume or resync by seq.
+  Events. Each frame is redacted, and clients resume or resync by seq. Open
+  streams poll the Postgres cursor and resync if a different instance commits
+  an event; this shares visibility, not orchestration ownership.
 - **Security middleware interface**
   ([`security-middleware.ts`](../apps/server/src/security-middleware.ts) and
   [`security-middleware-impl.ts`](../apps/server/src/security-middleware-impl.ts)):
@@ -239,8 +241,10 @@ it also lists users/workspaces and can create empty workspaces. A
 members, and create additional empty workspaces (contract decision 15). Failed sign-ins
 are limited by shared PostgreSQL counters: five attempts per account and 30 per
 source address within 15 minutes. Authentication limits are consistent across
-restarts and replicas; Run SSE/event delivery remains process-local, so the rest
-of the app is still a single-instance deployment. The
+restarts and replicas. Run streams detect commits made by another instance and
+ask the client to reload its snapshot, but orchestration waiters, cancellation,
+approval coordination and run-scoped taint remain process-local. Keep the app
+single-instance. The
 default `token` mode is unchanged, and `npm run dev:demo` still runs the simulated
 demo. For the two acting roles, an attempt's bounded, redacted raw trace is read through
 `GET /api/runs/:runId/executions/:executionId/trace`, under the same workspace
@@ -253,9 +257,10 @@ are removed after `RUN_ARTIFACT_RETENTION_DAYS` (contract decision 18), while it
 stay, and reading such a trace answers 410 rather than a plain 404.
 
 Not built yet, by owner:
-- **P1:** reflection memory in multi-agent runs. The tables exist and are unused,
-  so a guard's catch does not carry into later Runs here as it does in token mode.
-  A PostgreSQL-backed live Run/Task benchmark harness now exists at
+- **P1:** multi-agent reflection memory now loads and folds structured findings
+  into the existing PostgreSQL reflection/sighting tables for later Runs. Its
+  live efficacy has not yet been measured. A PostgreSQL-backed live Run/Task
+  benchmark harness now exists at
   `benchmark/run-multi-agent-live.ts`; it has not yet been run against a live
   model/runtime. Policy `rules` stay unsupported until P1 reviews a schema, so
   nothing yet produces `policy_required`.

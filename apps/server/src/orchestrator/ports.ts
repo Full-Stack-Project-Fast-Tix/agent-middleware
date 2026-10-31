@@ -86,6 +86,8 @@ export interface RunStore {
 
 /** What the run routes read that the orchestrator itself never needs. */
 export interface RunReads {
+  /** The durable event cursor without loading the full Run snapshot. */
+  getLastEventSeq(runId: string): number | Promise<number>;
   /** What GET /api/runs/:runId/snapshot returns. */
   snapshot(runId: string): RunSnapshot | null | Promise<RunSnapshot | null>;
   /** One page of a workspace's runs, newest first. Throws a 400 on an unknown cursor. */

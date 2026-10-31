@@ -24,7 +24,7 @@ import { sharedSeverityOf, type ExecutionGuard, type ResolvedPolicy, type Securi
 import { resolveAgentPolicy, type SecurityPolicySource } from "./security-policy-resolver.js";
 import type { SemanticIntentMonitor } from "./semantic-intent-monitor.js";
 import { resolveTurnSecurityPolicy } from "./turn-security-policy.js";
-import type { Reflection } from "./reflections.js";
+import type { LearnInput, Reflection } from "./reflections.js";
 import { redactSensitiveText } from "./redaction/index.js";
 import type { TraceRecord } from "./trace.js";
 
@@ -44,6 +44,7 @@ export interface SecurityExecutionFacts {
 export interface SecurityExecutionSource extends SecurityPolicySource {
   getExecutionFacts(context: SecurityContext): Promise<SecurityExecutionFacts | null>;
   getTaskIdentity(taskId: string): Promise<{ workspaceId: string; runId: string } | null>;
+  foldReflections?(agentId: string, input: Omit<LearnInput, "reflections">): Promise<void>;
 }
 
 export interface SecurityMiddlewareOptions {
@@ -133,7 +134,7 @@ export class DefaultSecurityMiddleware implements SecurityMiddleware {
       : undefined;
     return new StatefulExecutionGuard(
       context, policy, facts.delegationDepth, checks, this.options.source, semantic,
-      sensitiveMarkers, runTaint,
+      sensitiveMarkers, runTaint, facts, this.options.config.reflectionGuardEnabled,
     );
   }
 
@@ -175,6 +176,7 @@ class StatefulExecutionGuard implements ExecutionGuard {
   private deferredFindings: Finding[] = [];
   private deferredSteer: string | null = null;
   private closed = false;
+  private reflectionFolded = false;
 
   constructor(
     private readonly context: SecurityContext,
@@ -185,6 +187,8 @@ class StatefulExecutionGuard implements ExecutionGuard {
     private readonly semantic?: IntentController,
     private readonly sensitiveMarkers: string[] = [],
     private readonly runTaint?: RunTaintState,
+    private readonly facts?: SecurityExecutionFacts,
+    private readonly reflectionEnabled = false,
   ) {}
 
   async evaluate(action: ProposedAction): Promise<SecurityDecision> {
@@ -327,6 +331,27 @@ class StatefulExecutionGuard implements ExecutionGuard {
       stop: "action",
       steer: "Do not retry the declined action. Continue with a safe alternative that serves the original task.",
     });
+  }
+
+  async complete(threadId: string | null): Promise<void> {
+    await this.semanticQueue;
+    if (this.reflectionFolded || !this.reflectionEnabled || !this.facts || !this.source.foldReflections) return;
+    this.reflectionFolded = true;
+    try {
+      await this.source.foldReflections(this.context.agentId, {
+        findings: runChecks(this.checks, this.trace),
+        trace: this.trace,
+        runId: this.context.runId,
+        prompt: this.facts.userPrompt,
+        now: new Date().toISOString(),
+        threadId,
+        ...(this.sensitiveMarkers.length > 0 ? { markers: this.sensitiveMarkers } : {}),
+      });
+    } catch (error) {
+      // Reflection memory improves future warnings; persistence failure must not
+      // retry a completed agent task or convert its result into a failure.
+      console.error(`Could not persist reflections for agent ${this.context.agentId}:`, error);
+    }
   }
 
   async close(): Promise<void> {

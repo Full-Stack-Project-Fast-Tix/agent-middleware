@@ -48,8 +48,8 @@ interface RunChannel {
  * never collide with a new event. A client whose position the buffer does not
  * cover is told to resync.
  *
- * One process per deployment, as the plan intends. Several server instances
- * would need a shared bus instead.
+ * This is the per-process replay buffer and fan-out. The SSE route compares
+ * its cursor with durable storage so a stream on another process can resync.
  */
 export class RunEventHub {
   private readonly channels = new Map<string, RunChannel>();
@@ -162,6 +162,17 @@ export class RunEventHub {
 
   listenerCount(runId: string): number {
     return this.channels.get(runId)?.listeners.size ?? 0;
+  }
+
+  /** Tell local SSE subscribers to reload their snapshot after durable state advanced elsewhere. */
+  resync(runId: string): void {
+    const channel = this.channels.get(runId);
+    if (!channel) return;
+    channel.buffer = [];
+    for (const listener of [...channel.listeners]) {
+      channel.listeners.delete(listener);
+      listener.onResync();
+    }
   }
 
   private channelFor(runId: string): RunChannel {

@@ -608,6 +608,7 @@ export class Orchestrator {
       });
       if (launch.stopReason !== null) throw new ExecutionStoppedError(launch.stopReason);
       this.throwIfCancelled(state);
+      await launch.guard.complete?.(outcome.threadId);
       await this.moveExecution(launch.execution.id, "completed", {
         output: outcome.output,
         threadId: outcome.threadId,
@@ -637,6 +638,9 @@ export class Orchestrator {
     } catch (error) {
       if (state.cancelRequested) return "cancelled";
       const stopped = launch.stopReason !== null;
+      // A stopped execution can contain the deterministic finding that
+      // reflection memory exists to carry into later Runs.
+      await launch.guard.complete?.(null);
       const message = stopped && !(error instanceof ExecutionStoppedError)
         ? new ExecutionStoppedError(launch.stopReason!).message
         : errorMessage(error);

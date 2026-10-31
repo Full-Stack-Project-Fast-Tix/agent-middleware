@@ -18,6 +18,8 @@ export interface RunEventStreamOptions {
   lastEventSeq?: (runId: string) => number | Promise<number>;
   /** Comment sent on idle connections so proxies do not close them. */
   heartbeatMs?: number;
+  /** How often a live stream checks the durable cursor for writes from another server. */
+  durablePollMs?: number;
   /** How often an open stream rechecks canReadRun, so a removed member stops receiving events. */
   accessRecheckMs?: number;
   /**
@@ -42,6 +44,7 @@ const query = z.object({ after: seqSchema.optional() });
  */
 export function registerRunEventStream(app: FastifyInstance, options: RunEventStreamOptions): void {
   const heartbeatMs = options.heartbeatMs ?? 15_000;
+  const durablePollMs = options.durablePollMs ?? 2_000;
   const accessRecheckMs = options.accessRecheckMs ?? 30_000;
   const maxBufferedBytes = options.maxBufferedBytes ?? 1_048_576;
   const open = new Set<ServerResponse>();
@@ -93,6 +96,14 @@ export function registerRunEventStream(app: FastifyInstance, options: RunEventSt
 
     open.add(response);
     const heartbeat = setInterval(() => send(": ping\n\n"), heartbeatMs);
+    const durablePoll = options.lastEventSeq === undefined ? null : setInterval(() => {
+      void Promise.resolve()
+        .then(() => options.lastEventSeq!(id))
+        .then((seq) => {
+          if (seq > options.hub.lastSeq(id)) options.hub.resync(id);
+        })
+        .catch(() => response.destroy());
+    }, durablePollMs);
     // If the check itself fails, close too: the client's reconnect is checked again.
     const accessRecheck = setInterval(() => {
       void Promise.resolve()
@@ -101,6 +112,7 @@ export function registerRunEventStream(app: FastifyInstance, options: RunEventSt
     }, accessRecheckMs);
     response.on("close", () => {
       clearInterval(heartbeat);
+      if (durablePoll !== null) clearInterval(durablePoll);
       clearInterval(accessRecheck);
       subscription.unsubscribe();
       open.delete(response);
