@@ -63,6 +63,11 @@ function CurrentPage({ route, playground, authMethod, viewer }: {
     case "safety":
       return (
         <>
+          {playground.system?.modelProvider === "anthropic" && (
+            <div className="notice notice-held page-banner" role="status">
+              <span>This page reports on Playground runs, which need Codex and cannot run with MODEL_PROVIDER=anthropic. Findings from Claude Runs are on each Run.</span>
+            </div>
+          )}
           {playground.error && (
             <div className="notice notice-blocked page-banner" role="alert">
               <span>{playground.error}</span>
