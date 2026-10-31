@@ -262,3 +262,50 @@ describe("fingerprint", () => {
     expect(print).not.toContain("sk_l");
   });
 });
+
+describe("secrets inside serialized JSON", () => {
+  it.each([
+    ["a double-quoted shell assignment", { command: 'export DB_PASSWORD="correct-horse-battery"' }, "correct-horse-battery"],
+    ["a double-quoted .env line", { output: 'API_KEY="abcdefgh12345678"\nFOO=1' }, "abcdefgh12345678"],
+    ["a vendor-named .env line", { output: 'ACME_SERVICE_AUTH="abcdefgh12345678"' }, "abcdefgh12345678"],
+    ["a JSON property", { password: "hunter2hunter2" }, "hunter2hunter2"],
+    ["a snake-case JSON property", { api_key: "abcd1234abcd" }, "abcd1234abcd"],
+    ["JSON held in a string", { output: JSON.stringify({ client_secret: "hunter2hunter2" }) }, "hunter2hunter2"],
+    ["a value with spaces", { password: "correct horse battery" }, "correct horse battery"],
+  ])("redacts %s and stays parseable", (_name, value, secret) => {
+    const { text, redactions } = redactText(JSON.stringify(value));
+    expect(redactions).toBeGreaterThan(0);
+    expect(text).not.toContain(secret);
+    expect(() => JSON.parse(text)).not.toThrow();
+  });
+
+  it("leaves counts and ordinary properties alone", () => {
+    const body = JSON.stringify({ usage: { inputTokens: 12345678, outputTokens: 87654321 }, title: "Rotate the password", key: "a-react-key-value" });
+    expect(redactText(body)).toEqual({ text: body, redactions: 0 });
+  });
+});
+
+describe("redaction cost", () => {
+  it("handles many PEM headers with no END line in linear time", () => {
+    const text = "-----BEGIN PRIVATE KEY-----\n".repeat(50_000);
+    const started = performance.now();
+    const { redactions } = redactText(text);
+    expect(redactions).toBe(50_000);
+    expect(performance.now() - started).toBeLessThan(5_000);
+  });
+
+  it("still takes whole PEM blocks ahead of a trailing bare header", () => {
+    const block = "-----BEGIN RSA PRIVATE KEY-----\nMIIsecretbody\n-----END RSA PRIVATE KEY-----";
+    const { text } = redactText(`${block}\nbetween\n-----BEGIN PRIVATE KEY-----\ntail`);
+    expect(text).not.toContain("MIIsecretbody");
+    expect(text).toContain("between");
+    expect(text).toContain("tail");
+    expect(text).not.toContain("-----BEGIN PRIVATE KEY-----");
+  });
+
+  it("keeps protocol ids exempt with many of them in the text", () => {
+    const id = "A".repeat(64);
+    const body = Array.from({ length: 5_000 }, () => JSON.stringify({ id })).join("\n");
+    expect(redactText(body).text).toBe(body);
+  });
+});

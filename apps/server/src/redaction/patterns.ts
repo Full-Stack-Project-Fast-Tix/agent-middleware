@@ -49,6 +49,9 @@ export const DETECTION_PATTERNS: RegExp[] = CREDENTIAL_PATTERNS;
 export const PEM_BLOCK_PATTERN =
   /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/;
 
+/** The end of a PEM block, on its own, to bound the search for whole blocks. */
+export const PEM_END_PATTERN = /-----END [A-Z ]*PRIVATE KEY-----/g;
+
 /** A long unbroken hex run: raw key material, digests, session tokens. */
 export const LONG_HEX_PATTERN = /\b[0-9a-fA-F]{32,}\b/;
 
@@ -66,6 +69,22 @@ export const BEARER_PATTERN = /\b(?:Bearer|Basic)\s+([A-Za-z0-9._~+/=-]{16,})/;
  */
 export const ENV_ASSIGNMENT_PATTERN =
   /\b([A-Z][A-Z0-9_]{2,}(?:KEY|TOKEN|SECRET|PASSWORD|PASS|CREDENTIAL|AUTH))\s*[=:]\s*["']?([^\s"']{8,})/;
+
+// The redactor runs on serialized JSON, where a quoted value's quote arrives as
+// `\\"`. These stop before the closing escape, so the result stays valid JSON.
+// They are recall-tier only: the egress guard's patterns are unchanged.
+
+/** KEYVAL_PATTERN's keywords with an escaped quote: `DB_PASSWORD=\\"value\\"`. */
+export const ESCAPED_KEYVAL_PATTERN =
+  /(?:SECRET|TOKEN|PASSWORD|API[_-]?KEY|ACCESS[_-]?KEY)\s*[=:]\s*\\+["']((?:[^\s"'\\]|\\(?!["'])){8,})/i;
+
+/** ENV_ASSIGNMENT_PATTERN's names with an escaped quote: `VENDOR_KEY=\\"value\\"`. */
+export const ESCAPED_ENV_ASSIGNMENT_PATTERN =
+  /[A-Z0-9_](?:KEY|TOKEN|SECRET|PASSWORD|PASS|CREDENTIAL|AUTH)\s*[=:]\s*\\+["']((?:[^\s"'\\]|\\(?!["'])){8,})/;
+
+/** A JSON property named for a secret: `"password":"value"`, also when nested in a string. */
+export const JSON_SECRET_PROPERTY_PATTERN =
+  /\\*"[^"\\\n]{0,64}(?:secret|token|password|api[_-]?key|access[_-]?key)\\*"\s*:\s*\\*"((?:[^"\\]|\\(?!")){8,})/i;
 
 // ---------------------------------------------------------------------------
 // The one thing we deliberately do not redact
@@ -134,6 +153,9 @@ export const REDACTION_PATTERNS: Array<{
   { pattern: BEARER_PATTERN, group: 1 },
   { pattern: ENV_ASSIGNMENT_PATTERN, group: 2 },
   { pattern: KEYVAL_PATTERN, group: 1 },
+  { pattern: ESCAPED_ENV_ASSIGNMENT_PATTERN, group: 1 },
+  { pattern: ESCAPED_KEYVAL_PATTERN, group: 1 },
+  { pattern: JSON_SECRET_PROPERTY_PATTERN, group: 1 },
   { pattern: LONG_BASE64_PATTERN, group: 0, excludable: true },
   { pattern: LONG_HEX_PATTERN, group: 0, excludable: true },
 ];

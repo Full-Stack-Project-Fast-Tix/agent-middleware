@@ -29,7 +29,7 @@
 // See the module header in ./patterns.ts for why the two pattern tiers differ.
 
 import { fingerprint, looksAlreadyRedacted } from "./fingerprint.js";
-import { PROTOCOL_ID_PATTERN, REDACTION_PATTERNS } from "./patterns.js";
+import { PEM_BLOCK_PATTERN, PEM_END_PATTERN, PROTOCOL_ID_PATTERN, REDACTION_PATTERNS } from "./patterns.js";
 
 export interface RedactionResult {
   text: string;
@@ -62,7 +62,9 @@ export function redactText(text: string): RedactionResult {
 
   for (const { pattern, group, excludable } of REDACTION_PATTERNS) {
     const global = new RegExp(pattern.source, pattern.flags.includes("g") ? pattern.flags : pattern.flags + "g");
-    result = result.replace(global, (match: string, ...args: unknown[]) => {
+    const limit = pattern === PEM_BLOCK_PATTERN ? pemSearchLimit(result) : result.length;
+    const rest = result.slice(limit);
+    result = result.slice(0, limit).replace(global, (match: string, ...args: unknown[]) => {
       const captured = group === 0 ? match : args[group - 1];
       if (typeof captured !== "string" || captured === "") return match;
       // Already redacted by an earlier pattern in this pass, or by an earlier
@@ -84,7 +86,7 @@ export function redactText(text: string): RedactionResult {
 
       redactions += 1;
       return match.replace(captured, fingerprint(captured));
-    });
+    }) + rest;
   }
 
   return { text: result, redactions: redactions };
@@ -106,11 +108,29 @@ function overlapsExcluded(
   length: number,
   spans: Array<[number, number]>,
 ): boolean {
-  const end = start + length;
-  for (const [spanStart, spanEnd] of spans) {
-    if (start < spanEnd && end > spanStart) return true;
+  // The spans are in text order and never overlap, so the first one ending after
+  // `start` is the only one that can overlap. A trace can hold many thousands.
+  let low = 0;
+  let high = spans.length;
+  while (low < high) {
+    const middle = (low + high) >>> 1;
+    if (spans[middle]![1] > start) high = middle;
+    else low = middle + 1;
   }
-  return false;
+  const span = spans[low];
+  return span !== undefined && start + length > span[0];
+}
+
+/**
+ * Where the last PEM block can end. A header with no END after it cannot start a
+ * block, but the lazy pattern would still scan to the end of the text for each
+ * one, so text full of bare headers (which an agent can print) would take
+ * quadratic time. The header-only pattern still redacts those headers.
+ */
+function pemSearchLimit(text: string): number {
+  let limit = 0;
+  for (const match of text.matchAll(PEM_END_PATTERN)) limit = match.index + match[0].length;
+  return limit;
 }
 
 /**
