@@ -11,6 +11,7 @@ describe("parseRoute", () => {
     expect(parseRoute(`/runs/${RUN_ID}`)).toEqual({ page: "run", runId: RUN_ID });
     expect(parseRoute("/playground")).toEqual({ page: "playground" });
     expect(parseRoute("/safety")).toEqual({ page: "safety" });
+    expect(parseRoute("/members")).toEqual({ page: "members" });
   });
 
   it("ignores a trailing slash", () => {

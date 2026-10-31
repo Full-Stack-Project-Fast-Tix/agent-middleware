@@ -1,14 +1,20 @@
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useState } from "react";
+import type { User } from "@launchpad/shared";
 import { api, ApiError, setAuthToken } from "./api";
+import { AccountMenu } from "./AccountMenu";
 import { Admin } from "./Admin";
+import { Members, MembersUnavailable } from "./members/Members";
+import { membersApi } from "./members/members-api";
 import { Playground } from "./Playground";
 import { navigate, paths, useRoute, type Route } from "./router";
 import { Dashboard } from "./runs/Dashboard";
 import { RunsPage } from "./runs/RunsPage";
 import { useHeldCount } from "./runs/useRunList";
+import { signOut } from "./sign-out";
 import { AppShell, ButtonLink, EmptyState, Loading, type NavItem } from "./ui";
 import { CurrentWorkspaceProvider, useCurrentWorkspace } from "./useCurrentWorkspace";
 import { usePlayground, type PlaygroundState } from "./usePlayground";
+import { WorkspaceSwitcher } from "./WorkspaceSwitcher";
 
 // The primitives gallery is a development aid, left out of production builds.
 const DesignPreview = import.meta.env.DEV
@@ -19,12 +25,14 @@ function Spinner() {
   return <span className="spinner" aria-label="Loading" />;
 }
 
-function navItems(route: Route): NavItem[] {
+function navItems(route: Route, authMethod: "token" | "password"): NavItem[] {
   return [
     { to: paths.dashboard, label: "Dashboard", current: route.page === "dashboard" },
     { to: paths.runs, label: "Runs", current: route.page === "runs" || route.page === "new-run" || route.page === "run" },
     { to: paths.playground, label: "Playground", current: route.page === "playground" },
     { to: paths.safety, label: "Safety", current: route.page === "safety" },
+    // The member routes exist only in password mode.
+    ...(authMethod === "password" ? [{ to: paths.members, label: "Members", current: route.page === "members" }] : []),
   ];
 }
 
@@ -41,7 +49,12 @@ function NotFound() {
   );
 }
 
-function CurrentPage({ route, playground }: { route: Route; playground: PlaygroundState }) {
+function CurrentPage({ route, playground, authMethod, viewer }: {
+  route: Route;
+  playground: PlaygroundState;
+  authMethod: "token" | "password";
+  viewer: User | null;
+}) {
   switch (route.page) {
     case "dashboard":
       return <Dashboard />;
@@ -78,6 +91,8 @@ function CurrentPage({ route, playground }: { route: Route; playground: Playgrou
           />
         </>
       );
+    case "members":
+      return authMethod === "password" ? <Members viewerId={viewer?.id ?? null} /> : <MembersUnavailable />;
     case "design":
       if (DesignPreview === null) return <NotFound />;
       return <Suspense fallback={<Loading />}><DesignPreview /></Suspense>;
@@ -87,21 +102,39 @@ function CurrentPage({ route, playground }: { route: Route; playground: Playgrou
 }
 
 /** The frame with what it needs from the current workspace. */
-function Shell({ route, children }: { route: Route; children: React.ReactNode }) {
+function Shell({ nav, account, children }: { nav: NavItem[]; account?: React.ReactNode; children: React.ReactNode }) {
   const { current } = useCurrentWorkspace();
-  return <AppShell nav={navItems(route)} heldCount={useHeldCount(current?.id ?? null)}>{children}</AppShell>;
+  return (
+    <AppShell nav={nav} heldCount={useHeldCount(current?.id ?? null)} workspace={<WorkspaceSwitcher />} account={account}>
+      {children}
+    </AppShell>
+  );
 }
 
+/**
+ * Signing out remounts the session, so nothing held for the signed-in person
+ * survives: playground state, polling and open event streams all go with it.
+ */
 export default function App() {
+  const [session, setSession] = useState<{ id: number; notice: string | null }>({ id: 0, notice: null });
+  const onSignedOut = useCallback((notice: string | null) => {
+    navigate(paths.dashboard, { replace: true });
+    setSession((previous) => ({ id: previous.id + 1, notice }));
+  }, []);
+  return <AppSession key={session.id} notice={session.notice} onSignedOut={onSignedOut} />;
+}
+
+function AppSession({ notice, onSignedOut }: { notice: string | null; onSignedOut: (notice: string | null) => void }) {
   const route = useRoute();
   const playground = usePlayground();
   const { bootstrap, openAdmin } = playground;
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(notice);
   const [busy, setBusy] = useState(false);
   const [authRequired, setAuthRequired] = useState<boolean | null>(null);
   const [authInput, setAuthInput] = useState("");
   const [authMethod, setAuthMethod] = useState<"token" | "password">("token");
   const [emailInput, setEmailInput] = useState("");
+  const [viewer, setViewer] = useState<User | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -123,6 +156,23 @@ export default function App() {
   useEffect(() => {
     if (onSafetyPage) openAdmin();
   }, [onSafetyPage, openAdmin]);
+
+  const signedIn = authRequired === false && authMethod === "password";
+  useEffect(() => {
+    if (!signedIn) return;
+    let mounted = true;
+    membersApi
+      .me()
+      .then((user) => {
+        if (mounted) setViewer(user);
+      })
+      .catch(() => {
+        // The account menu still offers signing out without the name.
+      });
+    return () => {
+      mounted = false;
+    };
+  }, [signedIn]);
 
   const unlock = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -202,8 +252,13 @@ export default function App() {
 
   return (
     <CurrentWorkspaceProvider>
-      <Shell route={route}>
-        <CurrentPage route={route} playground={playground} />
+      <Shell
+        nav={navItems(route, authMethod)}
+        account={authMethod === "password"
+          ? <AccountMenu user={viewer} onSignOut={async () => onSignedOut(await signOut())} />
+          : undefined}
+      >
+        <CurrentPage route={route} playground={playground} authMethod={authMethod} viewer={viewer} />
       </Shell>
     </CurrentWorkspaceProvider>
   );

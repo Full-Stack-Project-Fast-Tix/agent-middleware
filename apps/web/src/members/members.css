@@ -1,0 +1,244 @@
+.members-page h2 {
+  font-size: var(--text-15);
+  font-weight: 600;
+}
+
+.members-readonly {
+  max-width: 72ch;
+}
+
+.members-feedback {
+  display: grid;
+  gap: 8px;
+}
+
+.members-feedback:has(> .members-notice[hidden]:only-child) {
+  display: none;
+}
+
+.members-error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  padding: 8px 12px;
+  border-left: 3px solid var(--blocked);
+  background: var(--blocked-tint);
+}
+
+.members-error span {
+  max-width: 72ch;
+}
+
+.members-notice {
+  padding: 8px 12px;
+  border-left: 3px solid var(--passed);
+  background: var(--passed-tint);
+}
+
+.members-notice[hidden] {
+  display: none;
+}
+
+.member-person strong {
+  font-weight: 600;
+}
+
+.member-you {
+  margin-left: 8px;
+  padding: 0 4px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-control);
+  color: var(--steel);
+  font-size: var(--text-13);
+}
+
+.member-email {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.member-role {
+  width: 240px;
+}
+
+.member-role select {
+  width: 160px;
+}
+
+.member-only-admin {
+  display: block;
+  max-width: 32ch;
+  margin-top: 2px;
+}
+
+.member-joined {
+  width: 140px;
+}
+
+.member-actions {
+  width: 96px;
+  text-align: right;
+}
+
+.data-table .member-actions {
+  text-align: right;
+}
+
+.member-actions .button:disabled {
+  border-color: transparent;
+  background: transparent;
+}
+
+.data-table .member-confirm td {
+  height: auto;
+  background: var(--held-tint);
+}
+
+.member-confirm div {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.member-confirm span {
+  flex: 1 1 280px;
+  max-width: 72ch;
+}
+
+.data-table tbody .member-confirm:hover {
+  background: transparent;
+}
+
+.members-add {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+  max-width: 720px;
+}
+
+.members-add label {
+  display: grid;
+  gap: 4px;
+  font-size: var(--text-13);
+  font-weight: 500;
+}
+
+.members-add label input {
+  height: 32px;
+  margin-top: 0;
+  padding: 4px 8px;
+  border-color: var(--control-edge);
+}
+
+.members-add label:first-child {
+  flex: 1 1 260px;
+}
+
+.members-add label:nth-child(2) {
+  flex: 0 1 180px;
+}
+
+.members-roles {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.members-roles div {
+  display: grid;
+  grid-template-columns: 140px minmax(0, 72ch);
+  gap: 12px;
+}
+
+.members-roles dt {
+  font-weight: 500;
+}
+
+.members-roles dd {
+  margin: 0;
+  color: var(--steel);
+}
+
+/* On phones each person becomes a stacked block, so nothing scrolls sideways. */
+@media (max-width: 640px) {
+  .members-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+
+  .members-table .data-table,
+  .members-table tbody {
+    display: block;
+  }
+
+  .members-table .member-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px 12px;
+    padding: 12px;
+    border-bottom: 1px solid var(--rule);
+  }
+
+  .members-table .member-row td {
+    display: block;
+    width: auto;
+    height: auto;
+    padding: 0;
+    border: 0;
+  }
+
+  .members-table .member-person,
+  .members-table .member-joined {
+    grid-column: 1 / -1;
+  }
+
+  .members-table .member-joined {
+    order: 1;
+    color: var(--steel);
+    font-size: var(--text-13);
+  }
+
+  .members-table .member-role select {
+    width: 100%;
+    min-height: 44px;
+  }
+
+  .members-table .member-actions .button {
+    min-height: 44px;
+  }
+
+  .members-table .member-confirm {
+    display: block;
+    border-bottom: 1px solid var(--rule);
+  }
+
+  .data-table .member-confirm td {
+    display: block;
+    border: 0;
+  }
+
+  .members-roles div {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
+
+  .members-add .button,
+  .members-add select {
+    min-height: 44px;
+  }
+
+  .members-add label input {
+    height: 44px;
+  }
+
+  .members-add label:nth-child(2) {
+    flex: 1 1 100%;
+  }
+}

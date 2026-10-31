@@ -10,6 +10,7 @@ export type Route =
   | { page: "run"; runId: string }
   | { page: "playground" }
   | { page: "safety" }
+  | { page: "members" }
   | { page: "design" }
   | { page: "not-found" };
 
@@ -22,6 +23,7 @@ export const paths = {
   run: (runId: string): string => `/runs/${runId}`,
   playground: "/playground",
   safety: "/safety",
+  members: "/members",
   design: "/design",
 } as const;
 
@@ -39,6 +41,8 @@ export function parseRoute(pathname: string): Route {
       return { page: "playground" };
     case paths.safety:
       return { page: "safety" };
+    case paths.members:
+      return { page: "members" };
     case paths.design:
       return { page: "design" };
   }
