@@ -27,9 +27,11 @@ export function GateLine({ label = "Actions and decisions", proposalHeading = "T
   );
 }
 
-export function GateRow({ proposal, caption, decision, decisionLabel, reason, time, fresh = false, selected = false, onSelect, selectLabel, actions }: {
+export function GateRow({ proposal, proposalMissing, caption, decision, decisionLabel, reason, time, fresh = false, selected = false, onSelect, selectLabel, actions }: {
   /** What the agent proposed. Agent-authored, so it renders as foreign material. */
   proposal?: ReactNode;
+  /** A trusted statement that the proposal was not saved. Never leave the side blank. */
+  proposalMissing?: ReactNode;
   /** Trusted line above the proposal, for instance "Command" or "File change". */
   caption?: ReactNode;
   /**
@@ -54,7 +56,9 @@ export function GateRow({ proposal, caption, decision, decisionLabel, reason, ti
   actions?: ReactNode;
 }) {
   const classes = ["gate-row", fresh ? "gate-row-fresh" : null, selected ? "gate-row-selected" : null].filter(Boolean).join(" ");
-  const proposalBody = proposal !== undefined && <Foreign preformatted>{proposal}</Foreign>;
+  const proposalBody = proposal !== undefined
+    ? <Foreign preformatted>{proposal}</Foreign>
+    : proposalMissing !== undefined && <span className="gate-missing">{proposalMissing}</span>;
   return (
     <li className={classes}>
       <div className="gate-cell gate-cell-proposal gate-proposal">

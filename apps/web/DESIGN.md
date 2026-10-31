@@ -153,7 +153,7 @@ From `src/ui`:
 | `EmptyState` | `title`, `action`, children | Say what to do next and offer the action. |
 | `ErrorState` | `title`, `message`, `onRetry`, `retryLabel` | Say what happened and how to fix it. |
 | `GateLine` | `label`, `proposalHeading`, `decisionHeading` | Wraps `GateRow`s, oldest first. |
-| `GateRow` | `proposal`, `caption`, `decision`, `decisionLabel`, `reason`, `time`, `fresh`, `selected`, `onSelect`, `selectLabel`, `actions` | One entry. `decision={null}` is a non-decision entry such as a task starting. Set `fresh` only on a row that just arrived live. `proposal` renders as foreign material. |
+| `GateRow` | `proposal`, `proposalMissing`, `caption`, `decision`, `decisionLabel`, `reason`, `time`, `fresh`, `selected`, `onSelect`, `selectLabel`, `actions` | One entry. `decision={null}` is a non-decision entry such as a task starting. Set `fresh` only on a row that just arrived live. `proposal` renders as foreign material. When it was not saved, say so with `proposalMissing`, never a blank. |
 | `AppShell` | `nav`, `heldCount`, `workspace`, `account` | The frame, used once in `App.tsx`. `heldCount={null}` hides the count: never show "Held 0" unless the app has actually counted. |
 
 Helper classes: `.page`, `.page-section`, `.cluster` (a wrapping row with a gap), `.meta`

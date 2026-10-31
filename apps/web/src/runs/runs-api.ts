@@ -3,14 +3,19 @@ import {
   apiPaths,
   approvalResponseSchema,
   followRunEvents,
+  runListResponseSchema,
   runResponseSchema,
   runSnapshotResponseSchema,
+  runTimelineResponseSchema,
   type Agent,
   type Approval,
   type CreateRunRequest,
   type Run,
   type RunEvent,
+  type RunListResponse,
   type RunSnapshot,
+  type RunStatus,
+  type RunTimeline,
   type WorkspaceSummary,
   workspacesResponseSchema,
 } from "@launchpad/shared";
@@ -31,6 +36,23 @@ export const runsApi = {
 
   createRun: async (workspaceId: string, body: CreateRunRequest): Promise<Run> =>
     runResponseSchema.parse(await request(apiPaths.runs(workspaceId), { method: "POST", body: JSON.stringify(body) })).run,
+
+  /** A page of the workspace's runs, newest first. Includes the workspace's total of pending approvals. */
+  listRuns: async (
+    workspaceId: string,
+    query: { limit?: number; status?: RunStatus; cursor?: string } = {},
+  ): Promise<RunListResponse> => {
+    const params = new URLSearchParams();
+    if (query.limit !== undefined) params.set("limit", String(query.limit));
+    if (query.status !== undefined) params.set("status", query.status);
+    if (query.cursor !== undefined) params.set("cursor", query.cursor);
+    const search = params.toString();
+    return runListResponseSchema.parse(await request(apiPaths.runs(workspaceId) + (search ? `?${search}` : "")));
+  },
+
+  /** Saved decisions at the gate. Not pushed, so callers refetch: see useRunTimeline. */
+  timeline: async (runId: string): Promise<RunTimeline> =>
+    runTimelineResponseSchema.parse(await request(apiPaths.runTimeline(runId))).timeline,
 
   snapshot: async (runId: string): Promise<RunSnapshot> =>
     runSnapshotResponseSchema.parse(await request(apiPaths.runSnapshot(runId))).snapshot,
