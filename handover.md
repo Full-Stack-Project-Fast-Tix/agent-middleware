@@ -1,8 +1,8 @@
 # Team handover: next steps
 
-**Prepared:** 26 October 2026
+**Prepared:** 31 October 2026
 
-**Repository state reviewed:** `feat/security`, including the P1 runtime commits and merged PR #8. This is a working handoff, not a claim that the project is production-ready.
+**Repository state reviewed:** `main`, including the P1 runtime commits and merged PRs #8 and #9. This is a working handoff, not a claim that the project is production-ready.
 
 ## Current state
 
@@ -30,7 +30,7 @@ These are the recommended defaults so work can move without waiting for another 
 **Now**
 
 - **Done in this follow-up:** corrected the canonical security invariant in [`CLAUDE.md`](CLAUDE.md). Middleware-managed executions use `workspace-write` confined to the per-run workspace with `untrusted` approvals; capabilities decide which proposals are allowed, not whether the approval gate exists.
-- **Done:** added default working-copy exclusions for known environment-secret patterns and common credential stores/files, retaining example templates. Keep the limitation explicit: a filename denylist is not general secret detection. P2 can review the defaults alongside orchestration changes.
+- **Done:** added default working-copy exclusions for known environment-secret patterns and common credential stores/files, retaining example templates, and reconciled them with the egress guard's `DEFAULT_SENSITIVE_MARKERS`. A test now fails if a new marker has no recorded decision. Keep the limitation explicit: a filename denylist is not general secret detection. P2 can review the defaults alongside orchestration changes; nothing is waiting on that review.
 - Keep the file-change approval and network-denial probe in the runtime upgrade checklist. The actual Codex behavior is version-sensitive; rerun the probe whenever the pinned image changes.
 
 **Later / joint work**
@@ -78,7 +78,7 @@ These are the recommended defaults so work can move without waiting for another 
 | Work | Can start now? | Dependency / handoff |
 | --- | --- | --- |
 | P1 canonical security-guide correction | Yes | Independent. |
-| P1/P2 secret exclusion from working copies | Yes | P1 defines/reviews the denylist; P2 changes copy behavior and tests it. Neither needs to wait for P3/P4. |
+| P1/P2 secret exclusion from working copies | Implemented | P1 keeps the denylist in step with the egress guard; P2 preserves it and its tests during orchestration changes. Nothing waits on P3/P4. |
 | P2 task-completion semantics | Yes | P2 can use existing `Task.failed`/`error`; ask P4 to review only if a shared schema or event changes. |
 | P3 sign-in throttling and DB test coverage | Yes | Independent of P2/P4 UI work. |
 | P4 app shell and Dashboard | Yes | Can proceed against the existing routes/contracts. |
@@ -89,8 +89,8 @@ These are the recommended defaults so work can move without waiting for another 
 
 ## Suggested order
 
-1. P1 and P2 review the secret-copy exclusions and close the false-completion path; P1 has updated the canonical sandbox guidance.
+1. P2 closes the false-completion path; P1 has updated the canonical sandbox guidance and the secret-copy exclusions.
 2. P3 adds sign-in throttling and keeps PostgreSQL CI coverage active while P4 builds the shell and Dashboard in parallel.
 3. P2 and P3 implement terminal-artifact retention after the 30-day rule is accepted in code/docs.
-4. P4 reconciles stale docs and integrates P3's admin workflows.
+4. P4 keeps status docs aligned as work lands and integrates P3's admin workflows.
 5. Revisit nested delegation and production isolation only after the single-level flow, completion reporting, persistence, and operator UI work end to end.

@@ -163,8 +163,9 @@ single-agent path above, which is unchanged. These parts exist:
 
 Multi-agent run copies omit `.env` and `.env.*` except example/sample/template
 files, common credential stores and filenames, and selected private-key/state
-file extensions. This is a filename-based denylist, not a general secret
-scanner; secrets stored under unrecognized names may still be copied. See
+file extensions. Folders named `secrets` are omitted even when they hold source
+code. This is a filename-based denylist, not a general secret scanner; secrets
+stored under unrecognized names may still be copied. See
 [`working-copies.ts`](../apps/server/src/orchestrator/working-copies.ts) for
 the exact defaults.
 
