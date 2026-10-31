@@ -216,7 +216,10 @@ any role may read; `developer` and `security_admin` may also start and cancel
 Runs and answer approvals; `auditor` only reads. `npm run db:admin -w
 @launchpad/server` adds users, workspaces (with the four standard agents and
 the platform baseline policy) and members. The default `token` mode is
-unchanged, and `npm run dev:demo` still runs the simulated demo.
+unchanged, and `npm run dev:demo` still runs the simulated demo. An attempt's
+bounded, redacted raw trace is read through
+`GET /api/runs/:runId/executions/:executionId/trace`, under the same workspace
+check as the other run routes.
 
 Not built yet, by owner:
 - **P3:** an admin UI for users, workspaces and members, limits on sign-in

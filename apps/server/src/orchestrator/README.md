@@ -21,7 +21,7 @@ always the middleware's decision
 | `planner.ts` | `ModelPlanner`: one tool-less model call returning the plan as JSON. It sees the request and the agent catalogue, never workspace content. |
 | `task-prompt.ts` | What a specialist is told: its objective, plus earlier results fenced with a per-prompt nonce and marked as data. |
 | `ports.ts` | The interfaces the orchestrator depends on: `RunStore`, `AgentDirectory`, `ExecutionRuntime`, `WorkingCopies` and `ActionGate`. |
-| `in-memory-run-store.ts` | `RunStore` in memory, publishing RunEvents with per-run seqs. Used until the PostgreSQL repositories land. |
+| `in-memory-run-store.ts` | `RunStore` in memory, publishing RunEvents with per-run seqs. Used by tests and by `dev:demo` without `DATABASE_URL`; real Runs use `PostgresRunStore`. |
 | `codex-execution-runtime.ts` | `CodexExecutionRuntime`: one execution, one disposable container, the Run's working copy at `/workspace`, its own trace file. Drives the turn with `../gated-turn.ts`. |
 | `working-copies.ts` | `DirectoryWorkingCopies`: copies the workspace to `<root>/<runId>/workspace` once per Run. Skips dependencies, local tool/credential stores, environment secrets, and common private-key files; keeps example environment templates and copies other symlinks as links. |
 
@@ -108,9 +108,9 @@ Changing any of these is a contract change: record it in
 
 - **RunEvents** come only from `RunStore` writes. The orchestrator emits no
   event types beyond those in `packages/shared/src/events.ts`.
-- **HTTP:** the four routes in `../run-routes.ts`, exactly as in `api.ts`.
+- **HTTP:** the routes in `../run-routes.ts`, exactly as in `api.ts`.
 - **`RunStore`, `AgentDirectory`, `ExecutionRuntime`, `WorkingCopies`** in
-  `ports.ts`. P3 implements the first two against PostgreSQL.
+  `ports.ts`. P3 implemented the first two against PostgreSQL.
 - **Audit:** the table above.
 
 ## Wiring it into the server
