@@ -63,6 +63,24 @@ describe.skipIf(!url)("PostgresIdentity", () => {
     expect(await identity.userForToken(session.token)).toBeNull();
   });
 
+  it("takes about as long for an unknown email as for a wrong password", async () => {
+    await addUser(pool!, { email: "timing@example.test", name: "Timing", password: PASSWORD });
+    const identity = new PostgresIdentity(pool!);
+    const median = async (email: string) => {
+      const times: number[] = [];
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        const started = performance.now();
+        expect(await identity.signIn(email, "wrong password")).toBeNull();
+        times.push(performance.now() - started);
+      }
+      return times.sort((a, b) => a - b)[2]!;
+    };
+    // Both run one scrypt, which dwarfs the query. A generous bound, so a busy CI machine does not fail it.
+    const [wrong, unknown] = [await median("timing@example.test"), await median("nobody@example.test")];
+    expect(unknown).toBeGreaterThan(wrong / 3);
+    expect(unknown).toBeLessThan(wrong * 3);
+  });
+
   it("refuses a session once it has expired", async () => {
     await addUser(pool!, { email: "late@example.test", name: "Late", password: PASSWORD });
     let now = new Date("2026-10-01T00:00:00.000Z");
