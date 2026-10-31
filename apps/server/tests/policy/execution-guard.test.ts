@@ -106,7 +106,6 @@ class GuardSource implements SecurityExecutionSource {
       [NEXT_TASK_ID, { workspaceId: WORKSPACE_ID, runId: RUN_ID }],
     ]),
     capabilities: AgentProfile["capabilities"] = ALL_CAPABILITIES,
-    private readonly policies: SecurityPolicy[] = [platformPolicy],
   ) {
     this.profiles = [makeProfile(PROFILE_ID, capabilities)];
   }
@@ -120,7 +119,7 @@ class GuardSource implements SecurityExecutionSource {
   }
 
   async listSecurityPolicies(): Promise<unknown[]> {
-    return this.policies;
+    return [platformPolicy];
   }
 
   async getExecutionFacts(context: SecurityContext) {
@@ -148,7 +147,6 @@ interface GuardOptions {
   taskIdentities?: Map<string, { workspaceId: string; runId: string }>;
   checks?: Check[];
   semanticMonitor?: SemanticIntentMonitor;
-  policies?: SecurityPolicy[];
 }
 
 async function openGuard(options: GuardOptions = {}) {
@@ -156,7 +154,6 @@ async function openGuard(options: GuardOptions = {}) {
     options.delegationDepth,
     options.taskIdentities,
     options.capabilities,
-    options.policies,
   );
   const middleware = new DefaultSecurityMiddleware({
     config: loadConfig({ NODE_ENV: "test" }),
@@ -952,13 +949,6 @@ describe("ExecutionGuard context handoffs", () => {
 });
 
 describe("ExecutionGuard actions that always ask a person", () => {
-  const allowEdits = { rules: { requireApproval: ["file_change"] } };
-  const edit = {
-    type: "file_change" as const,
-    actionId: "edit-1",
-    changes: [{ path: "src/feature.ts", kind: "update" as const, diff: "+const a = 1;\n", movePath: null }],
-  };
-
   it("holds a high-consequence command even with no semantic monitor", async () => {
     const guard = await openGuard();
     const decision = await guard.evaluate({ type: "command", actionId: "push", command: "git push origin main", cwd: null });
@@ -966,24 +956,11 @@ describe("ExecutionGuard actions that always ask a person", () => {
     expect(await guard.recordApprovalOutcome("push", "approved")).toMatchObject({ outcome: "allow" });
   });
 
-  it("lets an ordinary command and edit through when no policy asks", async () => {
+  it("lets an ordinary command and edit through", async () => {
     const guard = await openGuard();
     expect((await guard.evaluate({ type: "command", actionId: "test", command: "npm test", cwd: null })).outcome).toBe("allow");
+    const edit = { type: "file_change" as const, actionId: "edit-1", changes: [{ path: "src/feature.ts", kind: "update" as const, diff: "+const a = 1;\n", movePath: null }] };
     expect((await guard.evaluate(edit)).outcome).toBe("allow");
-  });
-
-  it("holds every edit when a policy says so", async () => {
-    const guard = await openGuard({ policies: [{ ...platformPolicy, ...allowEdits }] });
-    expect(await guard.evaluate(edit)).toMatchObject({ outcome: "require_approval", approvalReason: "policy_required" });
-    expect((await guard.evaluate({ type: "command", actionId: "test", command: "npm test", cwd: null })).outcome).toBe("allow");
-  });
-
-  it("does not ask about what a capability already refused", async () => {
-    const guard = await openGuard({
-      capabilities: { ...ALL_CAPABILITIES, write: false },
-      policies: [{ ...platformPolicy, ...allowEdits }],
-    });
-    expect((await guard.evaluate(edit)).outcome).toBe("block");
   });
 });
 

@@ -348,8 +348,13 @@ Two small writes make this possible, neither a schema change:
 | File lists on decisions saved before this change, unless the action went to a person. | `fileChanges.entriesWithoutFileList` | None; these rows age out of view. |
 | Strict order within one millisecond. `audit_events` has no creation sequence. | Not visible to clients | `ALTER TABLE audit_events ADD COLUMN created_seq bigint GENERATED ALWAYS AS IDENTITY`, as migration 002 did for tasks, executions, findings and approvals. |
 
-P3 owns migrations, so none of these were added here. P1 should decide whether
-command text may be stored at all before `gate_actions` is built.
+P3 owns migrations, so none of these were added here. P1 decided that command
+text will not be added to permanent audit rows or a `gate_actions` table for
+the current milestone. Commands can contain credentials and arbitrary source
+text, and a redaction miss in durable rows is harder to remove than a retained
+artifact. The timeline therefore keeps `proposed: null` for commands that did
+not require human approval. A future command-history feature needs a new P1
+review, bounded and erasable storage, and the artifact-retention rules below.
 
 **Why:** The gate-line view needs what was proposed and what was decided, from
 evidence that survives a restart. Saying "not saved" is more accurate than
@@ -386,8 +391,8 @@ email, which does not exist.
 
 ## 16. An attempt's trace is read through a run route
 
-**Decision:** Add `GET /api/runs/:runId/executions/:executionId/trace`
-(`apiPaths.executionTrace`). Any role in the Run's workspace may read it, and a
+**Decision (amended 31 October 2026):** Add `GET /api/runs/:runId/executions/:executionId/trace`
+(`apiPaths.executionTrace`). A `developer` or `security_admin` in the Run's workspace may read it, and a
 Run in a workspace the caller cannot access answers 404 like the other run
 routes. It serves the bounded raw trace as `application/x-ndjson`, read whole so
 the outbound redaction hook applies, and reports what it changed in
@@ -400,11 +405,46 @@ browser could open. Reading through the Run keeps workspace access in one place.
 
 **Limit:** Pattern redaction does not make a raw trace safe in general: it can
 still hold sensitive material the patterns miss, and a rolling trace is not a
-complete audit history. Read access for `auditor` follows "any role may read";
-the owners may want to narrow it for raw traces. Owners to review: P1 (exposure
-of trace content), P3 (access rule), P4 (contract).
+complete audit history. An `auditor` uses the bounded, redacted timeline and
+snapshot rather than this raw artifact. The narrower rule prevents a read-only
+role intended for durable audit evidence from gaining access to a more
+sensitive and incomplete debugging artifact.
 
-## 17. Who may answer an approval
+## 17. A completed turn must report whether its Task is complete
+
+**Decision (31 October 2026):** Every specialist's final response is exactly a
+strict JSON object with `status: "complete" | "incomplete"` and a non-empty,
+bounded `summary`. Markdown fences, surrounding prose, extra fields, a missing
+report and an invalid report do not satisfy the contract.
+
+The runtime validates the report. The `AgentExecution` is `completed` when the
+Codex turn itself ended successfully. The Task becomes `completed` only for a
+valid `complete` report. An `incomplete`, missing or invalid report stores the
+available output, marks the Task `failed`, skips its dependants and fails the
+Run. It is not retried: repeating a successfully ended turn is neither evidence
+of a transient runtime fault nor a safe way to obtain a different answer.
+
+This is an agent report, not independent proof that the work is correct. Tests,
+review and the security middleware remain separate evidence. The existing Task
+status and error fields express the result; no new shared lifecycle status is
+needed.
+
+## 18. Terminal execution artifacts expire after 30 days
+
+**Decision (31 October 2026):** Run working copies and raw execution traces are
+retained for 30 days after a Run reaches a terminal state. Cleanup must never
+remove artifacts for a queued, planning, running or approval-waiting Run. Audit
+rows, statuses, bounded findings and saved task results remain after artifact
+expiry. A missing expired artifact is reported as expired rather than as proof
+that no execution occurred.
+
+P2 owns these lifecycle semantics. P3 owns the cleanup job, storage operations
+and any schema needed to distinguish expiry from an unexpected missing file.
+The 30-day value is the POC default. `apps/server/src/run-retention.ts` does the
+cleanup, `RUN_ARTIFACT_RETENTION_DAYS` overrides the value, and no schema was needed:
+a missing trace of a Run past retention answers 410, and any other answers 404.
+
+## 19. Who may answer an approval
 
 **Decision (31 October 2026):** The work plan's section 3.8 default is now
 enforced. A `policy_required` approval needs a `security_admin` of the workspace.
@@ -417,33 +457,30 @@ If that person is away, the approval times out and declines only that action,
 which is the safe outcome. The plan calls this a proposed default for the team to
 confirm, so changing it means changing `mayAnswerApproval` and this entry.
 
-## 18. What always asks a person
+## 20. What always asks a person
 
-**Decision (31 October 2026):** Three things now produce a `require_approval`
-in multi-agent runs, in this order of precedence:
+**Decision (31 October 2026):** Two things produce a `require_approval` in
+multi-agent runs:
 
-1. An action type listed in a policy's `rules.requireApproval` gives
-   `policy_required`, answered by a Security Admin.
-2. A command that `isHighConsequenceCommand` matches, such as `git push` or a
+1. A command that `isHighConsequenceCommand` matches, such as `git push` or a
    deploy, gives `high_consequence`. The single-agent path already did this.
-3. The semantic monitor being unsure or unavailable gives `semantic_uncertainty`
+2. The semantic monitor being unsure or unavailable gives `semantic_uncertainty`
    or `semantic_unavailable`, as before.
 
 An ordinary edit does **not** ask by default. Holding every edit would interrupt
 most benign runs, against the plan's target of at most 1 in 10, and an unanswered
-approval declines the action. A workspace that wants every edit held adds a
-workspace policy with `{ "requireApproval": ["file_change"] }`.
+approval declines the action. Blocks run first, so a capability refusal or a
+violation never turns into a question.
 
-`rules` at `rulesSchemaVersion` 1 is `policyRulesSchema`, which has only this one
-rule. It is strict: an unknown key or action type still fails policy resolution,
-so a rule is never silently ignored. Blocks run first, so a capability refusal or
-a violation never turns into a question.
+Nothing produces `policy_required` yet. A rule such as "every edit asks" would need
+a rules schema, and P1 reviews any such schema before it is enabled, so
+`policyRulesSchema` accepts no rules and anything else still fails closed.
 
 Delegations now get the semantic review too, on every delegation, against the
 trusted user prompt. That closes the "steered supervisor" row of the threat model
 at the semantic layer; the capability, depth and target checks still run first.
 
-## 19. Editing agents, profiles and policies
+## 21. Editing agents, profiles and policies
 
 **Decision (31 October 2026):** The routes are in `packages/shared/src/api.ts`.
 Any role reads. Developers and Security Admins add and edit agents, because the
@@ -459,17 +496,17 @@ rules before and after. Agent events record which fields changed but not the
 instruction text, which can hold anything. DELETE archives.
 
 `POST` and `PATCH` validate rules with `policyRulesSchema`, so a rule the resolver
-would refuse is a 400 and cannot stop every run in the workspace. A second enabled
+would refuse is a 400 and cannot stop every run in the workspace (decision 20). A second enabled
 agent that may delegate is a 409, because `auto` runs need exactly one.
 
-## 20. Paging cursors stay plain text
+## 22. Paging cursors stay plain text
 
 **Decision (31 October 2026):** A cursor is `<milliseconds>_<id>`, still opaque to
 clients. The earlier base64 JSON was replaced by the outbound redactor as a
 possible secret, so every second page over HTTP answered 400 "Unknown cursor". A
 cursor must not look like a credential.
 
-## 21. Token-mode records are not migrated to PostgreSQL
+## 23. Token-mode records are not migrated to PostgreSQL
 
 **Decision (31 October 2026):** The plan's JSON-to-Postgres migration is dropped.
 Token mode remains a working path on its own JSON store, as `CLAUDE.md` requires,

@@ -50,6 +50,8 @@ export interface RunRoutesOptions {
   runAudit(runId: string, eventType: AuditEventType, limit: number): Promise<RunAudit>;
   /** To find which run, and so which workspace, an approval belongs to. */
   approval(approvalId: string): Promise<Approval | null>;
+  /** Days a finished Run's files are kept, to tell an expired trace from a missing one. 0 keeps them forever. */
+  artifactRetentionDays?: number;
   /** Who is making the request. */
   currentUserId(request: FastifyRequest): string;
   /** The user's role in the workspace, or null when they may not see it. */
@@ -61,6 +63,7 @@ export interface RunRoutesOptions {
 }
 
 const ACTING_ROLES: ReadonlySet<WorkspaceRole> = new Set(["developer", "security_admin"]);
+const RAW_TRACE_ROLES: ReadonlySet<WorkspaceRole> = new Set(["developer", "security_admin"]);
 
 const workspaceParams = z.object({ workspaceId: z.guid() });
 const runParams = z.object({ runId: z.guid() });
@@ -147,14 +150,24 @@ export function registerRunRoutes(app: FastifyInstance, options: RunRoutesOption
    */
   app.get("/api/runs/:runId/executions/:executionId/trace", async (request, reply) => {
     const { runId, executionId } = executionParams.parse(request.params);
-    const { snapshot } = await readableSnapshot(request, runId);
+    const { snapshot, role } = await readableSnapshot(request, runId);
+    if (!RAW_TRACE_ROLES.has(role)) {
+      throw new HttpError(403, `The ${role} role cannot read raw execution traces`);
+    }
     const execution = snapshot.executions.find((candidate) => candidate.id === executionId);
     if (execution === undefined) throw new HttpError(404, "Execution not found");
     const contents = await readFile(traceFilePath(dataDirectory, execution.id), "utf8").catch((error: NodeJS.ErrnoException) => {
       if (error.code === "ENOENT") return null;
       throw error;
     });
-    if (contents === null) throw new HttpError(404, "No trace for this execution. It may have been removed after the retention period.");
+    if (contents === null) {
+      const completedAt = snapshot.run.completedAt === null || snapshot.run.completedAt === undefined ? null : Date.parse(snapshot.run.completedAt);
+      const days = options.artifactRetentionDays ?? 0;
+      if (completedAt !== null && days > 0 && Date.now() - completedAt > days * 86_400_000) {
+        throw new HttpError(410, `This trace expired ${days} days after the run finished.`);
+      }
+      throw new HttpError(404, "No trace for this execution");
+    }
     return reply.type("application/x-ndjson").send(contents);
   });
 

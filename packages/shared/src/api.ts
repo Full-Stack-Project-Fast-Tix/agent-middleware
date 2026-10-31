@@ -333,7 +333,7 @@ export const createRunRequestSchema = z.object({
 export type CreateRunRequest = z.input<typeof createRunRequestSchema>;
 
 /**
- * Who may answer a pending approval (contract decision 17): `policy_required`
+ * Who may answer a pending approval (contract decision 19): `policy_required`
  * needs a Security Admin of the workspace, and every other reason needs the
  * developer or Security Admin who started the Run. The server enforces this;
  * the web app uses it only to offer what the server will accept.
@@ -438,7 +438,7 @@ export type UpdateWorkspaceMemberRequest = z.infer<typeof updateWorkspaceMemberR
  *   GET /api/workspaces/:workspaceId/approvals  ApprovalListQuery -> ApprovalPage
  *   GET /api/workspaces/:workspaceId/audit      AuditListQuery    -> AuditPage
  *
- * Configuration, in password mode only (contract decision 19). Any role may
+ * Configuration, in password mode only (contract decision 21). Any role may
  * read. Developers and Security Admins may add and edit agents, but only a
  * Security Admin may give an existing agent another profile, or change profiles
  * and policies. A stale `expectedVersion` is a 409. DELETE archives, so history
@@ -475,7 +475,7 @@ export const effectivePermissionsResponseSchema = z.object({
   agents: z.array(
     z.object({
       agentId: idSchema,
-      policy: effectivePolicySchema.extend({ approvalActions: z.array(actionTypeSchema) }).nullable(),
+      policy: effectivePolicySchema.nullable(),
     }),
   ),
 });

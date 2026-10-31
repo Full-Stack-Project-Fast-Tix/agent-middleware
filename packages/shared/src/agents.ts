@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { auditTimestampsShape, idSchema, jsonObjectSchema, nonEmptyStringSchema, timestampSchema } from "./common.js";
-import { actionTypeSchema, policyScopeSchema } from "./enums.js";
+import { policyScopeSchema } from "./enums.js";
 
 /**
  * Least-privilege capability set (plan section 3.1: filesystem, shell/tool,
@@ -35,15 +35,8 @@ export type AgentCapabilities = z.infer<typeof agentCapabilitiesSchema>;
 /** A layer's upper bound. A missing key does not restrict that capability. */
 export const capabilityCeilingSchema = agentCapabilitiesSchema.partial();
 
-/**
- * `SecurityPolicy.rules` at `rulesSchemaVersion` 1 (contract decision 18). Strict:
- * a rule this does not know fails policy resolution rather than being ignored.
- */
-export const policyRulesSchema = z.strictObject({
-  /** These action types always wait for a Security Admin. */
-  requireApproval: z.array(actionTypeSchema).optional(),
-});
-export type PolicyRules = z.infer<typeof policyRulesSchema>;
+/** `SecurityPolicy.rules` at version 1: none yet. A rule stays unsupported until P1 has reviewed its schema. */
+export const policyRulesSchema = z.strictObject({});
 export type CapabilityCeiling = z.infer<typeof capabilityCeilingSchema>;
 
 /** Soft delete. Archived rows stay referenced by history; they cannot be used for new work. */

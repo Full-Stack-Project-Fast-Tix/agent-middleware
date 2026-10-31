@@ -127,7 +127,6 @@ class FuzzMiddleware implements SecurityMiddleware {
     return {
       capabilities: CAPABILITIES[agentId]!,
       appliedPolicies: [],
-      approvalActions: [],
       runtime: { sandboxMode: "workspace-write", denyNetwork: true, approvalPolicy: "untrusted", semanticEnforcement: true, effectGating: true },
     };
   }
@@ -240,7 +239,14 @@ class FuzzRuntime implements ExecutionRuntime {
         if (decision.outcome === "block" && decision.stop === "execution") break;
       }
       if (crashing) throw new Error("crashed after acting");
-      return { output: `${script.output}\nTASK_STATUS: complete`, threadId: null, usage: null, tracePath: null, traceTruncated: false };
+      return {
+        output: script.output,
+        disposition: { status: "complete", summary: script.output },
+        threadId: null,
+        usage: null,
+        tracePath: null,
+        traceTruncated: false,
+      };
     } finally {
       this.active -= 1;
     }

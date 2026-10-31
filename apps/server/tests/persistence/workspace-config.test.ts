@@ -183,25 +183,22 @@ describe.skipIf(!url)("workspace configuration", () => {
     expect((await call("DELETE", apiPaths.workspaceProfile(team.id, agent.profile_id), team.admin)).statusCode).toBe(409);
   });
 
-  it("lets a workspace policy require approval, which then shows in effective permissions", async () => {
+  it("lets a workspace policy lower a ceiling, which then shows in effective permissions", async () => {
     const team = await workspace();
-    const body = { name: "Every edit asks", capabilityCeiling: { shell: false }, rules: { requireApproval: ["file_change"] } };
+    const body = { name: "No commands", capabilityCeiling: { shell: false } };
     expect((await call("POST", apiPaths.workspacePolicies(team.id), team.developer, body)).statusCode).toBe(403);
     const created = await call("POST", apiPaths.workspacePolicies(team.id), team.admin, body);
     expect(created.statusCode).toBe(201);
     const { policy } = policyResponseSchema.parse(created.json());
 
     const permissions = () => call("GET", apiPaths.workspaceEffectivePermissions(team.id), team.auditor).then((response) => effectivePermissionsResponseSchema.parse(response.json()).agents);
-    const first = (await permissions())[0]!.policy!;
-    expect(first.approvalActions).toEqual(["file_change"]);
-    expect(first.capabilities.shell).toBe(false);
+    expect((await permissions()).every((entry) => entry.policy?.capabilities.shell === false)).toBe(true);
 
     // Clearing a ceiling key stops restricting that capability; it is not left behind.
     const cleared = await call("PATCH", apiPaths.workspacePolicy(team.id, policy.id), team.admin, { capabilityCeiling: {}, expectedVersion: 1 });
     expect(policyResponseSchema.parse(cleared.json()).policy.capabilityCeiling).toEqual({});
 
     expect((await call("DELETE", apiPaths.workspacePolicy(team.id, policy.id), team.admin)).statusCode).toBe(204);
-    expect((await permissions())[0]!.policy!.approvalActions).toEqual([]);
   });
 
   it("refuses a rule nothing would enforce, so it cannot stop every run in the workspace", async () => {

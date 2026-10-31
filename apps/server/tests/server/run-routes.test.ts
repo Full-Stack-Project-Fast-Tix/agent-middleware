@@ -99,8 +99,8 @@ describe("an attempt's trace", () => {
     app = await createApp(config, {} as AgentService, { runs: options });
   }
 
-  it("serves the attempt's trace redacted, as JSON Lines, to any role in the workspace", async () => {
-    await startWithTrace(MINE, "auditor");
+  it("serves the attempt's trace redacted, as JSON Lines, to an acting role", async () => {
+    await startWithTrace(MINE, "developer");
     const response = await inject("GET", apiPaths.executionTrace(RUN, EXECUTION));
 
     expect(response.statusCode).toBe(200);
@@ -108,6 +108,15 @@ describe("an attempt's trace", () => {
     expect(response.body).not.toContain(SECRET);
     expect(response.headers["x-redactions"]).toBe("1");
     expect(() => JSON.parse(response.body.trim())).not.toThrow();
+  });
+
+  it("keeps raw traces from auditors, who use the bounded timeline instead", async () => {
+    await startWithTrace(MINE, "auditor");
+    const response = await inject("GET", apiPaths.executionTrace(RUN, EXECUTION));
+
+    expect(response.statusCode).toBe(403);
+    expect(response.json().error).toBe("The auditor role cannot read raw execution traces");
+    expect(response.body).not.toContain(SECRET);
   });
 
   it("answers 404 for a run in another workspace, like one that does not exist", async () => {
@@ -127,12 +136,36 @@ describe("an attempt's trace", () => {
     expect(response.json().error).toBe("Execution not found");
   });
 
+  it("says a finished run's trace expired, rather than that there never was one", async () => {
+    const config = loadConfig({ NODE_ENV: "test", APP_DATA_DIR: await mkdtemp(path.join(tmpdir(), "run-trace-")) });
+    const finished = (completedAt: string | null) =>
+      ({ run: { id: RUN, workspaceId: MINE, completedAt }, executions: [{ id: UNTRACED }] }) as unknown as RunSnapshot;
+    const answer = async (completedAt: string | null, artifactRetentionDays: number) => {
+      const options = {
+        snapshot: async () => finished(completedAt),
+        artifactRetentionDays,
+        currentUserId: () => VIEWER,
+        workspaceRole: async () => "developer",
+      } as unknown as RunRoutesOptions;
+      app = await createApp(config, {} as AgentService, { runs: options });
+      const { statusCode } = await inject("GET", apiPaths.executionTrace(RUN, UNTRACED));
+      await app.close();
+      return statusCode;
+    };
+    const longAgo = "2020-01-01T00:00:00.000Z";
+    expect(await answer(longAgo, 30)).toBe(410);
+    expect(await answer(new Date().toISOString(), 30)).toBe(404);
+    expect(await answer(null, 30)).toBe(404);
+    expect(await answer(longAgo, 0)).toBe(404);
+    app = await createApp(config, {} as AgentService);
+  });
+
   it("answers 404 for an execution with no trace file", async () => {
     await startWithTrace(MINE);
     const response = await inject("GET", apiPaths.executionTrace(RUN, UNTRACED));
 
     expect(response.statusCode).toBe(404);
-    expect(response.json().error).toBe("No trace for this execution. It may have been removed after the retention period.");
+    expect(response.json().error).toBe("No trace for this execution");
   });
 
   it("rejects an execution id that is not an id", async () => {

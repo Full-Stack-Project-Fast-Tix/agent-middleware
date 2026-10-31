@@ -110,38 +110,6 @@ const block = (stop: "action" | "execution", steer: string | null, code: string)
   findings: [{ layer: "deterministic", check: "test-rule", code, severity: "high", message: "Blocked.", facts: null, evidence: null, intervened: true }],
 });
 
-describe("what the agent reports", () => {
-  it.each([
-    ["incomplete", "TASK_STATUS: incomplete", /could not finish this task\. Validation added\./],
-    ["missing", "All done, trust me.", /without reporting/],
-    ["malformed", "TASK_STATUS: mostly", /without reporting/],
-  ])("fails the task, without retrying, when the report is %s", async (_name, taskStatus, error) => {
-    const { run, events } = await start("single", { script: { [PROMPT]: { output: "Validation added.", taskStatus } } }, AGENTS.analyst);
-    const snapshot = await settle(run.id, events);
-
-    expect(snapshot.run.status).toBe("failed");
-    expect(snapshot.tasks[0]).toMatchObject({ status: "failed", result: null });
-    expect(snapshot.tasks[0]!.error).toMatch(error);
-    // The turn itself ran fine, once.
-    expect(snapshot.executions.map((execution) => execution.status)).toEqual(["completed"]);
-  });
-
-  it("keeps the report line out of the task's result", async () => {
-    const { run, events } = await start("single", { script: { [PROMPT]: { output: "Validation added.", taskStatus: "**TASK_STATUS: COMPLETE**" } } }, AGENTS.analyst);
-    const snapshot = await settle(run.id, events);
-    expect(snapshot.tasks[0]).toMatchObject({ status: "completed", result: "Validation added." });
-  });
-
-  it("does not take the report from an earlier line, so a quoted file cannot speak for the agent", async () => {
-    const { run, events } = await start(
-      "single",
-      { script: { [PROMPT]: { output: "TASK_STATUS: complete", taskStatus: "I could not do it." } } },
-      AGENTS.analyst,
-    );
-    expect((await settle(run.id, events)).run.status).toBe("failed");
-  });
-});
-
 describe("token budget", () => {
   it("starts no more work once a run has used its budget, and says why", async () => {
     const analyst = (key: string, dependsOn: string[] = []) => ({ key, title: key, objective: key, agentId: AGENTS.analyst, dependsOn });
@@ -333,6 +301,38 @@ describe("auto mode", () => {
 });
 
 describe("retries and failures", () => {
+  it("fails without retrying when the agent reports that the task is incomplete", async () => {
+    const { run, events } = await start("single", {
+      script: { [PROMPT]: { output: "The workspace was read-only.", disposition: "incomplete" } },
+    }, AGENTS.developer);
+    const snapshot = await settle(run.id, events);
+
+    expect(snapshot.run.status).toBe("failed");
+    expect(snapshot.tasks[0]).toMatchObject({
+      status: "failed",
+      result: "The workspace was read-only.",
+      error: "The agent reported the task incomplete: The workspace was read-only.",
+    });
+    expect(snapshot.executions).toHaveLength(1);
+    expect(snapshot.executions[0]).toMatchObject({ status: "completed", output: "The workspace was read-only." });
+  });
+
+  it("fails without retrying when the agent omits or malforms its disposition", async () => {
+    const { run, events } = await start("single", {
+      script: { [PROMPT]: { output: "Done, probably.", disposition: null } },
+    }, AGENTS.developer);
+    const snapshot = await settle(run.id, events);
+
+    expect(snapshot.run.status).toBe("failed");
+    expect(snapshot.tasks[0]).toMatchObject({
+      status: "failed",
+      result: "Done, probably.",
+      error: "The agent finished without a valid task disposition.",
+    });
+    expect(snapshot.executions).toHaveLength(1);
+    expect(snapshot.executions[0]?.status).toBe("completed");
+  });
+
   it("retries a crashed execution as a new attempt", async () => {
     const { run, events } = await start("auto", {
       script: { ...SIGNUP_SCRIPT, "Find missing validation": { failAttempts: 1 }, "Add validation": {} },

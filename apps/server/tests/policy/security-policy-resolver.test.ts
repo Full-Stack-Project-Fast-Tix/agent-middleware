@@ -198,30 +198,6 @@ describe("resolveAgentPolicy", () => {
     ).rejects.toThrow("no active mandatory platform policy");
   });
 
-  it("collects the action types policies say must go to a person", async () => {
-    const resolved = await resolveAgentPolicy(
-      source({
-        policies: [
-          policy(PLATFORM_POLICY_ID, "platform", null, {}, { rules: { requireApproval: ["command"] } }),
-          policy(WORKSPACE_POLICY_ID, "workspace", WORKSPACE_ID, {}, { rules: { requireApproval: ["file_change", "command"] } }),
-        ],
-      }),
-      WORKSPACE_ID,
-      AGENT_ID,
-    );
-    expect(resolved.approvalActions.sort()).toEqual(["command", "file_change"]);
-  });
-
-  it("rejects an unknown action type in a known rule", async () => {
-    await expect(
-      resolveAgentPolicy(
-        source({ policies: [policy(PLATFORM_POLICY_ID, "platform", null, {}, { rules: { requireApproval: ["everything"] } })] }),
-        WORKSPACE_ID,
-        AGENT_ID,
-      ),
-    ).rejects.toThrow("unsupported rules");
-  });
-
   it("rejects policy rules outside the supported schema", async () => {
     await expect(
       resolveAgentPolicy(

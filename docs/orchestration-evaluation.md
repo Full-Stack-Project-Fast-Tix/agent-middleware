@@ -175,8 +175,13 @@ does not include the time the write itself took. Run duration does.
 ### What it does not show
 
 - **Real agents and real security.** No Codex, containers, model calls or
-  real security middleware. Those dominate real runs and are measured by the
-  security benchmark (`docs/BENCHMARK.md`), not here.
+  real security middleware are part of these load numbers. A focused
+  integration scenario routes delegation, handoff, command and file actions
+  through `DefaultSecurityMiddleware`. The security benchmark
+  (`docs/BENCHMARK.md`) measures guard quality and false interventions on the
+  legacy single-agent runtime. The repository does not yet contain a live-model,
+  container-backed multi-agent efficacy benchmark, so these results must not be
+  presented as one.
 - **A production database.** PostgreSQL ran in Docker on the same busy machine,
   with no tuning, no network between it and the server, and a store that started
   empty. The numbers do not predict a deployed system.

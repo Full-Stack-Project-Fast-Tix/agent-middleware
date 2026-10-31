@@ -27,7 +27,7 @@ export const STANDARD_AGENTS = {
     capabilities: { write: false, shell: true, network: false, delegate: false, maxDelegationDepth: 0 },
   },
   developer: {
-    description: "Implements changes and runs the tests. Risky commands and policy-listed actions need approval.",
+    description: "Implements changes and runs the tests. Risky commands need approval.",
     capabilities: { write: true, shell: true, network: false, delegate: false, maxDelegationDepth: 0 },
   },
   reviewer: {

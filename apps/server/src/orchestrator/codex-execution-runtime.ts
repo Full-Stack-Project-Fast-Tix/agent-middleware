@@ -2,6 +2,7 @@ import { attachTrace, RunCancelledError } from "../errors.js";
 import type { ContainerCodexRunner } from "../container-codex-runner.js";
 import { assertGatedPolicy, runGatedTurn } from "../gated-turn.js";
 import type { ExecutionOutcome, ExecutionRequest, ExecutionRuntime } from "./ports.js";
+import { parseTaskDisposition } from "./task-disposition.js";
 
 /**
  * Runs one AgentExecution as one Codex turn in its own disposable container,
@@ -47,8 +48,10 @@ export class CodexExecutionRuntime implements ExecutionRuntime {
       if (result.output === "" && !result.stopped) {
         throw attachTrace(new Error("Codex completed without an agent message"), trace);
       }
+      const disposition = parseTaskDisposition(result.output);
       return {
-        output: result.output,
+        output: disposition?.summary ?? result.output,
+        disposition,
         threadId: result.threadId,
         usage: result.usage,
         tracePath: trace.path,

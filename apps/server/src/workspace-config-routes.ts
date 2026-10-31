@@ -92,9 +92,7 @@ export function registerWorkspaceConfigRoutes(app: FastifyInstance, pool: pg.Poo
           const resolved = await resolveAgentPolicy(source, workspaceId, id).catch(() => null);
           return {
             agentId: id,
-            policy: resolved === null
-              ? null
-              : { capabilities: resolved.capabilities, appliedPolicies: resolved.appliedPolicies, approvalActions: resolved.approvalActions },
+            policy: resolved === null ? null : { capabilities: resolved.capabilities, appliedPolicies: resolved.appliedPolicies },
           };
         }),
       ),

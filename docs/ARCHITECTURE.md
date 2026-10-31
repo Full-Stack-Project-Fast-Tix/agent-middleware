@@ -143,7 +143,9 @@ single-agent path above, which is unchanged. These parts exist:
   - schedules tasks in dependency order, with limited parallelism and one
     write-capable execution at a time;
   - handles retries, approvals, cancellation and restart recovery, and writes
-    the audit trail.
+    the audit trail;
+  - validates each specialist's strict final disposition, so a successfully
+    ended turn cannot complete a Task that the specialist reports incomplete.
 - **Run routes** ([`run-routes.ts`](../apps/server/src/run-routes.ts)): create,
   snapshot, cancel and resolve-approval, as specified in `packages/shared/src/api.ts`.
 - **Gated Codex runtime**
@@ -210,8 +212,8 @@ sequenceDiagram
             Dev->>API: POST /api/approvals/:id/resolve
             API->>O: resolveApproval
         end
-        R-->>O: result, trace path
-        O->>S: execution and task completed
+        R-->>O: validated disposition, result, trace path
+        O->>S: execution completed; task completed or failed
     end
     O->>S: Run completed: the final tasks' results
     S-->>Dev: run.updated (SSE)
@@ -223,38 +225,41 @@ instead of the shared token, and `index.ts` composes the orchestrator with
 `PostgresRunStore`, `PostgresAgentDirectory`, P1's middleware on
 `PostgresSecuritySource`, the model planner and Codex containers
 ([`postgres-runs.ts`](../apps/server/src/postgres-runs.ts)). In a workspace,
-any role may read; `developer` and `security_admin` may also start and cancel
-Runs; `auditor` only reads. An approval needs the person who started the Run, or a
-`security_admin` when its reason is `policy_required` (contract decision 17). What
-always asks a person is contract decision 18, and editing agents, profiles and
-policies is decision 19. The single-agent routes check no workspace role, so they
-are not registered in this mode. `npm run db:admin -w
+any role may read bounded Run data; `developer` and `security_admin` may also
+start and cancel Runs and read redacted raw execution traces. An `auditor` reads
+snapshots and the bounded timeline, but not raw traces. An approval needs the person
+who started the Run, or a `security_admin` when its reason is `policy_required`
+(contract decision 19). What always asks a person is decision 20, and editing agents,
+profiles and policies is decision 21. `npm run db:admin -w
 @launchpad/server` adds users, workspaces (with the four standard agents and
 the platform baseline policy) and members. A `security_admin` can also manage
 their workspace's members over the API (contract decision 15). Failed sign-ins
 are limited per account and per source address, in this process's memory. The
 default `token` mode is unchanged, and `npm run dev:demo` still runs the simulated
-demo. An attempt's bounded, redacted raw trace is read through
+demo. For the two acting roles, an attempt's bounded, redacted raw trace is read through
 `GET /api/runs/:runId/executions/:executionId/trace`, under the same workspace
-check as the other run routes.
+check as the other run routes. Password mode rejects the legacy global
+`/api/agents`, `/api/admin`, `/api/system` and single-agent Run routes because
+their JSON store has no workspace identity to authorize against.
 
-A task completes only when its agent's last line reports `TASK_STATUS: complete`.
-That is the agent's own report: it can fail a task, but it does not prove the work
-is right. Each Run has a token budget (`RUN_TOKEN_BUDGET`). Files of a finished Run
-are removed after `RUN_ARTIFACT_RETENTION_DAYS`, while its rows stay.
+Each Run has a token budget (`RUN_TOKEN_BUDGET`). Files of a finished Run
+are removed after `RUN_ARTIFACT_RETENTION_DAYS` (contract decision 18), while its rows
+stay, and reading such a trace answers 410 rather than a plain 404.
 
 Not built yet, by owner:
 - **P1:** reflection memory in multi-agent runs. The tables exist and are unused,
   so a guard's catch does not carry into later Runs here as it does in token mode.
-  A multi-agent attack benchmark with 3 trials per cell has not been run.
-- **P1/P3:** command text and applied file changes on the gate timeline. Saved
-  data does not hold them, so the timeline says so (contract decision 14 gives the
-  schema each would need, and whether command text may be stored is P1's decision).
+  A live, container-backed multi-agent benchmark has not been run. Policy `rules`
+  stay unsupported until P1 reviews a schema, so nothing yet produces
+  `policy_required`.
 - **P3:** tenant isolation beyond workspace roles (every workspace's Runs share one
   host). Creating users and workspaces stays on the command line (decision 15), and
-  migrating token-mode JSON records was decided against (decision 21). The
+  migrating token-mode JSON records was decided against (decision 23). The
   integration harness still runs on `InMemoryRunStore`; the fuzz suite and the
   store suite are what exercise Postgres.
+- **P3/P4:** applied file changes on the gate timeline. Saved data does not hold
+  them, so the timeline says so. Command text is deliberately not added to
+  permanent audit storage for this milestone (contract decision 14).
 
 Orchestration test and load results are in
 [orchestration-evaluation.md](orchestration-evaluation.md).

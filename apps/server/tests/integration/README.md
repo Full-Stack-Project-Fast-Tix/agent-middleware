@@ -46,9 +46,10 @@ As each subsystem lands, have `startStandIn` use the real piece instead:
   stand-ins, so the scenarios stay deterministic and need no model or Docker.
 - **P1 middleware:** the concrete middleware is exercised by a focused
   orchestrator integration scenario; broader scenarios still use
-  `ScriptedMiddleware` for deterministic approval outcomes. Password-mode
-  startup composes the real adapters (`src/postgres-runs.ts`), but this harness
-  does not start that composition, so it is not proof of a deployed end-to-end run.
+  `ScriptedMiddleware` for deterministic approval outcomes. Password-authenticated
+  container startup is composed with the concrete middleware, PostgreSQL and
+  Codex runtime. This harness still replaces the model planner, container runtime
+  and usually persistence, so it is not proof of a full deployed run.
 
 The scenarios and invariants should not need to change. If one does, that is
 a contract change: record it in

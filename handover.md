@@ -1,100 +1,130 @@
-# Team handover: next steps
+# Team handover: current state and next steps
 
-**Prepared:** 31 October 2026
+**Updated:** 31 October 2026
 
-**Repository state reviewed:** `main`, including the P1 runtime commits and merged PRs #8 and #9. This is a working handoff, not a claim that the project is production-ready.
+**Repository state reviewed:** `main` after the P1/P2 closure work. This is a
+proof of concept and does not claim production-grade tenant isolation.
 
-> **Update, 31 October 2026:** the false-completion fix, sign-in throttling, admin
-> APIs, retention cleanup, approval ownership, delegation review and the deployment
-> script below have landed. `docs/ARCHITECTURE.md` lists what is still not built.
-
-## Current state
-
-- The multi-agent path is implemented and is wired into password-auth mode with PostgreSQL, the real security middleware, the supervisor planner, and container-backed Codex executions. See [`apps/server/src/index.ts`](apps/server/src/index.ts), [`apps/server/src/postgres-runs.ts`](apps/server/src/postgres-runs.ts), and [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
-- P1 fixed the gated runtime so file edits reach the approval gate, then disabled Codex `web_search` for executions whose resolved policy denies network. The pinned-runtime probe verifies that declining an edit leaves the file absent. The relevant commits are `31d0988`, `adf7f96`, and `b5e95b3`.
-- The working-copy follow-up now omits environment secrets and common credential stores/files by default, while retaining environment example templates. The prior test that expected `.env` in the agent workspace has been changed to assert the safer behavior.
-- PR #8's standard-agent descriptions route test-running work to the Developer. That assignment change is already merged; it is not an outstanding P2 task.
-- PostgreSQL persistence, password sign-in, workspace roles, run APIs, and the Run/Task UI foundations are present. The integration harness still uses stand-ins for several subsystems by design; it is not a full production-stack test.
-- The implementation-status docs have been reconciled with the current startup wiring and working-copy exclusions. The integration harness still uses stand-ins in its default scenarios; see `docs/ARCHITECTURE.md` for that limitation.
-
-## Decisions for the next phase
-
-These are the recommended defaults so work can move without waiting for another planning meeting.
-
-1. **Keep project secrets out of agent-visible working copies by default.** `DirectoryWorkingCopies` now excludes `.env` and `.env.*` except example/sample/template files, common credential-store directories and filenames, and selected private-key/state-file extensions. `.gitignore` does not control this copy operation. This is a filename-based denylist, not general secret detection. If an agent needs a credential, provide it through a separately approved, narrowly scoped mechanism rather than copying the project's secret file.
-2. **Separate “the Codex turn ended” from “the task was completed.”** Keep the existing `AgentExecution` status for whether the turn ran successfully. Require a validated final task disposition (`complete` or `incomplete`); map `incomplete`, missing, or invalid disposition to the existing `Task.failed` status with a useful error/result. Do not infer completion by searching free-form prose, and do not retry a task just because the agent reported it could not do the work. Treat the disposition as an agent report, not proof that code is correct. Prefer the existing status and fields over adding a new shared `TaskStatus` unless the UI demonstrates a real need.
-3. **Keep nested delegation disabled for the first integrated milestone.** The current orchestrator README says specialists cannot delegate, so effective depth is 1. That is a reasonable initial boundary. Do not expose a higher effective depth until P1 and P2 have tested parent/child identity, depth enforcement, and middleware evaluation at every delegation.
-4. **Set a 30-day default retention for terminal-run workspaces and raw traces.** Never clean up queued, running, or approval-waiting runs. Retain audit rows and bounded status/findings after artifacts expire, and show that an artifact is expired instead of presenting a broken path as available evidence. P2 owns the policy and P3 owns the cleanup job/storage behavior. This is a POC default; a real deployment should make retention configurable and disclose it.
-5. **Do not call the current shared-host deployment production-grade tenant isolation.** Keep the current workspace-role checks for the capstone. Before accepting untrusted tenants on a shared host, require a separate isolation review and a stronger runtime/data boundary; do not expand this into a broad infrastructure rewrite as part of the current milestone.
-
-## Next steps by owner
+## What is complete
 
 ### P1 — Security
 
-**Now**
-
-- **Done in this follow-up:** corrected the canonical security invariant in [`CLAUDE.md`](CLAUDE.md). Middleware-managed executions use `workspace-write` confined to the per-run workspace with `untrusted` approvals; capabilities decide which proposals are allowed, not whether the approval gate exists.
-- **Done:** added default working-copy exclusions for known environment-secret patterns and common credential stores/files, retaining example templates, and reconciled them with the egress guard's `DEFAULT_SENSITIVE_MARKERS`. A test now fails if a new marker has no recorded decision. Keep the limitation explicit: a filename denylist is not general secret detection. P2 can review the defaults alongside orchestration changes; nothing is waiting on that review.
-- Keep the file-change approval and network-denial probe in the runtime upgrade checklist. The actual Codex behavior is version-sensitive; rerun the probe whenever the pinned image changes.
-
-**Later / joint work**
-
-- Review host-level egress options with P3 if the project needs stronger guarantees than Codex's sandbox. The container currently has a bridge network and must reach the model provider; simply changing it to `--network none` would also stop model requests. Any stronger design needs an explicit provider-only egress path.
-- Keep arbitrary `SecurityPolicy.rules` unsupported until a concrete rule schema and enforcement behavior are agreed. The resolver currently fails closed on non-empty or unknown-version rules; that is safer than silently ignoring them.
+- Middleware-managed Codex executions use `workspace-write` within the isolated
+  Run copy and `untrusted` approvals, so file changes reach the gate. The pinned
+  runtime probe verifies that declining a change leaves the file absent.
+- A network-denied policy also disables Codex's service-side web search.
+- Run copies exclude known environment secrets, credential stores and selected
+  private-key/state files while retaining example templates. The marker parity
+  test keeps the copy exclusions aligned with the egress guard. This remains a
+  filename filter, not general secret detection.
+- Password mode now rejects the global legacy Agent, admin, system, workspace
+  file and single-agent Run APIs. Those routes use a shared JSON store with no
+  workspace identity and remain available only in token mode.
+- Raw execution traces are restricted to `developer` and `security_admin`.
+  Auditors use the bounded, redacted Run timeline and snapshots.
+- Command text is not copied into permanent audit rows or a new `gate_actions`
+  table for this milestone. The timeline explicitly reports unsaved proposals.
+- Arbitrary `SecurityPolicy.rules` remain unsupported and fail closed. A future
+  rules feature requires a versioned schema and enforcement semantics.
 
 ### P2 — Orchestration
 
-**Now**
+- A completed Codex turn no longer automatically completes its Task. Every
+  specialist must return a strict JSON disposition with `complete` or
+  `incomplete` and a bounded summary. Missing, malformed and incomplete reports
+  leave the execution completed, fail the Task without retrying, skip its
+  dependants and fail the Run.
+- Test-running work stays with the write-capable Developer; the Reviewer remains
+  read-only.
+- Nested specialist delegation remains deliberately disabled. The current flow
+  is supervisor to specialist, one level deep.
+- Terminal Run working copies and raw traces have a settled 30-day retention
+  policy. Active and approval-waiting artifacts must never be removed; durable
+  audit/status/finding/result data survives artifact expiry.
 
-- Fix the original false-completion issue. In [`orchestrator.ts`](apps/server/src/orchestrator/orchestrator.ts), `runTask` marks a Task completed whenever `ExecutionRuntime.execute()` returns. [`ExecutionOutcome`](apps/server/src/orchestrator/ports.ts) currently contains only the final message and runtime metadata. Add a validated task disposition to the runtime result and prompt contract. If the agent reports it could not complete the task—or the disposition is absent/invalid—record the execution as a completed turn but mark the Task failed with the explanation. Existing lifecycle rules then fail the Run and skip dependents. Add regression coverage for explicit inability, malformed disposition, and successful completion. Do not use fragile phrase matching or let an incomplete result flow to dependent tasks as a successful result.
-- Coordinate the disposition contract with P4 before changing shared API/event schemas. The recommended first implementation uses existing `Task.failed` and `Task.error`, avoiding a new status enum.
-- The working-copy exclusion defaults are implemented; preserve them and their regression coverage during orchestration changes.
-- PR #8's developer/test assignment is already done. Keep test tasks assigned to an agent that can run them; preserve reviewer read-only permissions.
+### Platform and product already present
 
-**After the core flow is reliable**
+- Password sign-in, in-process sign-in throttling, PostgreSQL persistence,
+  workspace roles, member management APIs, Run APIs, SSE updates and backup
+  tooling are implemented.
+- The web console has the shared shell, Dashboard, Runs list and detail, task
+  graph, gate timeline, approvals, member management and the redesigned UI.
 
-- Add nested delegation only with P1's trusted lineage/depth checks and regression tests at each delegation boundary. Until then, keep effective depth at 1 and say so in product surfaces.
-- Apply the 30-day terminal-run artifact retention decision with P3. Do not delete artifacts for active or approval-waiting runs.
+## Deliberate POC boundaries
 
-### P3 — Platform
+- The container uses a bridge network so Codex can reach the model provider.
+  Agent command networking is denied by the Codex sandbox and web search is
+  disabled by policy, but there is no host-enforced provider-only egress path.
+  Building one requires a P1/P3 threat model and deployment design.
+- Shared-host workspace roles are not hardened isolation for mutually untrusted
+  tenants. A production tenant boundary needs its own security review.
+- Nested delegation will be considered only after trusted parent/child lineage,
+  depth enforcement, cross-workspace rejection and middleware evaluation are
+  tested at every hop.
+- Raw traces may contain sensitive values missed by pattern redaction and are
+  incomplete when rolled. They are debugging artifacts, not the audit record.
+- The concrete middleware has a focused multi-agent integration scenario, and
+  the existing live security benchmark measures the legacy single-agent runtime.
+  There is no live-model, container-backed multi-agent efficacy/false-intervention
+  benchmark yet. It is evaluation work, not a missing enforcement boundary for
+  the current milestone.
 
-**Now**
+## Work remaining by owner
 
-- Add sign-in throttling before password authentication is exposed beyond the POC. [`auth-routes.ts`](apps/server/src/auth-routes.ts) explicitly notes there is currently no attempt limit. Use bounded per-account and per-source throttling without revealing whether an account exists; test lockout/reset behavior.
-- Keep the PostgreSQL-backed path covered by the existing `TEST_DATABASE_URL` suites. CI already provisions PostgreSQL in [`.github/workflows/ci.yml`](.github/workflows/ci.yml); ensure the persistence, identity, migrations, event-sequence, and approval-race suites remain enabled there.
-- Build the admin operations needed to manage users, workspaces, and memberships, with P4 supplying the app shell and shared UI patterns. The current bootstrap path is the `db:admin` CLI.
-- Implement artifact cleanup after P2 confirms retention semantics. Preserve audit and bounded evidence when workspace/trace files expire.
+### P1
 
-**Deployment boundary**
+No independent P1 implementation is blocking the current milestone. P1 should:
 
-- Keep the shared-host multi-workspace deployment marked as a POC limitation. A production tenant-isolation target needs a separately scoped threat model and review before external tenants are invited; it is not a prerequisite for finishing the current capstone UI.
+- rerun the file-change approval and network-denial probes whenever the pinned
+  Codex image changes;
+- review any future rule schema, nested delegation, provider-only egress, or
+  production tenant-isolation proposal before it is enabled;
+- maintain the secret-copy marker parity test as sensitive markers change.
+- extend the live security benchmark to the Run/Task path before making measured
+  claims about multi-agent attack containment or false-intervention rates.
 
-### P4 — Contracts & Integration
+### P2
 
-**Now**
+No independent P2 correctness fix remains from the false-completion incident.
+P2 should:
 
-- Continue the app shell, Dashboard, and full Run Detail composition listed in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). Run creation, task graph, task drill-down, approvals, and SSE foundations already exist; build on them rather than replacing the working API/event contract.
-- Continue keeping project-status documentation aligned with implementation as P2/P3/P4 work lands. Current architecture docs distinguish the wired password-auth/container path from the integration harness's stand-ins and list remaining admin UI, throttling, and tenant-isolation work.
-- Review any shared-contract changes required by P2's task disposition with P2 first. If the UI needs to distinguish an agent-reported completion from verified completion, represent that distinction explicitly rather than implying that a completed Codex turn proves the requested code is correct.
+- preserve the disposition contract and failure semantics as runtimes evolve;
+- review P3's artifact cleanup against the 30-day lifecycle rules;
+- join P1 if nested delegation is proposed later.
 
-## Who waits on whom
+### P3
 
-| Work | Can start now? | Dependency / handoff |
-| --- | --- | --- |
-| P1 canonical security-guide correction | Yes | Independent. |
-| P1/P2 secret exclusion from working copies | Implemented | P1 keeps the denylist in step with the egress guard; P2 preserves it and its tests during orchestration changes. Nothing waits on P3/P4. |
-| P2 task-completion semantics | Yes | P2 can use existing `Task.failed`/`error`; ask P4 to review only if a shared schema or event changes. |
-| P3 sign-in throttling and DB test coverage | Yes | Independent of P2/P4 UI work. |
-| P4 app shell and Dashboard | Yes | Can proceed against the existing routes/contracts. |
-| P3 admin UI | In parallel, in pieces | P3 defines the management behavior/API; P4 provides shell/components. Integrate once both are ready. |
-| 30-day artifact cleanup | After policy agreement | P2 owns the retention decision; P3 implements storage cleanup. P4 only needs involvement if users configure retention or see artifact-expiry UI. |
-| Nested delegation | Defer | Requires P2 orchestration plus P1 lineage/depth enforcement and joint security tests. |
-| Stronger tenant isolation / provider-only egress | Defer to a scoped review | P1 and P3 must agree on threat model and runtime/network boundary; not a quick parallel task. |
+- Terminal artifact cleanup is implemented (`run-retention.ts`); P2 reviews it
+  against the lifecycle rules.
+- Run `scripts/deploy-multi-agent.sh` on a real ECS host. Its systemd steps have
+  not been exercised yet.
+- Decide whether sign-in throttling must move from process memory to a shared
+  store before deploying multiple replicas.
+- Continue admin workflows for creating users and workspaces; these currently
+  use `db:admin`.
+- Lead any stronger tenant-isolation or provider-only egress design with P1.
 
-## Suggested order
+### P4
 
-1. P2 closes the false-completion path; P1 has updated the canonical sandbox guidance and the secret-copy exclusions.
-2. P3 adds sign-in throttling and keeps PostgreSQL CI coverage active while P4 builds the shell and Dashboard in parallel.
-3. P2 and P3 implement terminal-artifact retention after the 30-day rule is accepted in code/docs.
-4. P4 keeps status docs aligned as work lands and integrates P3's admin workflows.
-5. Revisit nested delegation and production isolation only after the single-level flow, completion reporting, persistence, and operator UI work end to end.
+- The Agents, Policies, Approvals, Security and Benchmarks views exist; review them
+  and refine as needed.
+- An expired trace answers 410, which the trace view shows as its error.
+- Keep UI wording clear that `complete` is the specialist's report, while tests
+  and review are separate evidence.
+
+## Dependencies
+
+| Work | Dependency |
+| --- | --- |
+| P3 artifact cleanup | Implemented. P2 reviews lifecycle behavior. |
+| Nested delegation | Waits for joint P1/P2 design and security regression coverage. It is outside the current milestone. |
+| Provider-only egress | Waits for a joint P1/P3 threat model and deployment design. |
+| Production tenant isolation | Waits for a separately scoped P1/P3 architecture and threat-model review. |
+
+## Settled references
+
+The authoritative choices are in `docs/contract-decisions.md`, especially
+decisions 14 (timeline and command storage), 16 (raw trace access), 17 (task
+disposition), 18 (artifact retention), 19 (who answers an approval), 20 (what always
+asks a person) and 21 (editing configuration). Current implementation status is in
+`docs/ARCHITECTURE.md`.

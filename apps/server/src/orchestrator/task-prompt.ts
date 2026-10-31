@@ -17,8 +17,6 @@ import type { Task } from "@launchpad/shared";
 /** Per input, so one oversized result cannot crowd out the objective. */
 export const MAX_INPUT_CHARS = 8_000;
 
-const TASK_STATUS_PREFIX = "TASK_STATUS:";
-
 export interface TaskInput {
   title: string;
   content: string;
@@ -76,25 +74,14 @@ export function buildTaskPrompt(input: {
 
   lines.push(
     "",
-    "HOW TO FINISH",
-    `End your final message with one line, the last in the message: "${TASK_STATUS_PREFIX} complete" if you did this task,`,
-    `or "${TASK_STATUS_PREFIX} incomplete" if you could not, and say why just above it. Never claim work you did not do.`,
+    "FINAL REPORT",
+    "Your final response must be exactly one JSON object with no Markdown fence or surrounding text:",
+    '{"status":"complete","summary":"what you completed and any verification performed"}',
+    "Use status incomplete when any required part of this task could not be completed, and explain why in summary.",
+    "This report is required even if the task only involved analysis or review.",
   );
-  return lines.join("\n");
-}
 
-/**
- * What the agent reported on its last line, and its message without that line.
- * Null when there is no such line. It is the agent's own report, so it can make a
- * task fail but it does not prove the work is right. Earlier lines do not count,
- * so text quoted from a file cannot speak for the agent.
- */
-export function parseTaskStatus(output: string): { status: "complete" | "incomplete"; result: string } | null {
-  const body = output.trimEnd();
-  const lineStart = body.lastIndexOf("\n") + 1;
-  const match = /^[*_`\s]*TASK_STATUS:\s*(complete|incomplete)[*_`\s.]*$/i.exec(body.slice(lineStart));
-  if (match === null) return null;
-  return { status: match[1]!.toLowerCase() as "complete" | "incomplete", result: body.slice(0, lineStart).trimEnd() };
+  return lines.join("\n");
 }
 
 function bounded(content: string): string {

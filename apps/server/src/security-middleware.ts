@@ -1,5 +1,4 @@
 import type {
-  ActionType,
   ApprovalStatus,
   EffectivePolicy,
   FindingSeverity,
@@ -20,8 +19,6 @@ import type { TurnSecurityPolicy } from "./turn-security-policy.js";
 
 /** The effective policy plus the runtime settings that decide whether gates fire at all. */
 export interface ResolvedPolicy extends EffectivePolicy {
-  /** Action types a policy says must always go to a person (contract decision 18). */
-  approvalActions: ActionType[];
   /**
    * Chosen by the middleware, never the orchestrator. For example a
    * workspace-write sandbox exposes file changes within the isolated run

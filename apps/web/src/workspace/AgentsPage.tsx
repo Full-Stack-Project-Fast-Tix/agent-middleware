@@ -9,14 +9,7 @@ type Effective = EffectivePermissionsResponse["agents"][number];
 
 function EffectiveCell({ entry }: { entry: Effective | undefined }) {
   if (entry?.policy == null) return <span className="meta">Cannot run</span>;
-  return (
-    <>
-      <CapabilityList capabilities={entry.policy.capabilities} />
-      {entry.policy.approvalActions.length > 0 && (
-        <span className="meta config-note">Always asks: {entry.policy.approvalActions.map((action) => action.replaceAll("_", " ")).join(", ")}</span>
-      )}
-    </>
-  );
+  return <CapabilityList capabilities={entry.policy.capabilities} />;
 }
 
 function AgentForm({ agent, profiles, canChangeProfile, onSave, onCancel, busy }: {

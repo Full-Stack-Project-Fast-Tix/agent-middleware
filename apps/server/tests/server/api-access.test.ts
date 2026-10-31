@@ -39,7 +39,7 @@ describe("API access", () => {
     expect(allowed.statusCode).toBe(200);
   });
 
-  it.each(["/api/auth/me", "/%61pi/auth/me", "/%61%70%69/auth/me", "/ap%69/auth/me", "/api/%61uth/me"])("refuses %s without a session", async (url) => {
+  it.each(encodedPaths)("authenticates then hides the legacy route %s in password mode", async (url) => {
     const app = await createApp(loadConfig({ NODE_ENV: "test" }), service, { identity });
     apps.push(app);
 
@@ -47,8 +47,9 @@ describe("API access", () => {
     expect(refused.statusCode).toBe(401);
     expect(refused.body).not.toContain("visible-only");
 
-    const allowed = await app.inject({ method: "GET", url, headers: { authorization: "Bearer good" } });
-    expect(allowed.statusCode).toBe(200);
+    const hidden = await app.inject({ method: "GET", url, headers: { authorization: "Bearer good" } });
+    expect(hidden.statusCode).toBe(404);
+    expect(hidden.body).not.toContain("visible-only");
   });
 
   it("keeps the open routes open and refuses unknown API paths", async () => {

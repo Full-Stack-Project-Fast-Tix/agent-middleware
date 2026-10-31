@@ -82,7 +82,6 @@ export class DefaultSecurityMiddleware implements SecurityMiddleware {
     return {
       capabilities: resolved.capabilities,
       appliedPolicies: resolved.appliedPolicies,
-      approvalActions: resolved.approvalActions,
       // Codex 0.111 hides its file-change tool in read-only mode. Expose it in
       // the isolated writable workspace and require untrusted approval. The
       // pinned runtime's approval boundary is exercised by the local mock
@@ -270,16 +269,11 @@ class StatefulExecutionGuard implements ExecutionGuard {
     }
 
     const warnings = [...deferredFindings, ...actionFindings, ...(semanticResult?.finding ? [semanticResult.finding] : [])];
-    // Asked regardless of what the checks thought: a policy said so, or the effect reaches outside the working copy.
-    const approvalReason = this.policy.approvalActions.includes(parsed.type)
-      ? "policy_required"
-      : parsed.type === "command" && isHighConsequenceCommand(parsed.command)
-        ? "high_consequence"
-        : null;
-    if (approvalReason !== null) {
+    // Asked regardless of what the checks thought: the effect reaches outside the working copy.
+    if (parsed.type === "command" && isHighConsequenceCommand(parsed.command)) {
       this.pending.set(parsed.actionId, parsed);
       return this.decision("require_approval", warnings, {
-        approvalReason,
+        approvalReason: "high_consequence",
         ...(deferredSteer === null ? {} : { steer: deferredSteer }),
       });
     }

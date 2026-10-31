@@ -1,15 +1,8 @@
 import { Fragment, useState, type FormEvent } from "react";
-import type { ActionType, AgentCapabilities, AgentProfile, CapabilityCeiling, SecurityPolicy, WorkspaceSummary } from "@launchpad/shared";
+import type { AgentCapabilities, AgentProfile, CapabilityCeiling, SecurityPolicy, WorkspaceSummary } from "@launchpad/shared";
 import { Button, DataTable, ErrorState, Loading } from "../ui";
 import { CAPABILITIES, CapabilityList, capabilityWord, ChangeError, useChange, useLoad, WorkspacePage } from "./shared";
 import { workspaceApi } from "./workspace-api";
-
-const ACTIONS: Array<{ value: ActionType; label: string }> = [
-  { value: "file_change", label: "File changes" },
-  { value: "command", label: "Commands" },
-  { value: "delegation", label: "Delegations" },
-  { value: "context_handoff", label: "Results passed between tasks" },
-];
 
 function ceilingWords(ceiling: CapabilityCeiling): string {
   const denied = CAPABILITIES.filter((capability) => ceiling[capability] === false).map(capabilityWord);
@@ -18,17 +11,14 @@ function ceilingWords(ceiling: CapabilityCeiling): string {
   return parts.length === 0 ? "No limit" : parts.join(". ");
 }
 
-const actionsOf = (policy: SecurityPolicy | null): ActionType[] => (policy?.rules.requireApproval as ActionType[] | undefined) ?? [];
-
 function PolicyForm({ policy, busy, onSave, onCancel }: {
   policy: SecurityPolicy | null;
   busy: boolean;
-  onSave: (fields: { name: string; capabilityCeiling: CapabilityCeiling; rules: { requireApproval: ActionType[] } }) => void;
+  onSave: (fields: { name: string; capabilityCeiling: CapabilityCeiling }) => void;
   onCancel: () => void;
 }) {
   const [name, setName] = useState(policy?.name ?? "");
   const [denied, setDenied] = useState(new Set(CAPABILITIES.filter((capability) => policy?.capabilityCeiling[capability] === false)));
-  const [asks, setAsks] = useState(new Set(actionsOf(policy)));
   const submit = (event: FormEvent) => {
     event.preventDefault();
     // A ceiling can only take a capability away, so an unticked one is left out, not set to true.
@@ -36,7 +26,7 @@ function PolicyForm({ policy, busy, onSave, onCancel }: {
       ...(policy?.capabilityCeiling.maxDelegationDepth === undefined ? {} : { maxDelegationDepth: policy.capabilityCeiling.maxDelegationDepth }),
       ...Object.fromEntries([...denied].map((capability) => [capability, false])),
     };
-    onSave({ name: name.trim(), capabilityCeiling, rules: { requireApproval: [...asks] } });
+    onSave({ name: name.trim(), capabilityCeiling });
   };
   return (
     <form className="config-form" onSubmit={submit}>
@@ -56,24 +46,6 @@ function PolicyForm({ policy, busy, onSave, onCancel }: {
               })}
             />
             {capabilityWord(capability)}
-          </label>
-        ))}
-      </fieldset>
-      <fieldset>
-        <legend>Always ask a Security Admin about</legend>
-        {ACTIONS.map(({ value, label }) => (
-          <label key={value} className="config-check">
-            <input
-              type="checkbox"
-              checked={asks.has(value)}
-              onChange={(event) => setAsks((before) => {
-                const next = new Set(before);
-                if (event.target.checked) next.add(value);
-                else next.delete(value);
-                return next;
-              })}
-            />
-            {label}
           </label>
         ))}
       </fieldset>
@@ -156,7 +128,7 @@ function Policies({ workspace }: { workspace: WorkspaceSummary }) {
         <p className="meta">Every agent is limited by the platform policies, then this workspace's, then its own profile. Each can only take away.</p>
         <DataTable caption="Security policies">
           <thead>
-            <tr><th>Policy</th><th>Applies to</th><th>Limits</th><th>Always asks about</th><th>Version</th>{isAdmin && <th><span className="sr-only">Actions</span></th>}</tr>
+            <tr><th>Policy</th><th>Applies to</th><th>Limits</th><th>Version</th>{isAdmin && <th><span className="sr-only">Actions</span></th>}</tr>
           </thead>
           <tbody>
             {policies.map((policy) => (
@@ -165,7 +137,6 @@ function Policies({ workspace }: { workspace: WorkspaceSummary }) {
                   <td><strong>{policy.name}</strong></td>
                   <td>{policy.scope === "platform" ? "Whole platform (locked)" : "This workspace"}</td>
                   <td>{ceilingWords(policy.capabilityCeiling)}</td>
-                  <td>{actionsOf(policy).length === 0 ? "Nothing extra" : actionsOf(policy).map((action) => ACTIONS.find((item) => item.value === action)?.label ?? action).join(", ")}</td>
                   <td className="num">{policy.version}</td>
                   {isAdmin && (
                     <td className="cell-action">
@@ -179,7 +150,7 @@ function Policies({ workspace }: { workspace: WorkspaceSummary }) {
                   )}
                 </tr>
                 {editing === policy.id && (
-                  <tr><td colSpan={6}>
+                  <tr><td colSpan={5}>
                     <PolicyForm
                       policy={policy}
                       busy={change.busy}
@@ -249,7 +220,7 @@ function Policies({ workspace }: { workspace: WorkspaceSummary }) {
 
 export function PoliciesPage() {
   return (
-    <WorkspacePage title="Policies" description="What the agents in this workspace are allowed to do, and what always goes to a person.">
+    <WorkspacePage title="Policies" description="What the agents in this workspace are allowed to do.">
       {(workspace) => <Policies workspace={workspace} />}
     </WorkspacePage>
   );
