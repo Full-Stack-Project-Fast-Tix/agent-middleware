@@ -92,8 +92,8 @@ describe("an attempt's trace", () => {
     app = await createApp(config, {} as AgentService, { runs: options });
   }
 
-  it("serves the attempt's trace redacted, as JSON Lines, to any role in the workspace", async () => {
-    await startWithTrace(MINE, "auditor");
+  it("serves the attempt's trace redacted, as JSON Lines, to an acting role", async () => {
+    await startWithTrace(MINE, "developer");
     const response = await inject("GET", apiPaths.executionTrace(RUN, EXECUTION));
 
     expect(response.statusCode).toBe(200);
@@ -101,6 +101,15 @@ describe("an attempt's trace", () => {
     expect(response.body).not.toContain(SECRET);
     expect(response.headers["x-redactions"]).toBe("1");
     expect(() => JSON.parse(response.body.trim())).not.toThrow();
+  });
+
+  it("keeps raw traces from auditors, who use the bounded timeline instead", async () => {
+    await startWithTrace(MINE, "auditor");
+    const response = await inject("GET", apiPaths.executionTrace(RUN, EXECUTION));
+
+    expect(response.statusCode).toBe(403);
+    expect(response.json().error).toBe("The auditor role cannot read raw execution traces");
+    expect(response.body).not.toContain(SECRET);
   });
 
   it("answers 404 for a run in another workspace, like one that does not exist", async () => {

@@ -60,6 +60,7 @@ export interface RunRoutesOptions {
 }
 
 const ACTING_ROLES: ReadonlySet<WorkspaceRole> = new Set(["developer", "security_admin"]);
+const RAW_TRACE_ROLES: ReadonlySet<WorkspaceRole> = new Set(["developer", "security_admin"]);
 
 const workspaceParams = z.object({ workspaceId: z.guid() });
 const runParams = z.object({ runId: z.guid() });
@@ -145,7 +146,10 @@ export function registerRunRoutes(app: FastifyInstance, options: RunRoutesOption
    */
   app.get("/api/runs/:runId/executions/:executionId/trace", async (request, reply) => {
     const { runId, executionId } = executionParams.parse(request.params);
-    const { snapshot } = await readableSnapshot(request, runId);
+    const { snapshot, role } = await readableSnapshot(request, runId);
+    if (!RAW_TRACE_ROLES.has(role)) {
+      throw new HttpError(403, `The ${role} role cannot read raw execution traces`);
+    }
     const execution = snapshot.executions.find((candidate) => candidate.id === executionId);
     if (execution === undefined) throw new HttpError(404, "Execution not found");
     const contents = await readFile(traceFilePath(dataDirectory, execution.id), "utf8").catch((error: NodeJS.ErrnoException) => {

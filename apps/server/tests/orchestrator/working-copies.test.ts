@@ -77,7 +77,7 @@ async function copiedFrom(files: string[]): Promise<string[]> {
   const entries = await readdir(target, { recursive: true, withFileTypes: true });
   return entries
     .filter((entry) => entry.isFile())
-    .map((entry) => path.relative(target, path.join(entry.parentPath, entry.name)))
+    .map((entry) => path.relative(target, path.join(entry.parentPath, entry.name)).split(path.sep).join("/"))
     .sort();
 }
 

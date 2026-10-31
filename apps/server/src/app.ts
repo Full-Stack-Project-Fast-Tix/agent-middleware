@@ -30,6 +30,27 @@ import { registerSessionAuth, type Identity } from "./auth-routes.js";
  */
 const REDACTED_CONTENT_TYPES = ["application/json", "application/x-ndjson"];
 
+/**
+ * These routes expose the original single-operator JsonStore and have no
+ * workspace identity to authorise against. Password mode is workspace scoped,
+ * so it must not make the global compatibility API reachable by any session.
+ */
+const LEGACY_ROUTE_PATTERNS = new Set([
+  "/api/system",
+  "/api/admin/overview",
+  "/api/agents",
+  "/api/agents/:id",
+  "/api/agents/:id/start",
+  "/api/agents/:id/stop",
+  "/api/agents/:id/messages",
+  "/api/agents/:id/runs",
+  "/api/agents/:id/workspace",
+  "/api/agents/:id/workspace/file",
+  "/api/runs/:id",
+  "/api/runs/:id/approval",
+  "/api/runs/:id/trace",
+]);
+
 const agentIdParams = z.object({ id: z.string().uuid() });
 const runIdParams = z.object({ id: z.string().uuid() });
 const createAgentBody = z.object({
@@ -89,6 +110,11 @@ export async function createApp(
 
   // Signed-in sessions replace the shared token when the server has identity.
   if (extensions.identity) registerSessionAuth(app, extensions.identity, extensions.signInThrottle);
+  app.addHook("onRequest", async (request, reply) => {
+    if (extensions.identity !== undefined && LEGACY_ROUTE_PATTERNS.has(request.routeOptions.url ?? "")) {
+      return reply.code(404).send({ error: "API route not found" });
+    }
+  });
   app.addHook("onRequest", async (request, reply) => {
     if (extensions.identity !== undefined || !config.authToken || isOpenRequest(request)) {
       return;

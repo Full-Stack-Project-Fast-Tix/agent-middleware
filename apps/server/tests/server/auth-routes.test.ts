@@ -69,6 +69,25 @@ describe("session sign-in", () => {
     expect((await app.inject({ url: "/api/auth/me", headers: bearer(TOKEN) })).statusCode).toBe(401);
   });
 
+  it("does not expose the global legacy API to password-authenticated sessions", async () => {
+    await start();
+    const signedIn = await app.inject({ method: "POST", url: "/api/auth/session", payload: { email: USER.email, password: "right password" } });
+    const headers = bearer(signedIn.json().token);
+    const routes = [
+      "/api/system",
+      "/api/admin/overview",
+      "/api/agents",
+      "/api/agents/00000000-0000-4000-8000-000000000001/workspace/file?path=.env",
+      "/api/runs/00000000-0000-4000-8000-000000000001/trace",
+    ];
+
+    for (const url of routes) {
+      const response = await app.inject({ url, headers });
+      expect(response.statusCode, url).toBe(404);
+      expect(response.json()).toEqual({ error: "API route not found" });
+    }
+  });
+
   it("validates the sign-in body", async () => {
     await start();
     const response = await app.inject({ method: "POST", url: "/api/auth/session", payload: { email: "not an email", password: "x" } });
