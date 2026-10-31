@@ -105,8 +105,10 @@ P2 should:
 
 ### P4
 
-- Build the remaining Agents, Policies, Audit and Benchmarks views listed in
-  `docs/ARCHITECTURE.md`.
+- Review and integrate the Agents, Policies, Audit and Benchmarks views. They
+  are now wired into the workspace console with member-scoped read APIs.
+- Keep Benchmarks explicit that the Leash slice is replay evidence and that
+  multi-agent load results use simulated agents; do not imply live efficacy.
 - If artifact expiry is displayed, use P3's explicit expired state rather than
   presenting a broken trace link.
 - Keep UI wording clear that `complete` is the specialist's report, while tests
@@ -117,11 +119,10 @@ P2 should:
 | Work | Dependency |
 | --- | --- |
 | P3 artifact cleanup | The P2 policy is settled; implementation can start now. P2 reviews lifecycle behavior. |
-| P4 artifact-expiry UI | Waits for P3's API/storage representation of expiry. |
 | Nested delegation | Waits for joint P1/P2 design and security regression coverage. It is outside the current milestone. |
 | Provider-only egress | Waits for a joint P1/P3 threat model and deployment design. |
 | Production tenant isolation | Waits for a separately scoped P1/P3 architecture and threat-model review. |
-| Remaining P4 views | Can proceed now against existing workspace and Run contracts; policy-management APIs may need P3 work. |
+| P4 artifact-expiry UI | Waits for P3's API/storage representation of expiry. |
 
 ## Settled references
 

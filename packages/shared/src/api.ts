@@ -99,6 +99,8 @@ export type MeResponse = z.infer<typeof meResponseSchema>;
  *
  *   GET  /api/workspaces                                        -> { workspaces }
  *   GET  /api/workspaces/:workspaceId/agents                    -> { agents }
+ *   GET  /api/workspaces/:workspaceId/configuration              -> WorkspaceConfiguration
+ *   GET  /api/workspaces/:workspaceId/audit                      -> WorkspaceAuditResponse
  *   GET  /api/workspaces/:workspaceId/runs   RunListQuery       -> RunListResponse
  *   POST /api/workspaces/:workspaceId/runs   CreateRunRequest   -> 201 { run }
  *   GET  /api/runs/:runId/snapshot                              -> { snapshot }
@@ -123,6 +125,8 @@ export const apiPaths = {
   me: () => "/api/auth/me",
   workspaces: () => "/api/workspaces",
   workspaceAgents: (workspaceId: string) => `/api/workspaces/${encodeURIComponent(workspaceId)}/agents`,
+  workspaceConfiguration: (workspaceId: string) => `/api/workspaces/${encodeURIComponent(workspaceId)}/configuration`,
+  workspaceAudit: (workspaceId: string) => `/api/workspaces/${encodeURIComponent(workspaceId)}/audit`,
   runs: (workspaceId: string) => `/api/workspaces/${encodeURIComponent(workspaceId)}/runs`,
   runSnapshot: (runId: string) => `/api/runs/${encodeURIComponent(runId)}/snapshot`,
   runTimeline: (runId: string) => `/api/runs/${encodeURIComponent(runId)}/timeline`,

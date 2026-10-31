@@ -20,6 +20,7 @@ import type { AgentService } from "./agent-service.js";
 import { registerRunEventStream, type RunEventStreamOptions } from "./run-events-route.js";
 import { isOpenRequest } from "./api-access.js";
 import { registerMemberRoutes } from "./member-routes.js";
+import { registerWorkspaceInspectionRoutes } from "./workspace-inspection-routes.js";
 import { registerRunRoutes, type RunRoutesOptions } from "./run-routes.js";
 import type { SignInThrottle } from "./sign-in-throttle.js";
 import { registerSessionAuth, type Identity } from "./auth-routes.js";
@@ -82,6 +83,12 @@ export interface AppExtensions {
   runs?: RunRoutesOptions;
   /** Where workspace members live. Their routes need signed-in users, so this also needs `identity`. */
   memberDatabase?: pg.Pool;
+  /** PostgreSQL workspace configuration and bounded audit reads. */
+  inspectionDatabase?: pg.Pool;
+  /** Identity adapter with workspace-role lookup for inspection endpoints. */
+  inspectionIdentity?: import("./auth-routes.js").Identity & {
+    workspaceRole(workspaceId: string, userId: string): Promise<"developer" | "security_admin" | "auditor" | null>;
+  };
   /** Signed-in users with sessions, instead of the shared APP_AUTH_TOKEN. */
   identity?: Identity;
   /** Limits on sign-in attempts. Omitted, each app gets its own. */
@@ -331,6 +338,9 @@ export async function createApp(
   }
   if (extensions.identity && extensions.memberDatabase) {
     registerMemberRoutes(app, extensions.memberDatabase);
+  }
+  if (extensions.inspectionIdentity && extensions.inspectionDatabase) {
+    registerWorkspaceInspectionRoutes(app, extensions.inspectionDatabase, extensions.inspectionIdentity);
   }
 
   if (config.nodeEnv === "production") {

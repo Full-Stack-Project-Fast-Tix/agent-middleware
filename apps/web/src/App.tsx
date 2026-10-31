@@ -5,6 +5,7 @@ import { AccountMenu } from "./AccountMenu";
 import { Admin } from "./Admin";
 import { AuthScreen, ConnectingScreen } from "./AuthScreen";
 import { Members, MembersUnavailable } from "./members/Members";
+import { AgentsPage, AuditPage, BenchmarksPage, PoliciesPage } from "./inspection/InspectionPages";
 import { membersApi } from "./members/members-api";
 import { Playground } from "./Playground";
 import { navigate, paths, useRoute, type Route } from "./router";
@@ -28,6 +29,12 @@ function navItems(route: Route, authMethod: "token" | "password"): NavItem[] {
     { to: paths.runs, label: "Runs", current: route.page === "runs" || route.page === "new-run" || route.page === "run" },
     { to: paths.playground, label: "Playground", current: route.page === "playground" },
     { to: paths.safety, label: "Safety", current: route.page === "safety" },
+    ...(authMethod === "password" ? [
+      { to: paths.agents, label: "Agents", current: route.page === "agents" },
+      { to: paths.policies, label: "Policies", current: route.page === "policies" },
+      { to: paths.audit, label: "Audit", current: route.page === "audit" },
+      { to: paths.benchmarks, label: "Benchmarks", current: route.page === "benchmarks" },
+    ] : []),
     // The member routes exist only in password mode.
     ...(authMethod === "password" ? [{ to: paths.members, label: "Members", current: route.page === "members" }] : []),
   ];
@@ -89,6 +96,10 @@ function CurrentPage({ route, playground, authMethod, viewer }: {
       );
     case "members":
       return authMethod === "password" ? <Members viewerId={viewer?.id ?? null} /> : <MembersUnavailable />;
+    case "agents": return authMethod === "password" ? <AgentsPage /> : <NotFound />;
+    case "policies": return authMethod === "password" ? <PoliciesPage /> : <NotFound />;
+    case "audit": return authMethod === "password" ? <AuditPage /> : <NotFound />;
+    case "benchmarks": return authMethod === "password" ? <BenchmarksPage /> : <NotFound />;
     case "design":
       if (DesignPreview === null) return <NotFound />;
       return <Suspense fallback={<Loading />}><DesignPreview /></Suspense>;

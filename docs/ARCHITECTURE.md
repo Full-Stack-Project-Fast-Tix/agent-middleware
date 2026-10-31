@@ -244,8 +244,13 @@ Not built yet, by owner:
 - **P3/P4:** applied file changes on the gate timeline. Saved data does not hold
   them, so the timeline says so. Command text is deliberately not added to
   permanent audit storage for this milestone (contract decision 14).
-- **P4:** views for Agents, Policies, Audit and Benchmarks. The console links only
-  to views that exist.
+- **P4:** workspace views for Agents, Policies, Audit and Benchmarks are wired
+  into the console. Agent/profile/policy reads and bounded audit pages require
+  workspace membership. Audit responses omit arbitrary metadata and raw traces.
+  The Policies screen shows effective capability projections only when the
+  active rules are supported; the server remains authoritative. Benchmarks
+  presents committed replay and simulated orchestration evidence, not live
+  workspace or live-model results.
 
 Orchestration test and load results are in
 [orchestration-evaluation.md](orchestration-evaluation.md).
