@@ -1,0 +1,68 @@
+/* AgentGuard design tokens. Every colour in the app comes from here. See
+   apps/web/DESIGN.md for what each one is for. */
+
+:root {
+  --graphite: #15191e;
+  --canvas: #f5f7f8;
+  --surface: #ffffff;
+  --steel: #56616b;
+  --rule: #d6dce1;
+  --cobalt: #1638e0;
+
+  /* The only warm tones in the interface. They mark material an agent or a
+     repository wrote, which is evidence and never authority. */
+  --foreign: #f6f2e6;
+  --hatch: #b9ae8f;
+
+  --passed: #0a7557;
+  --passed-tint: #e6f4ef;
+  --steered: #5b37c8;
+  --steered-tint: #eeeafb;
+  --held: #a65300;
+  --held-tint: #fcf0e0;
+  --blocked: #be1530;
+  --blocked-tint: #fbe9ec;
+
+  /* Derived. Selection is the one tint of cobalt; control-edge keeps form
+     borders at 3:1 against the surface, which --rule alone does not reach. */
+  --selection-tint: #e8ecfd;
+  --control-edge: #7d8892;
+  --hover: #eef1f3;
+  --focus: var(--cobalt);
+  --topbar-quiet: #a9b3bc;
+  --topbar-edge: #39414a;
+
+  --font-ui: "Archivo Variable", "Helvetica Neue", Arial, sans-serif;
+  --font-foreign: "Spline Sans Mono Variable", ui-monospace, Menlo, monospace;
+
+  --text-13: 13px;
+  --text-14: 14px;
+  --text-15: 15px;
+  --text-18: 18px;
+  --text-24: 24px;
+  --text-32: 32px;
+
+  --radius-control: 2px;
+  --topbar-height: 48px;
+  --page-gutter: 24px;
+  --page-max: 1440px;
+
+  /* Names used by rules written before this system. New code uses the names
+     above; these go away as each page is rebuilt. */
+  --ink: var(--graphite);
+  --muted: var(--steel);
+  --line: var(--rule);
+  --paper: var(--surface);
+  --purple: var(--cobalt);
+  --purple-dark: var(--cobalt);
+  --purple-soft: var(--selection-tint);
+  --green: var(--passed);
+  --red: var(--blocked);
+  --shadow: none;
+}
+
+@media (max-width: 640px) {
+  :root {
+    --page-gutter: 16px;
+  }
+}

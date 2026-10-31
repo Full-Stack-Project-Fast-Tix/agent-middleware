@@ -1,0 +1,135 @@
+/* Element defaults. Component styling belongs in primitives.css or the page. */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background: var(--canvas);
+  color: var(--graphite);
+  font-family: var(--font-ui);
+  font-size: var(--text-14);
+  line-height: 1.5;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+h1,
+h2,
+h3,
+h4,
+p {
+  margin: 0;
+}
+
+h1 {
+  font-size: var(--text-24);
+  font-weight: 600;
+  font-stretch: 112%;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+}
+
+h2 {
+  font-size: var(--text-15);
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+h3,
+h4 {
+  font-size: var(--text-14);
+  font-weight: 600;
+}
+
+a {
+  color: var(--cobalt);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+input,
+select,
+textarea {
+  min-height: 32px;
+  width: 100%;
+  padding: 4px 8px;
+  border: 1px solid var(--control-edge);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+}
+
+input[type="radio"],
+input[type="checkbox"] {
+  width: auto;
+  min-height: 0;
+  accent-color: var(--cobalt);
+}
+
+textarea {
+  line-height: 1.5;
+  resize: vertical;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--steel);
+}
+
+input:disabled,
+select:disabled,
+textarea:disabled {
+  background: var(--canvas);
+  color: var(--steel);
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+code,
+pre,
+kbd,
+samp {
+  font-family: var(--font-foreign);
+  font-size: var(--text-13);
+}
+
+time,
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+::selection {
+  background: var(--selection-tint);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}

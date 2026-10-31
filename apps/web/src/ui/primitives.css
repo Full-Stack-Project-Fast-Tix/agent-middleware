@@ -1,0 +1,789 @@
+/* Shared primitives. Loaded after page CSS, so a page never needs !important
+   to get them; a page that wants something different should say why. */
+
+/* Page frame */
+
+.page {
+  width: 100%;
+  max-width: var(--page-max);
+  margin: 0 auto;
+  padding: 24px var(--page-gutter) 48px;
+  display: grid;
+  gap: 24px;
+  min-width: 0;
+}
+
+.page-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px 24px;
+}
+
+.page-header-copy {
+  min-width: 0;
+  max-width: 80ch;
+  display: grid;
+  gap: 4px;
+}
+
+.page-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.page-section {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.meta {
+  color: var(--steel);
+  font-size: var(--text-13);
+}
+
+/* Buttons */
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--control-edge);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  color: var(--graphite);
+  font-size: var(--text-14);
+  font-weight: 500;
+  line-height: 1;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.button:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+.button:disabled {
+  border-color: var(--rule);
+  color: var(--steel);
+  cursor: not-allowed;
+}
+
+.button-primary {
+  border-color: var(--graphite);
+  background: var(--graphite);
+  color: var(--surface);
+}
+
+.button-primary:hover:not(:disabled) {
+  background: #2a3138;
+}
+
+.button-primary:disabled {
+  border-color: var(--rule);
+  background: var(--rule);
+  color: var(--steel);
+}
+
+.button-ghost {
+  border-color: transparent;
+  background: transparent;
+}
+
+.button-danger {
+  border-color: var(--blocked);
+  color: var(--blocked);
+}
+
+.button-danger:hover:not(:disabled) {
+  background: var(--blocked-tint);
+}
+
+.button-page {
+  min-height: 40px;
+  padding: 0 16px;
+}
+
+/* Decision marks and status glyphs */
+
+.mark {
+  display: inline-block;
+  flex: none;
+  overflow: visible;
+}
+
+.mark-allow {
+  color: var(--passed);
+}
+
+.mark-steer {
+  color: var(--steered);
+}
+
+.mark-require_approval {
+  color: var(--held);
+}
+
+.mark-block {
+  color: var(--blocked);
+}
+
+.mark-neutral {
+  color: var(--steel);
+}
+
+.mark-graphite {
+  color: var(--graphite);
+}
+
+.mark-live-segment {
+  animation: mark-orbit 1.4s linear infinite;
+}
+
+@keyframes mark-orbit {
+  to {
+    stroke-dashoffset: -48;
+  }
+}
+
+.decision {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 500;
+}
+
+.decision-allow {
+  color: var(--passed);
+}
+
+.decision-steer {
+  color: var(--steered);
+}
+
+.decision-require_approval {
+  color: var(--held);
+}
+
+.decision-block {
+  color: var(--blocked);
+}
+
+/* Badges: 2px rectangles, a glyph and a word */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 22px;
+  padding: 0 6px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  color: var(--graphite);
+  font-size: var(--text-13);
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.badge-held {
+  border-color: transparent;
+  background: var(--held-tint);
+  color: var(--held);
+}
+
+.badge-blocked {
+  border-color: transparent;
+  background: var(--blocked-tint);
+  color: var(--blocked);
+}
+
+.badge-passed {
+  border-color: transparent;
+  background: var(--passed-tint);
+  color: var(--passed);
+}
+
+.badge-steered {
+  border-color: transparent;
+  background: var(--steered-tint);
+  color: var(--steered);
+}
+
+.badge-critical {
+  border-color: var(--blocked);
+  background: var(--blocked);
+  color: var(--surface);
+}
+
+/* Foreign material: anything an agent or a repository wrote */
+
+.foreign-block {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.foreign-caption {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+  font-size: var(--text-13);
+}
+
+.foreign-caption strong {
+  font-weight: 600;
+}
+
+.foreign-caption span {
+  color: var(--steel);
+}
+
+.foreign {
+  position: relative;
+  min-width: 0;
+  padding: 8px 12px 8px 15px;
+  border-radius: var(--radius-control);
+  background: var(--foreign);
+  color: var(--graphite);
+  font-family: var(--font-foreign);
+  font-size: var(--text-13);
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+  overflow: auto;
+}
+
+.foreign::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 3px;
+  background: repeating-linear-gradient(-45deg, var(--hatch) 0 2px, transparent 2px 4px);
+}
+
+.foreign-pre {
+  white-space: pre-wrap;
+}
+
+.foreign code,
+.foreign pre {
+  font-family: inherit;
+}
+
+.foreign-inline {
+  padding: 1px 4px;
+  border-radius: var(--radius-control);
+  background: var(--foreign);
+  box-shadow: inset 2px 0 0 var(--hatch);
+  font-family: var(--font-foreign);
+  font-size: var(--text-13);
+  overflow-wrap: anywhere;
+}
+
+/* Tables: rules between rows only */
+
+.data-table-wrap {
+  min-width: 0;
+  overflow-x: auto;
+  background: var(--surface);
+  border-top: 2px solid var(--graphite);
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-14);
+}
+
+.data-table th {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--rule);
+  color: var(--steel);
+  font-size: var(--text-13);
+  font-weight: 500;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.data-table td {
+  height: 40px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--rule);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.data-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.data-table tbody tr:hover {
+  background: var(--canvas);
+}
+
+.data-table .num {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.data-table .cell-prompt {
+  max-width: 56ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Loading, empty and error states */
+
+.spinner {
+  display: inline-block;
+  flex: none;
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--rule);
+  border-top-color: var(--graphite);
+  border-radius: 0;
+  background: transparent;
+  animation: spinner-turn 0.9s linear infinite;
+}
+
+@keyframes spinner-turn {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.state-loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 24px 0;
+  color: var(--steel);
+}
+
+.state-empty {
+  display: grid;
+  justify-items: start;
+  gap: 8px;
+  padding: 32px 0;
+  max-width: 64ch;
+}
+
+.state-empty p {
+  color: var(--steel);
+}
+
+.state-empty-action {
+  margin-top: 4px;
+}
+
+.state-error {
+  display: grid;
+  justify-items: start;
+  gap: 8px;
+  padding: 12px 16px;
+  border-left: 3px solid var(--blocked);
+  background: var(--blocked-tint);
+}
+
+.state-error strong {
+  color: var(--blocked);
+  font-weight: 600;
+}
+
+/* The gate line */
+
+.gate-line {
+  --gate-bg: var(--surface);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  background: var(--gate-bg);
+}
+
+.gate-row {
+  --row-bg: var(--gate-bg);
+  --mark-halo: var(--row-bg);
+  --mark-fill: var(--row-bg);
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 44px minmax(0, 1fr);
+  background: var(--row-bg);
+}
+
+.gate-row-selected {
+  --row-bg: var(--selection-tint);
+}
+
+.gate-row-head {
+  color: var(--steel);
+  font-size: var(--text-13);
+  font-weight: 500;
+}
+
+.gate-cell {
+  min-width: 0;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.gate-row:last-child .gate-cell {
+  border-bottom: 0;
+}
+
+/* One unbroken line: rows touch, and only the side cells carry row rules. */
+.gate-axis {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 10px;
+}
+
+.gate-axis::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--graphite);
+}
+
+.gate-axis .mark {
+  position: relative;
+}
+
+.gate-axis-dot {
+  position: relative;
+  width: 6px;
+  height: 6px;
+  margin-top: 7px;
+  background: var(--steel);
+  box-shadow: 0 0 0 2px var(--row-bg);
+}
+
+.gate-row-fresh .gate-axis > * {
+  animation: gate-draw 180ms ease-out both;
+}
+
+@keyframes gate-draw {
+  from {
+    clip-path: inset(-4px 100% -4px -4px);
+  }
+  to {
+    clip-path: inset(-4px -4px -4px -4px);
+  }
+}
+
+.gate-proposal {
+  display: grid;
+  gap: 4px;
+}
+
+.gate-proposal .foreign {
+  padding-block: 4px;
+  max-height: 160px;
+}
+
+.gate-open {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+
+.gate-open::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+
+.gate-row:hover .gate-cell {
+  background: transparent;
+}
+
+.gate-decision {
+  display: grid;
+  justify-items: start;
+  gap: 2px;
+}
+
+.gate-reason {
+  max-width: 60ch;
+}
+
+.gate-time {
+  color: var(--steel);
+  font-size: var(--text-13);
+  font-variant-numeric: tabular-nums;
+}
+
+.gate-actions {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+@media (max-width: 640px) {
+  .gate-row {
+    grid-template-columns: 32px minmax(0, 1fr);
+    grid-template-areas:
+      "axis proposal"
+      "axis decision";
+  }
+
+  .gate-row > .gate-axis {
+    grid-area: axis;
+  }
+
+  .gate-row > .gate-cell-proposal {
+    grid-area: proposal;
+    border-bottom: 0;
+    padding-bottom: 2px;
+  }
+
+  .gate-row > .gate-cell-decision {
+    grid-area: decision;
+    padding-top: 2px;
+  }
+
+  .gate-row:last-child .gate-cell-decision {
+    border-bottom: 0;
+  }
+
+  .gate-row-head {
+    display: none;
+  }
+}
+
+/* The top bar */
+
+.app-frame {
+  min-height: 100vh;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.skip-link {
+  position: absolute;
+  left: 8px;
+  top: -48px;
+  z-index: 40;
+  padding: 8px 12px;
+  background: var(--surface);
+  color: var(--graphite);
+}
+
+.skip-link:focus {
+  top: 8px;
+}
+
+.topbar {
+  --focus: var(--surface);
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  background: var(--graphite);
+  color: var(--surface);
+}
+
+.topbar-row {
+  display: flex;
+  align-items: stretch;
+  gap: 24px;
+  min-height: var(--topbar-height);
+  padding: 0 var(--page-gutter);
+}
+
+.topbar :focus-visible {
+  outline-offset: -2px;
+}
+
+/* The gate line runs through the wordmark, top to bottom of the bar. */
+.wordmark {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  color: var(--surface);
+  font-size: var(--text-15);
+  font-weight: 600;
+  font-stretch: 112%;
+  letter-spacing: -0.01em;
+  text-decoration: none;
+}
+
+.wordmark-gate {
+  align-self: stretch;
+  width: 2px;
+  margin: 0 5px;
+  background: var(--surface);
+}
+
+.topnav {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+  min-width: 0;
+}
+
+.topnav a {
+  position: relative;
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  color: var(--topbar-quiet);
+  font-weight: 500;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.topnav a:hover {
+  color: var(--surface);
+}
+
+.topnav a[aria-current="page"] {
+  color: var(--surface);
+}
+
+.topnav a[aria-current="page"]::after {
+  content: "";
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 0;
+  height: 2px;
+  background: var(--surface);
+}
+
+.topbar-end {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-left: auto;
+  min-width: 0;
+}
+
+.held-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 0 8px;
+  border-radius: var(--radius-control);
+  color: var(--topbar-quiet);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.held-count:hover {
+  color: var(--surface);
+}
+
+.held-count-active,
+.held-count-active:hover {
+  background: var(--held-tint);
+  color: var(--held);
+}
+
+.topbar-slot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--topbar-quiet);
+  font-size: var(--text-13);
+}
+
+.topbar-menu-button {
+  display: none;
+  align-self: center;
+  min-height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--topbar-edge);
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--surface);
+  cursor: pointer;
+}
+
+.topbar-menu {
+  display: none;
+}
+
+.app-main {
+  min-width: 0;
+}
+
+@media (max-width: 760px) {
+  .topbar-row {
+    gap: 12px;
+  }
+
+  .topbar-row > .topnav,
+  .topbar-end > .topbar-slot {
+    display: none;
+  }
+
+  .topbar-menu-button {
+    display: block;
+  }
+
+  .topbar-menu {
+    display: grid;
+    gap: 12px;
+    padding: 4px var(--page-gutter) 16px;
+    border-top: 1px solid var(--topbar-edge);
+  }
+
+  .topbar-menu[hidden] {
+    display: none;
+  }
+
+  .topbar-menu .topnav {
+    flex-direction: column;
+    gap: 0;
+  }
+
+  .topbar-menu .topnav a {
+    min-height: 44px;
+    padding: 0;
+  }
+
+  .topbar-menu .topnav a[aria-current="page"]::after {
+    left: -8px;
+    right: auto;
+    top: 12px;
+    bottom: 12px;
+    width: 2px;
+    height: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gate-row-fresh .gate-axis > *,
+  .mark-live-segment,
+  .spinner {
+    animation: none;
+  }
+}
