@@ -136,6 +136,8 @@ Gate 1 scenarios.
 
 `fuzz.test.ts` plays 250 seeded random Runs (random plans, decisions, crashes,
 approval timing and cancels) against those invariants plus safety properties
-such as "no refused action ran" and "no retry after a refusal". Results, load
+such as "no refused action ran" and "no retry after a refusal". They run on the
+in-memory store, and also on `PostgresRunStore` when `TEST_DATABASE_URL` is set,
+which reaches races the in-memory store cannot. Results, load
 measurements and mutation checks are in
 [docs/orchestration-evaluation.md](../../../../docs/orchestration-evaluation.md).
