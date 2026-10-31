@@ -313,6 +313,52 @@ one statement per page, using existing indexes, so no migration is needed.
 
 **Review:** P3 (query and store), P2 (`RunReads` beside the `RunStore` port).
 
+## 14. The Run timeline comes from saved rows
+
+**Decision (31 October 2026):** Add `GET /api/runs/:runId/timeline`, for any
+role in the workspace, returning `{ timeline }` with `entries`, `omittedEntries`
+and `fileChanges`. It is built from `security.decision` and
+`delegation.requested` audit events plus approvals. It never reads raw traces
+or the SSE replay buffer, which can lose older events.
+
+- **Bounds:** the newest 500 entries, 50 files per action and 300 listed file
+  changes, with text limits matching `safeDetailsOf`. Saved text is redacted
+  and bounded again on read, so an older row cannot widen the response.
+- **Authorship:** `proposed` is agent-authored. Everything else in an entry
+  comes from the middleware or a person, and the UI must keep them apart.
+- **Status:** `decision` is the final decision. `require_approval` means none
+  was recorded: held while the approval is `pending`, and otherwise the run
+  ended before an answer took effect.
+- **Not pushed:** an action allowed without a person publishes no RunEvent, so
+  clients refetch on any Run event and every few seconds while the Run is active.
+
+Two small writes make this possible, neither a schema change:
+
+- `security.decision` metadata gains `proposed` for `file_change` (paths and
+  kinds) and `context_handoff` (task ids and a character count).
+- `safeDetailsOf` now redacts and bounds file paths, keeps a rename's `movePath`,
+  and records `filesTotal` when an action names more than 50 files.
+
+**What saved data cannot support:**
+
+| Gap | How the contract says so | Schema change that would close it |
+| --- | --- | --- |
+| The text of a command that went to no person. Audit events deliberately hold no command text. | `proposed: null` on that entry | New table `gate_actions` (`run_id`, `task_id`, `execution_id`, `action_id`, `action_type`, `safe_details jsonb`, `created_at`), written before evaluation with the same redacted, bounded details as `approvals.safe_details`. A separate table keeps commands out of the append-only audit trail, where a redaction miss could never be removed, and lets the 30-day artifact retention expire them. |
+| Files that actually changed. `fileChanges` holds what was proposed at the gate. It cannot show whether a change landed, or what an allowed command edited. | `fileChanges.allowedCommands`, and `allow` documented as not proof | New table `execution_changed_files` (`execution_id`, `run_id`, `path`, `kind`), written when an execution ends by comparing the working copy with its starting state, holding bounded and redacted paths without contents. |
+| File lists on decisions saved before this change, unless the action went to a person. | `fileChanges.entriesWithoutFileList` | None; these rows age out of view. |
+| Strict order within one millisecond. `audit_events` has no creation sequence. | Not visible to clients | `ALTER TABLE audit_events ADD COLUMN created_seq bigint GENERATED ALWAYS AS IDENTITY`, as migration 002 did for tasks, executions, findings and approvals. |
+
+P3 owns migrations, so none of these were added here. P1 should decide whether
+command text may be stored at all before `gate_actions` is built.
+
+**Why:** The gate-line view needs what was proposed and what was decided, from
+evidence that survives a restart. Saying "not saved" is more accurate than
+filling the gap from raw traces, which may hold sensitive material.
+
+**Review:** P1 (paths in audit metadata, redaction on read, whether command text
+may be stored), P2 (`orchestrator.ts` audit metadata and `safeDetailsOf`), P3
+(`runAudit` query and the table proposals).
+
 ## Guidance for P3's schema
 
 These points are implementation guidance, not part of the contract:

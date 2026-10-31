@@ -4,6 +4,7 @@ import type {
   Approval,
   ApprovalStatus,
   AuditEvent,
+  AuditEventType,
   ExecutionUsage,
   OrchestrationMode,
   ProposedAction,
@@ -88,6 +89,13 @@ export interface RunReads {
   snapshot(runId: string): RunSnapshot | null | Promise<RunSnapshot | null>;
   /** One page of a workspace's runs, newest first. Throws a 400 on an unknown cursor. */
   listRuns(workspaceId: string, query: RunListQuery): Promise<RunListResponse>;
+  /** A Run's newest `limit` audit events of one type, oldest first, and how many exist in all. */
+  runAudit(runId: string, eventType: AuditEventType, limit: number): Promise<RunAudit>;
+}
+
+export interface RunAudit {
+  events: AuditEvent[];
+  total: number;
 }
 
 /** The audit event a write records, built from what it wrote; null records none. */

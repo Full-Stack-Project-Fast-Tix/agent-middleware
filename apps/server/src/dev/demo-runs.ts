@@ -299,6 +299,7 @@ export function createDemoRuns(hub: RunEventHub, options: { pauseScale?: number;
       orchestrator,
       snapshot: async (runId) => store.snapshot(runId),
       listRuns: (workspaceId, query) => store.listRuns(workspaceId, query),
+      runAudit: (runId, eventType, limit) => store.runAudit(runId, eventType, limit),
       approval: (approvalId) => store.getApproval(approvalId),
       currentUserId: () => DEMO_USER_ID,
       workspaceRole: async (workspaceId) => (workspaceId === DEMO_WORKSPACE.id ? "developer" : null),

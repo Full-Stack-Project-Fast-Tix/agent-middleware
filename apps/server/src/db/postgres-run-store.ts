@@ -13,6 +13,7 @@ import {
   type Approval,
   type ApprovalStatus,
   type AuditEvent,
+  type AuditEventType,
   type Run,
   type RunEventDraft,
   type RunListQuery,
@@ -24,7 +25,7 @@ import {
 } from "@launchpad/shared";
 import type pg from "pg";
 import { HttpError } from "../errors.js";
-import type { AuditFor, RunReads, RunStore } from "../orchestrator/ports.js";
+import type { AuditFor, RunAudit, RunReads, RunStore } from "../orchestrator/ports.js";
 import type { RunEventHub } from "../run-events.js";
 import { decodeRunCursor, encodeRunCursor } from "../run-list.js";
 import { fromRow, insertRow, updateRow } from "./rows.js";
@@ -186,6 +187,20 @@ export class PostgresRunStore implements RunStore, RunReads {
       const approval = approvalSchema.parse(fromRow(rows[0]));
       return { result: approval, event: { runId: approval.runId, type: "approval.resolved", payload: { approval } } };
     });
+  }
+
+  /** audit_events has no creation sequence, so events in the same millisecond can read in either order. */
+  async runAudit(runId: string, eventType: AuditEventType, limit: number): Promise<RunAudit> {
+    const { rows } = await this.pool.query(
+      `SELECT *, count(*) OVER ()::int AS total FROM audit_events
+        WHERE run_id = $1 AND event_type = $2
+        ORDER BY created_at DESC, id DESC LIMIT $3`,
+      [runId, eventType, limit],
+    );
+    return {
+      events: rows.map((row) => auditEventSchema.parse(fromRow(row))).reverse(),
+      total: (rows[0] as { total?: number } | undefined)?.total ?? 0,
+    };
   }
 
   /** One statement per page: the counts are subqueries over indexed run_id columns, not a query per row. */

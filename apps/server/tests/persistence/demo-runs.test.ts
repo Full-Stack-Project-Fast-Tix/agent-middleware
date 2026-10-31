@@ -1,11 +1,12 @@
 import { randomUUID } from "node:crypto";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import type { RunEvent } from "@launchpad/shared";
+import { RUN_TIMELINE_MAX_ENTRIES, runTimelineSchema, type RunEvent } from "@launchpad/shared";
 import { openDatabase } from "../../src/db/pool.js";
 import { PostgresRunStore } from "../../src/db/postgres-run-store.js";
 import { createDemoRuns, DEMO_USER_ID, DEMO_WORKSPACE, seedDemo } from "../../src/dev/demo-runs.js";
 import { RunEventHub } from "../../src/run-events.js";
+import { buildRunTimeline } from "../../src/run-timeline.js";
 import { makeRun } from "../integration/harness/factories.js";
 import { checkRunInvariants } from "../integration/harness/invariants.js";
 
@@ -60,6 +61,34 @@ describe.skipIf(!url)("RUNS_DEMO on Postgres", () => {
     expect(checkRunInvariants(run.id, events, snapshot)).toEqual([]);
     expect(snapshot.run.status).toBe("completed");
     expect(snapshot.run.finalOutput).toContain("ready for review");
+
+    // What the Dashboard and Run Detail read, from the rows that run saved.
+    const listed = await demo.routes.listRuns(DEMO_WORKSPACE.id, {});
+    expect(listed.pendingApprovalCount).toBe(0);
+    expect(listed.runs.find((summary) => summary.id === run.id)).toMatchObject({
+      status: "completed",
+      taskCount: snapshot.tasks.length,
+      pendingApprovalCount: 0,
+      findingCount: snapshot.findings.length,
+    });
+    const [decisions, delegations] = await Promise.all([
+      demo.routes.runAudit(run.id, "security.decision", RUN_TIMELINE_MAX_ENTRIES),
+      demo.routes.runAudit(run.id, "delegation.requested", RUN_TIMELINE_MAX_ENTRIES),
+    ]);
+    const { entries, omittedEntries } = runTimelineSchema.parse(
+      buildRunTimeline({
+        decisions: decisions.events,
+        omittedDecisions: decisions.total - decisions.events.length,
+        delegations: delegations.events,
+        approvals: snapshot.approvals,
+      }),
+    );
+    expect(omittedEntries).toBe(0);
+    expect(entries).toHaveLength(decisions.total);
+    const approved = entries.find((entry) => entry.approval !== null);
+    expect(approved?.approval?.status).toBe("approved");
+    expect(approved?.proposed).not.toBeNull();
+    expect(entries.filter((entry) => entry.actionType === "delegation").every((entry) => entry.proposed?.type === "delegation")).toBe(true);
   });
 
   it("fails a run the previous process left active", async () => {

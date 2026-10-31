@@ -3,9 +3,11 @@ import { z } from "zod";
 import {
   createRunRequestSchema,
   resolveApprovalRequestSchema,
+  RUN_TIMELINE_MAX_ENTRIES,
   runListQuerySchema,
   type Agent,
   type Approval,
+  type AuditEventType,
   type RunListQuery,
   type RunListResponse,
   type RunSnapshot,
@@ -14,6 +16,8 @@ import {
 } from "@launchpad/shared";
 import { HttpError } from "./errors.js";
 import type { Orchestrator } from "./orchestrator/orchestrator.js";
+import type { RunAudit } from "./orchestrator/ports.js";
+import { buildRunTimeline } from "./run-timeline.js";
 
 // HTTP routes for the Run -> Task -> AgentExecution model, as specified in
 // packages/shared/src/api.ts:
@@ -23,6 +27,7 @@ import type { Orchestrator } from "./orchestrator/orchestrator.js";
 //   GET  /api/workspaces/:workspaceId/runs   RunListQuery           -> RunListResponse
 //   POST /api/workspaces/:workspaceId/runs   CreateRunRequest       -> 201 { run }
 //   GET  /api/runs/:runId/snapshot                                  -> { snapshot }
+//   GET  /api/runs/:runId/timeline                                  -> { timeline }
 //   POST /api/runs/:runId/cancel                                    -> 202 { run }
 //   POST /api/approvals/:approvalId/resolve  ResolveApprovalRequest -> { approval }
 //
@@ -37,6 +42,8 @@ export interface RunRoutesOptions {
   snapshot(runId: string): Promise<RunSnapshot | null>;
   /** One page of the workspace's runs, newest first. */
   listRuns(workspaceId: string, query: RunListQuery): Promise<RunListResponse>;
+  /** A Run's newest audit events of one type, for its timeline. */
+  runAudit(runId: string, eventType: AuditEventType, limit: number): Promise<RunAudit>;
   /** To find which run, and so which workspace, an approval belongs to. */
   approval(approvalId: string): Promise<Approval | null>;
   /** Who is making the request. */
@@ -107,6 +114,23 @@ export function registerRunRoutes(app: FastifyInstance, options: RunRoutesOption
   app.get("/api/runs/:runId/snapshot", async (request) => {
     const { runId } = runParams.parse(request.params);
     return { snapshot: (await readableSnapshot(request, runId)).snapshot };
+  });
+
+  app.get("/api/runs/:runId/timeline", async (request) => {
+    const { runId } = runParams.parse(request.params);
+    const { snapshot } = await readableSnapshot(request, runId);
+    const [decisions, delegations] = await Promise.all([
+      options.runAudit(runId, "security.decision", RUN_TIMELINE_MAX_ENTRIES),
+      options.runAudit(runId, "delegation.requested", RUN_TIMELINE_MAX_ENTRIES),
+    ]);
+    return {
+      timeline: buildRunTimeline({
+        decisions: decisions.events,
+        omittedDecisions: decisions.total - decisions.events.length,
+        delegations: delegations.events,
+        approvals: snapshot.approvals,
+      }),
+    };
   });
 
   app.post("/api/runs/:runId/cancel", async (request, reply) => {

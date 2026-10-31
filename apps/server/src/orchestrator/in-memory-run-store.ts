@@ -6,6 +6,7 @@ import {
   type Approval,
   type ApprovalStatus,
   type AuditEvent,
+  type AuditEventType,
   type Run,
   type RunEventDraft,
   type RunListQuery,
@@ -17,7 +18,7 @@ import {
 } from "@launchpad/shared";
 import type { RunEventHub } from "../run-events.js";
 import { decodeRunCursor, encodeRunCursor, summaryPrompt } from "../run-list.js";
-import type { AuditFor, RunReads, RunStore } from "./ports.js";
+import type { AuditFor, RunAudit, RunReads, RunStore } from "./ports.js";
 
 type Uncommitted = RunEventDraft extends infer D ? (D extends RunEventDraft ? Omit<D, "seq"> : never) : never;
 
@@ -70,6 +71,11 @@ export class InMemoryRunStore implements RunStore, RunReads {
   /** Audit events in the order they were appended, optionally for one run. Not part of RunStore. */
   auditEvents(runId?: string): AuditEvent[] {
     return runId === undefined ? [...this.audit] : this.audit.filter((event) => event.runId === runId);
+  }
+
+  async runAudit(runId: string, eventType: AuditEventType, limit: number): Promise<RunAudit> {
+    const events = this.audit.filter((event) => event.runId === runId && event.eventType === eventType);
+    return { events: events.slice(-limit), total: events.length };
   }
 
   async updateRun(runId: string, changes: Partial<Run>, audit?: AuditFor<Run>): Promise<Run> {

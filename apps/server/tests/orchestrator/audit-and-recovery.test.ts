@@ -85,6 +85,9 @@ describe("audit trail", () => {
     expect(decisions[3]).toMatchObject({ stop: "action", findingCodes: ["deterministic:read-then-egress"] });
     expect(decisions[4]).toMatchObject({ requiredApproval: true });
     expect(JSON.stringify(audit)).not.toContain("--data @.env");
+    // The timeline's file list is on the decision, with no file contents.
+    expect(decisions[4]).toMatchObject({ proposed: { files: [{ path: "src/signup.ts", kind: "update" }] } });
+    expect(JSON.stringify(audit)).not.toContain("validate(body)");
 
     // Lifecycle, ending with the run's own completion.
     expect(types(audit).filter((type) => type.startsWith("execution."))).toEqual([

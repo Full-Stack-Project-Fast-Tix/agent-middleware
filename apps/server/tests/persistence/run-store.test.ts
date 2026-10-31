@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import type { Agent, RunEvent, RunSnapshot } from "@launchpad/shared";
+import type { Agent, AuditEvent, AuditEventType, RunEvent } from "@launchpad/shared";
 import { migrate } from "../../src/db/migrate.js";
 import { PostgresAgentDirectory } from "../../src/db/postgres-agent-directory.js";
 import { PostgresRunStore } from "../../src/db/postgres-run-store.js";
@@ -95,6 +95,32 @@ function record(hub: RunEventHub, runId: string): RunEvent[] {
 
 for (const target of targets) {
   describe.skipIf(target.skip)(target.name, () => {
+    it("reads a run's newest audit events of one type, oldest first, with the total", async () => {
+      const store = target.open(new RunEventHub());
+      const run = makeRun();
+      await store.createRun(run);
+      const audit = (eventType: AuditEventType, createdAt: string): AuditEvent => ({
+        id: randomUUID(),
+        workspaceId: WORKSPACE_ID,
+        actorType: "system",
+        actorId: null,
+        eventType,
+        runId: run.id,
+        taskId: null,
+        executionId: null,
+        metadata: { reason: createdAt },
+        createdAt,
+      });
+      const times = ["2026-10-09T10:00:00.000Z", "2026-10-09T10:01:00.000Z", "2026-10-09T10:02:00.000Z"];
+      for (const time of times) await store.appendAudit(audit("security.decision", time));
+      await store.appendAudit(audit("delegation.requested", "2026-10-09T10:03:00.000Z"));
+
+      const { events, total } = await store.runAudit(run.id, "security.decision", 2);
+      expect(total).toBe(3);
+      expect(events.map((event) => event.createdAt)).toEqual(times.slice(1));
+      expect(await store.runAudit(randomUUID(), "security.decision", 2)).toEqual({ events: [], total: 0 });
+    });
+
     it("lists a workspace's runs newest first, in bounded pages, with their counts", async () => {
       const store = target.open(new RunEventHub());
       const workspaceId = randomUUID();
