@@ -46,9 +46,10 @@ As each subsystem lands, have `startStandIn` use the real piece instead:
   stand-ins, so the scenarios stay deterministic and need no model or Docker.
 - **P1 middleware:** the concrete middleware is exercised by a focused
   orchestrator integration scenario; broader scenarios still use
-  `ScriptedMiddleware` for deterministic approval outcomes. Production startup
-  is not composed with the multi-agent adapters yet, so this test is not proof
-  of a production end-to-end deployment.
+  `ScriptedMiddleware` for deterministic approval outcomes. Password-authenticated
+  container startup is composed with the concrete middleware, PostgreSQL and
+  Codex runtime. This harness still replaces the model planner, container runtime
+  and usually persistence, so it is not proof of a full deployed run.
 
 The scenarios and invariants should not need to change. If one does, that is
 a contract change: record it in

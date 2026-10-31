@@ -63,6 +63,11 @@ proof of concept and does not claim production-grade tenant isolation.
   tested at every hop.
 - Raw traces may contain sensitive values missed by pattern redaction and are
   incomplete when rolled. They are debugging artifacts, not the audit record.
+- The concrete middleware has a focused multi-agent integration scenario, and
+  the existing live security benchmark measures the legacy single-agent runtime.
+  There is no live-model, container-backed multi-agent efficacy/false-intervention
+  benchmark yet. It is evaluation work, not a missing enforcement boundary for
+  the current milestone.
 
 ## Work remaining by owner
 
@@ -75,6 +80,8 @@ No independent P1 implementation is blocking the current milestone. P1 should:
 - review any future rule schema, nested delegation, provider-only egress, or
   production tenant-isolation proposal before it is enabled;
 - maintain the secret-copy marker parity test as sensitive markers change.
+- extend the live security benchmark to the Run/Task path before making measured
+  claims about multi-agent attack containment or false-intervention rates.
 
 ### P2
 
