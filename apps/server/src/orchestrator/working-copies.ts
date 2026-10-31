@@ -17,6 +17,12 @@ import type { WorkingCopies } from "./ports.js";
 // nothing. Anything on the host that later reads the copy must still refuse to
 // follow links out of it.
 
+// The exclusions below are a curated filename denylist, not secret detection: a
+// credential under any other name is still copied. Names are compared in lower
+// case, against files and directories alike. When DEFAULT_SENSITIVE_MARKERS in
+// check-sensitive-egress.ts gains a name, decide here whether it is excluded too;
+// working-copies.test.ts fails until that decision is recorded.
+
 /** Directories never copied: rebuildable data or local credential stores. */
 export const DEFAULT_EXCLUDED_NAMES = [
   "node_modules",
@@ -25,27 +31,70 @@ export const DEFAULT_EXCLUDED_NAMES = [
   ".ssh",
   ".aws",
   ".azure",
+  ".gcloud",
+  "legacy_credentials",
+  ".volcengine",
   ".gnupg",
   ".docker",
   ".kube",
+  // Docker Compose's secrets folder. A source folder with this name is omitted
+  // too; an agent that cannot find it fails visibly, which beats exposing one.
+  "secrets",
+  ".secrets",
 ] as const;
 
 const EXCLUDED_CREDENTIAL_FILE_NAMES = new Set([
   ".npmrc",
   ".pypirc",
   ".netrc",
-  ".envrc",
-  "id_rsa",
-  "id_ed25519",
-  "id_ecdsa",
-  "id_dsa",
+  "_netrc",
+  ".git-credentials",
+  ".pgpass",
+  "pgpass.conf",
+  ".my.cnf",
+  ".htpasswd",
+  ".dockercfg",
+  ".boto",
+  ".s3cfg",
+  ".vault-token",
+  "credentials.json",
+  ".credentials",
+  ".credentials.json",
+  "credentials.db",
+  "access_tokens.db",
+  "credentials.tfrc.json",
   "application_default_credentials.json",
-  "service-account.json",
-  "service_account.json",
+  "client_secret.json",
+  "secrets.json",
+  "secrets.yaml",
+  "secrets.yml",
+  "secrets.toml",
+  "secrets.ini",
+  "secrets.txt",
 ]);
 
-const EXCLUDED_CREDENTIAL_SUFFIXES = [".pem", ".key", ".p12", ".pfx", ".keystore", ".tfstate"];
-const ENVIRONMENT_TEMPLATES = new Set([".env.example", ".env.sample", ".env.template"]);
+const EXCLUDED_CREDENTIAL_SUFFIXES = [
+  ".pem",
+  ".key",
+  ".p8",
+  ".p12",
+  ".pfx",
+  ".ppk",
+  ".keystore",
+  ".jks",
+  ".kdbx",
+  ".tfstate",
+  ".tfstate.backup",
+  ".tfvars",
+];
+
+/** `id_rsa`, `id_ed25519_sk`, `id_rsa.bak`, `id_rsa_work`. Public keys stay. */
+const SSH_PRIVATE_KEY = /^id_(?:rsa|dsa|ecdsa|ed25519)(?:[._-].*)?$/;
+const SERVICE_ACCOUNT_KEY = /service[-_]account.*\.json$/;
+/** `.env`, `.envrc`, `.env.production`, `.env-prod`, `.envrc.local`, `production.env`. */
+const ENVIRONMENT_FILE = /^\.env(?:rc)?(?:[._-].*)?$|\.env$/;
+/** Checked-in templates that document the settings without holding them. */
+const ENVIRONMENT_TEMPLATE = /\.(?:example|sample|template)$|^\.env(?:rc)?[-_](?:example|sample|template)$/;
 
 export interface WorkspaceSources {
   /** The project's files on this host, or null for a workspace that starts empty. */
@@ -111,11 +160,13 @@ export class DirectoryWorkingCopies implements WorkingCopies {
 
     // Environment files are often ignored by Git, but this copy does not use
     // Git's ignore rules. Keep checked-in examples/templates for setup docs.
-    if (name === ".env" || name === ".envrc" || name.startsWith(".env.")) {
-      return !ENVIRONMENT_TEMPLATES.has(name) && !/\.(?:example|sample|template)$/.test(name);
-    }
+    if (ENVIRONMENT_FILE.test(name)) return !ENVIRONMENT_TEMPLATE.test(name);
 
-    return EXCLUDED_CREDENTIAL_SUFFIXES.some((suffix) => name.endsWith(suffix));
+    return (
+      (SSH_PRIVATE_KEY.test(name) && !name.endsWith(".pub")) ||
+      SERVICE_ACCOUNT_KEY.test(name) ||
+      EXCLUDED_CREDENTIAL_SUFFIXES.some((suffix) => name.endsWith(suffix))
+    );
   }
 }
 

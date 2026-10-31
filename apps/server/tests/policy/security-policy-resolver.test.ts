@@ -210,6 +210,49 @@ describe("resolveAgentPolicy", () => {
     ).rejects.toThrow("unsupported rules");
   });
 
+  it("rejects an unknown rules version even when the rules are empty", async () => {
+    await expect(
+      resolveAgentPolicy(
+        source({
+          policies: [policy(PLATFORM_POLICY_ID, "platform", null, {}, { rulesSchemaVersion: 2 })],
+        }),
+        WORKSPACE_ID,
+        AGENT_ID,
+      ),
+    ).rejects.toThrow("unsupported rules");
+  });
+
+  it("rejects unsupported rules on a workspace policy, not only a platform one", async () => {
+    for (const overrides of [{ rules: { allowedPaths: ["src"] } }, { rulesSchemaVersion: 2 }]) {
+      await expect(
+        resolveAgentPolicy(
+          source({
+            policies: [
+              policy(PLATFORM_POLICY_ID, "platform", null),
+              policy(WORKSPACE_POLICY_ID, "workspace", WORKSPACE_ID, {}, overrides),
+            ],
+          }),
+          WORKSPACE_ID,
+          AGENT_ID,
+        ),
+      ).rejects.toThrow("unsupported rules");
+    }
+  });
+
+  it("rejects a rules payload that is not a JSON object", async () => {
+    await expect(
+      resolveAgentPolicy(
+        source({
+          policies: [
+            policy(PLATFORM_POLICY_ID, "platform", null, {}, { rules: ["blocked"] as unknown as SecurityPolicy["rules"] }),
+          ],
+        }),
+        WORKSPACE_ID,
+        AGENT_ID,
+      ),
+    ).rejects.toThrow();
+  });
+
   it("rejects disabled, archived, and cross-workspace Agents", async () => {
     const unavailableAgents = [
       agent({ enabled: false }),
