@@ -2,7 +2,8 @@ import type { ReactNode } from "react";
 import type { FindingSeverity, SecurityDecisionOutcome } from "@launchpad/shared";
 
 // The status vocabulary for the whole app. A shape and a word always travel
-// together, so colour is never the only signal.
+// together, so colour is never the only signal. Shapes sit on a 20-unit square,
+// with round ends so they read as one family.
 
 export const DECISION_WORDS: Readonly<Record<SecurityDecisionOutcome, string>> = {
   allow: "Allowed",
@@ -11,55 +12,50 @@ export const DECISION_WORDS: Readonly<Record<SecurityDecisionOutcome, string>> =
   block: "Blocked",
 };
 
+const STROKE = { fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round", strokeLinejoin: "round" } as const;
+
 function Tick() {
+  return <path d="m4.5 10.5 3.8 3.8 7.2-8.3" {...STROKE} />;
+}
+
+/** The agent went on a different way: a line that bends and carries on. */
+function Bend() {
+  return <path d="M4.5 15v-1.5A5.5 5.5 0 0 1 10 8h5.5m-3.2-3.2L15.5 8l-3.2 3.2" {...STROKE} />;
+}
+
+/** Paused until a person answers. */
+function Pause() {
   return (
     <>
-      <polyline points="3.5,10.5 8,15 16.5,5" fill="none" stroke="var(--mark-halo, transparent)" strokeWidth="5.5" />
-      <polyline points="3.5,10.5 8,15 16.5,5" fill="none" stroke="currentColor" strokeWidth="2.5" />
+      <rect x="5.6" y="4.5" width="3" height="11" rx="1.5" fill="currentColor" />
+      <rect x="11.4" y="4.5" width="3" height="11" rx="1.5" fill="currentColor" />
     </>
   );
 }
 
-function Chevron() {
+/** A no-entry sign. The one filled shape, because it is the one hard stop. */
+function NoEntry() {
   return (
     <>
-      <polyline points="7,3.5 14,10 7,16.5" fill="none" stroke="var(--mark-halo, transparent)" strokeWidth="5.5" />
-      <polyline points="7,3.5 14,10 7,16.5" fill="none" stroke="currentColor" strokeWidth="2.5" />
+      <circle cx="10" cy="10" r="8.5" fill="currentColor" />
+      <rect x="5.2" y="8.8" width="9.6" height="2.4" rx="1.2" fill="var(--on-solid)" />
     </>
   );
 }
 
-function HollowSquare() {
-  return <rect x="4" y="4" width="12" height="12" fill="var(--mark-fill, none)" stroke="currentColor" strokeWidth="2.5" />;
+function Dash() {
+  return <path d="M5 10h10" {...STROKE} />;
 }
 
-function Bar() {
-  return <rect x="1" y="6.5" width="18" height="7" fill="currentColor" />;
+function DashedRing() {
+  return <circle cx="10" cy="10" r="6.5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeDasharray="2.6 3.2" />;
 }
 
-function ThinBar() {
-  return <rect x="3" y="9" width="14" height="2" fill="currentColor" />;
-}
-
-function DashedSquare() {
-  return <rect x="4" y="4" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" strokeDasharray="3 3" />;
-}
-
-function WorkingSquare({ live }: { live: boolean }) {
+function WorkingRing({ live }: { live: boolean }) {
   return (
     <>
-      <rect x="4" y="4" width="12" height="12" fill="none" stroke="var(--rule)" strokeWidth="2" />
-      <rect
-        className={live ? "mark-live-segment" : undefined}
-        x="4"
-        y="4"
-        width="12"
-        height="12"
-        fill="none"
-        stroke="var(--graphite)"
-        strokeWidth="2"
-        strokeDasharray="12 36"
-      />
+      <circle cx="10" cy="10" r="6.5" fill="none" stroke="var(--line-strong)" strokeWidth="2" />
+      <path className={live ? "mark-live-segment" : undefined} d="M10 3.5A6.5 6.5 0 0 1 16.5 10" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
     </>
   );
 }
@@ -74,9 +70,9 @@ function Glyph({ size, tone, children }: { size: number; tone: string; children:
 
 const DECISION_GLYPHS: Readonly<Record<SecurityDecisionOutcome, () => ReactNode>> = {
   allow: Tick,
-  steer: Chevron,
-  require_approval: HollowSquare,
-  block: Bar,
+  steer: Bend,
+  require_approval: Pause,
+  block: NoEntry,
 };
 
 /** The shape alone. Anything showing it must also carry the word nearby. */
@@ -112,31 +108,31 @@ interface StatusStyle {
 const held = (word: string): StatusStyle => ({
   word,
   tone: "held",
-  glyph: () => <HollowSquare />,
+  glyph: () => <Pause />,
   glyphTone: "require_approval",
 });
 const waiting = (word: string): StatusStyle => ({
   word,
   tone: "neutral",
-  glyph: () => <DashedSquare />,
+  glyph: () => <DashedRing />,
   glyphTone: "neutral",
 });
 const working = (word: string): StatusStyle => ({
   word,
   tone: "neutral",
-  glyph: (live) => <WorkingSquare live={live} />,
-  glyphTone: "graphite",
+  glyph: (live) => <WorkingRing live={live} />,
+  glyphTone: "ink",
 });
 const stopped = (word: string): StatusStyle => ({
   word,
   tone: "neutral",
-  glyph: () => <ThinBar />,
+  glyph: () => <Dash />,
   glyphTone: "neutral",
 });
 const failed = (word: string): StatusStyle => ({
   word,
   tone: "blocked",
-  glyph: () => <Bar />,
+  glyph: () => <NoEntry />,
   glyphTone: "block",
 });
 
@@ -149,7 +145,7 @@ const STATUS_STYLES: Readonly<Record<string, StatusStyle>> = {
   planning: working("Planning"),
   running: working("Running"),
   waiting_approval: held("Held"),
-  completed: { word: "Finished", tone: "neutral", glyph: () => <Tick />, glyphTone: "graphite" },
+  completed: { word: "Finished", tone: "neutral", glyph: () => <Tick />, glyphTone: "ink" },
   failed: failed("Failed"),
   cancelled: stopped("Cancelled"),
   skipped: stopped("Skipped"),

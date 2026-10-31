@@ -1,85 +1,70 @@
-/* What pages still share. Page rules live beside their page: auth.css,
-   playground.css, safety.css and runs/runs.css. New shared pieces belong in
-   ui/primitives.css. */
+/* What pages share beyond the primitives: labels, tabs and form layout. Page rules
+   live beside their page: auth.css, playground.css, safety.css, runs/runs.css and
+   members/members.css. */
 
 label {
-  display: block;
-  color: var(--graphite);
-  font-size: var(--text-13);
+  display: grid;
+  gap: 6px;
+  font-size: var(--text-sm);
   font-weight: 500;
 }
 
 label > input,
-label > select,
 label > textarea {
-  margin-top: 4px;
-  font-size: var(--text-14);
+  font-size: var(--text-base);
   font-weight: 400;
 }
 
-/* A dismissible message above a page's content. */
-.error-banner {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px 16px;
-  padding: 8px 12px;
-  border-left: 3px solid var(--blocked);
-  background: var(--blocked-tint);
-  color: var(--blocked);
-}
-
-/* Tabs: the current one is underlined, as in the top bar. */
+/* Tabs: a soft track, with the current view raised out of it. */
 .tab-row {
-  display: flex;
+  display: inline-flex;
   flex-wrap: wrap;
-  gap: 4px 16px;
-  box-shadow: inset 0 -1px 0 var(--rule);
+  gap: 2px;
+  width: fit-content;
+  max-width: 100%;
+  padding: 3px;
+  border-radius: var(--radius-block);
+  background: var(--press);
 }
 
 .tab {
-  min-height: 36px;
-  padding: 0;
+  min-height: 30px;
+  padding: 0 12px;
   border: 0;
-  border-bottom: 2px solid transparent;
+  border-radius: 6px;
   background: none;
-  color: var(--steel);
+  color: var(--ink-soft);
+  font-size: var(--text-sm);
   font-weight: 500;
   cursor: pointer;
+  transition: background-color var(--quick) var(--ease), color var(--quick) var(--ease);
 }
 
 .tab:hover {
-  color: var(--graphite);
+  color: var(--ink);
 }
 
 .tab[aria-selected="true"] {
-  border-bottom-color: var(--graphite);
-  color: var(--graphite);
+  background: var(--surface);
+  box-shadow: var(--shadow-control), 0 0 0 1px rgb(20 38 44 / 0.04);
+  color: var(--ink);
 }
 
 /* Forms */
 .form-stack {
   display: grid;
-  gap: 12px;
+  gap: 14px;
   min-width: 0;
 }
 
 .form-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 12px;
+  gap: 14px;
 }
 
 .form-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-}
-
-/* Run pages still use these. They go when those pages are rebuilt. */
-.header-actions {
-  display: flex;
-  align-items: stretch;
-  gap: 12px;
 }

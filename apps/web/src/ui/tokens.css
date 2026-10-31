@@ -1,51 +1,80 @@
-/* AgentGuard design tokens. Every colour in the app comes from here. See
-   apps/web/DESIGN.md for what each one is for. */
+/* AgentGuard design tokens. Every colour, radius and shadow in the app comes from
+   here. apps/web/DESIGN.md says what each one is for. */
 
 :root {
-  --graphite: #15191e;
-  --canvas: #f5f7f8;
+  color-scheme: light;
+
+  /* Ink and paper: a cool green-grey, so nothing is pure black on pure white. */
+  --ink: #14262c;
+  --ink-soft: #4b5e65;
+  --ink-faint: #5e7076;
+  --canvas: #f3f5f5;
   --surface: #ffffff;
-  --steel: #56616b;
-  --rule: #d6dce1;
-  --cobalt: #1638e0;
+  --surface-sunk: #f6f8f8;
+  --hover: #edf1f1;
+  --press: #e4e9e9;
+  --line: #e1e7e7;
+  --line-strong: #c9d3d4;
+  --control-edge: #86959a;
 
-  /* The only warm tones in the interface. They mark material an agent or a
-     repository wrote, which is evidence and never authority. */
-  --foreign: #f6f2e6;
-  --hatch: #b9ae8f;
+  /* Petrol: the one brand colour. Primary actions, focus and current selection. */
+  --petrol: #0e5e6a;
+  --petrol-deep: #0a4b55;
+  --petrol-soft: #e3eff0;
+  --petrol-wash: #f0f6f7;
+  --petrol-line: #a5c9ce;
+  --night: #0f2c33;
 
-  --passed: #0a7557;
-  --passed-tint: #e6f4ef;
-  --steered: #5b37c8;
-  --steered-tint: #eeeafb;
-  --held: #a65300;
-  --held-tint: #fcf0e0;
-  --blocked: #be1530;
-  --blocked-tint: #fbe9ec;
+  /* Foreign material: the only warm tone in the interface. Anything an agent or
+     a repository wrote is evidence and never authority. */
+  --foreign: #f6f4ef;
+  --foreign-ink: #4a463b;
+  --foreign-edge: #ece8de;
 
-  /* Derived. Selection is the one tint of cobalt; control-edge keeps form
-     borders at 3:1 against the surface, which --rule alone does not reach. */
-  --selection-tint: #e8ecfd;
-  --control-edge: #7d8892;
-  --hover: #eef1f3;
-  --focus: var(--cobalt);
-  --topbar-quiet: #a9b3bc;
-  --topbar-edge: #39414a;
+  /* Decisions. Each has a tint for fills and a line for edges. */
+  --passed: #1b7349;
+  --passed-tint: #e7f3ec;
+  --steered: #5a49b3;
+  --steered-tint: #efedfa;
+  --steered-line: #cfc9ee;
+  --held: #8f5407;
+  --held-tint: #faf2e2;
+  --held-line: #ecd9b0;
+  --blocked: #b0233b;
+  --blocked-tint: #fbedef;
+  --blocked-line: #f1cbd2;
+  --neutral-tint: #edf1f1;
 
-  --font-ui: "Archivo Variable", "Helvetica Neue", Arial, sans-serif;
-  --font-foreign: "Spline Sans Mono Variable", ui-monospace, Menlo, monospace;
+  --on-solid: #ffffff;
+  --focus: var(--petrol);
 
-  --text-13: 13px;
-  --text-14: 14px;
-  --text-15: 15px;
-  --text-18: 18px;
-  --text-24: 24px;
-  --text-32: 32px;
+  --font-ui: "Instrument Sans Variable", ui-sans-serif, -apple-system, "Segoe UI", sans-serif;
+  --font-foreign: "Red Hat Mono Variable", ui-monospace, Menlo, monospace;
 
-  --radius-control: 2px;
-  --topbar-height: 48px;
-  --page-gutter: 24px;
-  --page-max: 1440px;
+  --text-foreign: 12.5px;
+  --text-sm: 13px;
+  --text-base: 14.5px;
+  --text-md: 16px;
+  --text-lg: 20px;
+  --text-xl: 26px;
+  --text-2xl: 32px;
+
+  --radius-inline: 4px;
+  --radius-badge: 6px;
+  --radius-control: 7px;
+  --radius-block: 9px;
+  --radius-surface: 12px;
+  --radius-panel: 18px;
+
+  --shadow-control: 0 1px 1px rgb(20 38 44 / 0.05);
+  --shadow-pop: 0 0 0 1px rgb(20 38 44 / 0.07), 0 10px 32px -8px rgb(20 38 44 / 0.2);
+
+  --ease: cubic-bezier(0.2, 0.7, 0.3, 1);
+  --quick: 120ms;
+
+  --topbar-height: 56px;
+  --page-gutter: 32px;
+  --page-max: 1360px;
 }
 
 @media (max-width: 640px) {

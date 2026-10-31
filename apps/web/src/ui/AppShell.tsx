@@ -35,8 +35,28 @@ function NavLinks({ items }: { items: readonly NavItem[] }) {
   );
 }
 
+/** The brand mark: the gate line, with one decision on it. */
+export function BrandMark({ size = 22 }: { size?: number }) {
+  return (
+    <svg className="brand-mark" width={size} height={size} viewBox="0 0 22 22" aria-hidden="true">
+      <rect width="22" height="22" rx="6.5" fill="var(--petrol)" />
+      <path d="M11 4v14" stroke="var(--on-solid)" strokeOpacity="0.55" strokeWidth="1.5" strokeLinecap="round" />
+      <circle cx="11" cy="11" r="3.4" fill="var(--on-solid)" />
+    </svg>
+  );
+}
+
+export function Wordmark() {
+  return (
+    <>
+      <BrandMark />
+      <span>AgentGuard</span>
+    </>
+  );
+}
+
 /**
- * The frame around every signed-in view: one graphite bar and the content.
+ * The frame around every signed-in view: one light bar and the content.
  *
  * `heldCount` is null until the app can actually count held actions; the count
  * then stays visible at zero. Showing "Held 0" without knowing would be a false
@@ -71,12 +91,12 @@ export function AppShell({ nav, heldCount, workspace, account, children }: {
       <header className="topbar">
         <div className="topbar-row">
           <Link to={paths.dashboard} className="wordmark" aria-label="AgentGuard dashboard">
-            Agent<span className="wordmark-gate" aria-hidden="true" />Guard
+            <Wordmark />
           </Link>
+          {workspace && <div className="topbar-slot topbar-workspace">{workspace}</div>}
           <NavLinks items={nav} />
           <div className="topbar-end">
             {heldCount !== null && <HeldCount count={heldCount} />}
-            {workspace && <div className="topbar-slot">{workspace}</div>}
             {account && <div className="topbar-slot">{account}</div>}
             <button
               type="button"

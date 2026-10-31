@@ -18,9 +18,9 @@ export function GateLine({ label = "Actions and decisions", proposalHeading = "T
   return (
     <ol className="gate-line" aria-label={label}>
       <li className="gate-row gate-row-head" aria-hidden="true">
-        <div className="gate-cell gate-cell-proposal">{proposalHeading}</div>
+        <div className="gate-proposal">{proposalHeading}</div>
         <div className="gate-axis" />
-        <div className="gate-cell gate-cell-decision">{decisionHeading}</div>
+        <div className="gate-decision">{decisionHeading}</div>
       </li>
       {children}
     </ol>
@@ -55,14 +55,21 @@ export function GateRow({ proposal, proposalMissing, caption, decision, decision
   /** Controls for a held action. These stay clickable inside a selectable row. */
   actions?: ReactNode;
 }) {
-  const classes = ["gate-row", fresh ? "gate-row-fresh" : null, selected ? "gate-row-selected" : null].filter(Boolean).join(" ");
+  const classes = [
+    "gate-row",
+    "gate-row-" + (decision ?? "note"),
+    caption ? "gate-row-captioned" : null,
+    fresh ? "gate-row-fresh" : null,
+    selected ? "gate-row-selected" : null,
+    onSelect ? "gate-row-open" : null,
+  ].filter(Boolean).join(" ");
   const proposalBody = proposal !== undefined
     ? <Foreign preformatted>{proposal}</Foreign>
     : proposalMissing !== undefined && <span className="gate-missing">{proposalMissing}</span>;
   return (
     <li className={classes}>
-      <div className="gate-cell gate-cell-proposal gate-proposal">
-        {caption && <span className="meta">{caption}</span>}
+      <div className="gate-proposal">
+        {caption && <div className="gate-caption">{caption}</div>}
         {onSelect ? (
           <button type="button" className="gate-open" onClick={onSelect} aria-label={selectLabel} aria-pressed={selected}>
             {proposalBody}
@@ -70,14 +77,19 @@ export function GateRow({ proposal, proposalMissing, caption, decision, decision
         ) : proposalBody}
       </div>
       <div className="gate-axis">
-        {decision === null ? <span className="gate-axis-dot" /> : <DecisionGlyph decision={decision} size={20} />}
+        <span className="gate-link" />
+        <span className="gate-node">
+          {decision !== null && <DecisionGlyph decision={decision} size={decision === "block" ? 24 : 15} />}
+        </span>
       </div>
-      <div className="gate-cell gate-cell-decision gate-decision">
-        {decision === null
-          ? <span>{decisionLabel}</span>
-          : <span className={"decision decision-" + decision}>{decisionLabel ?? DECISION_WORDS[decision]}</span>}
-        {reason && <span className="gate-reason">{reason}</span>}
-        {time && <time className="gate-time">{time}</time>}
+      <div className="gate-decision">
+        <div className="gate-verdict">
+          {decision === null
+            ? <span className="gate-note-word">{decisionLabel}</span>
+            : <span className={"decision decision-" + decision}>{decisionLabel ?? DECISION_WORDS[decision]}</span>}
+          {time && <time className="gate-time">{time}</time>}
+        </div>
+        {reason && <div className="gate-reason">{reason}</div>}
         {actions && <div className="gate-actions">{actions}</div>}
       </div>
     </li>
