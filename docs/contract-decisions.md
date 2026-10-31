@@ -288,6 +288,31 @@ without serving the current recovery behavior. Failing/cancelling interrupted
 runs prevents a new middleware process from continuing them with an empty taint
 state.
 
+## 13. Who may change workspace members
+
+**Decision (31 October 2026):** A `security_admin` manages the members of their
+own workspace over the API: adding an existing account, changing a role and
+removing a member. Any member may read the list. Creating users and workspaces
+stays with the `db:admin` command line, because `platformRole` has no way to be
+granted yet and no rule says who may hold it. A platform-admin rule would be its
+own decision.
+
+A workspace keeps at least one `security_admin`; the API answers 409 rather than
+leave it unmanaged. Each change takes a lock on the workspace and reads the
+actor's role inside that transaction, so the role check cannot be outdated by a
+concurrent demotion. This is why the check is in `db/admin.ts` and not in the
+route, unlike `run-routes.ts`.
+
+Each change writes `member.added`, `member.role_changed` or `member.removed` in
+the same transaction. Metadata holds ids and roles, not emails, because audit rows
+are never deleted. The command line writes the same events as actor `system`,
+plus `user.created` and `workspace.created`, with no migration: `event_type` is
+text validated by the shared schema.
+
+Adding a member lets a `security_admin` learn whether an email has an account.
+That is accepted: it needs an admin role, and the alternative is inviting by
+email, which does not exist.
+
 ## Guidance for P3's schema
 
 These points are implementation guidance, not part of the contract:

@@ -1,5 +1,6 @@
 import cors from "@fastify/cors";
 import fastifyStatic from "@fastify/static";
+import type pg from "pg";
 import Fastify, { type FastifyInstance } from "fastify";
 import { timingSafeEqual } from "node:crypto";
 import { readFile } from "node:fs/promises";
@@ -17,6 +18,7 @@ import {
 } from "./workspace-files.js";
 import type { AgentService } from "./agent-service.js";
 import { registerRunEventStream, type RunEventStreamOptions } from "./run-events-route.js";
+import { registerMemberRoutes } from "./member-routes.js";
 import { registerRunRoutes, type RunRoutesOptions } from "./run-routes.js";
 import { registerSessionAuth, type Identity } from "./auth-routes.js";
 
@@ -55,6 +57,8 @@ export interface AppExtensions {
   runEvents?: RunEventStreamOptions;
   /** Run, snapshot, cancel and approval routes for the multi-agent model. Omitted, not registered. */
   runs?: RunRoutesOptions;
+  /** Where workspace members live. Their routes need signed-in users, so this also needs `identity`. */
+  memberDatabase?: pg.Pool;
   /** Signed-in users with sessions, instead of the shared APP_AUTH_TOKEN. */
   identity?: Identity;
 }
@@ -300,6 +304,9 @@ export async function createApp(
   }
   if (extensions.runs) {
     registerRunRoutes(app, extensions.runs);
+  }
+  if (extensions.identity && extensions.memberDatabase) {
+    registerMemberRoutes(app, extensions.memberDatabase);
   }
 
   if (config.nodeEnv === "production") {

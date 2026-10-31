@@ -1,11 +1,20 @@
 import { randomUUID } from "node:crypto";
-import type { AgentCapabilities, WorkspaceRole } from "@launchpad/shared";
+import {
+  auditEventSchema,
+  workspaceMemberSummarySchema,
+  type AgentCapabilities,
+  type AuditEventType,
+  type WorkspaceMemberSummary,
+  type WorkspaceRole,
+} from "@launchpad/shared";
 import type pg from "pg";
+import { HttpError } from "../errors.js";
 import { hashPassword } from "./postgres-identity.js";
-import { insertRow } from "./rows.js";
+import { fromRow, insertRow } from "./rows.js";
 
-// Setting up users and workspaces until there is an admin UI. db/admin-cli.ts
-// is the command line for these.
+// Setting up users and workspaces. db/admin-cli.ts is the command line for
+// these, attributed in the audit log as `system`. member-routes.ts serves the
+// member functions below to signed-in security admins, attributed to them.
 
 /** The agents every new workspace starts with: one supervisor and three specialists. */
 export const STANDARD_AGENTS = {
@@ -56,30 +65,187 @@ async function inTransaction<T>(pool: pg.Pool, work: (db: pg.PoolClient) => Prom
   }
 }
 
+/** Who an audit event names: a signed-in user, or the operator at the command line. */
+type Actor = { actorType: "user"; actorId: string } | { actorType: "system"; actorId: null };
+const OPERATOR: Actor = { actorType: "system", actorId: null };
+
+/** Written in the same transaction as the change. Ids only: audit rows are never deleted, so no emails. */
+async function audit(
+  db: pg.PoolClient,
+  actor: Actor,
+  eventType: AuditEventType,
+  workspaceId: string | null,
+  metadata: Record<string, string>,
+): Promise<void> {
+  await insertRow(
+    db,
+    "audit_events",
+    auditEventSchema.parse({
+      id: randomUUID(),
+      workspaceId,
+      ...actor,
+      eventType,
+      runId: null,
+      taskId: null,
+      executionId: null,
+      metadata,
+      createdAt: new Date().toISOString(),
+    }),
+  );
+}
+
 /** A user who signs in with this email and password. Returns the user's id. */
 export async function addUser(pool: pg.Pool, input: { email: string; name: string; password: string }): Promise<string> {
   if (input.password.length < 12) throw new Error("Use a password of at least 12 characters");
   const email = input.email.trim().toLowerCase();
   const id = randomUUID();
-  await insertRow(pool, "users", {
-    id,
-    email,
-    name: input.name,
-    authSubject: `local:${email}`,
-    passwordHash: await hashPassword(input.password),
-    ...stamps(),
+  const passwordHash = await hashPassword(input.password);
+  await inTransaction(pool, async (db) => {
+    await insertRow(db, "users", { id, email, name: input.name, authSubject: `local:${email}`, passwordHash, ...stamps() });
+    await audit(db, OPERATOR, "user.created", null, { userId: id });
   });
   return id;
 }
 
 /** Gives a user a role in a workspace, or changes the role they have. */
 export async function setMember(pool: pg.Pool, input: { workspaceId: string; email: string; role: WorkspaceRole }): Promise<void> {
-  const userId = await userIdByEmail(pool, input.email);
-  await pool.query(
-    `INSERT INTO workspace_members (workspace_id, user_id, role, joined_at) VALUES ($1, $2, $3, $4)
-     ON CONFLICT (workspace_id, user_id) DO UPDATE SET role = EXCLUDED.role`,
-    [input.workspaceId, userId, input.role, new Date().toISOString()],
+  await inTransaction(pool, async (db) => {
+    const userId = await userIdByEmail(db, input.email);
+    const before = await roleOf(db, input.workspaceId, userId);
+    if (before === input.role) return;
+    await db.query(
+      `INSERT INTO workspace_members (workspace_id, user_id, role, joined_at) VALUES ($1, $2, $3, $4)
+       ON CONFLICT (workspace_id, user_id) DO UPDATE SET role = EXCLUDED.role`,
+      [input.workspaceId, userId, input.role, new Date().toISOString()],
+    );
+    if (before === null) await audit(db, OPERATOR, "member.added", input.workspaceId, { userId, role: input.role });
+    else await audit(db, OPERATOR, "member.role_changed", input.workspaceId, { userId, from: before, to: input.role });
+  });
+}
+
+const MEMBER_COLUMNS = "m.user_id, m.role, m.joined_at, u.email, u.name";
+
+async function selectMember(db: Pick<pg.Pool, "query">, workspaceId: string, userId: string): Promise<WorkspaceMemberSummary | null> {
+  const { rows } = await db.query(
+    `SELECT ${MEMBER_COLUMNS} FROM workspace_members m JOIN users u ON u.id = m.user_id
+      WHERE m.workspace_id = $1 AND m.user_id = $2`,
+    [workspaceId, userId],
   );
+  return rows[0] === undefined ? null : workspaceMemberSummarySchema.parse(fromRow(rows[0]));
+}
+
+async function roleOf(db: Pick<pg.Pool, "query">, workspaceId: string, userId: string): Promise<WorkspaceRole | null> {
+  const { rows } = await db.query<{ role: WorkspaceRole }>(
+    "SELECT role FROM workspace_members WHERE workspace_id = $1 AND user_id = $2",
+    [workspaceId, userId],
+  );
+  return rows[0]?.role ?? null;
+}
+
+/**
+ * One change to a workspace's members, by a signed-in user. Changes to a
+ * workspace wait for each other, and the actor's role is read after the wait:
+ * two admins demoting each other cannot leave the workspace with none, and an
+ * admin demoted a moment ago cannot act on the old role.
+ */
+async function changeMembers<T>(
+  pool: pg.Pool,
+  workspaceId: string,
+  actorUserId: string,
+  change: (db: pg.PoolClient, actor: Actor) => Promise<T>,
+): Promise<T> {
+  return inTransaction(pool, async (db) => {
+    // NO KEY: does not hold up Runs and other rows that only reference the workspace.
+    await db.query("SELECT 1 FROM workspaces WHERE id = $1 FOR NO KEY UPDATE", [workspaceId]);
+    const role = await roleOf(db, workspaceId, actorUserId);
+    if (role === null) throw new HttpError(404, "Workspace not found");
+    if (role !== "security_admin") throw new HttpError(403, `The ${role} role cannot change members`);
+    return change(db, { actorType: "user", actorId: actorUserId });
+  });
+}
+
+/** Refuses to take away the role of a workspace's only security_admin. */
+async function keepOneAdmin(db: pg.PoolClient, workspaceId: string, userId: string): Promise<void> {
+  const { rows } = await db.query<{ others: number }>(
+    `SELECT count(*)::int AS others FROM workspace_members
+      WHERE workspace_id = $1 AND role = 'security_admin' AND user_id <> $2`,
+    [workspaceId, userId],
+  );
+  if (rows[0]!.others === 0) {
+    throw new HttpError(409, "A workspace needs at least one security admin. Make someone else a security admin first.");
+  }
+}
+
+/** The workspace's members and the viewer's own role. A non-member gets the same 404 as a missing workspace. */
+export async function listMembers(
+  pool: pg.Pool,
+  workspaceId: string,
+  viewerUserId: string,
+): Promise<{ members: WorkspaceMemberSummary[]; viewerRole: WorkspaceRole }> {
+  const viewerRole = await roleOf(pool, workspaceId, viewerUserId);
+  if (viewerRole === null) throw new HttpError(404, "Workspace not found");
+  const { rows } = await pool.query(
+    `SELECT ${MEMBER_COLUMNS} FROM workspace_members m JOIN users u ON u.id = m.user_id
+      WHERE m.workspace_id = $1 ORDER BY lower(u.name), u.id`,
+    [workspaceId],
+  );
+  return { members: rows.map((row) => workspaceMemberSummarySchema.parse(fromRow(row))), viewerRole };
+}
+
+export async function addMember(
+  pool: pg.Pool,
+  input: { workspaceId: string; actorUserId: string; email: string; role: WorkspaceRole },
+): Promise<WorkspaceMemberSummary> {
+  return changeMembers(pool, input.workspaceId, input.actorUserId, async (db, actor) => {
+    const { rows } = await db.query<{ id: string }>("SELECT id FROM users WHERE lower(email) = lower($1)", [input.email]);
+    const userId = rows[0]?.id;
+    if (userId === undefined) {
+      throw new HttpError(404, "No account uses that email. An operator can create one with db:admin add-user.");
+    }
+    if ((await roleOf(db, input.workspaceId, userId)) !== null) throw new HttpError(409, "That person is already a member");
+    await insertRow(db, "workspace_members", {
+      workspaceId: input.workspaceId,
+      userId,
+      role: input.role,
+      joinedAt: new Date().toISOString(),
+    });
+    await audit(db, actor, "member.added", input.workspaceId, { userId, role: input.role });
+    return (await selectMember(db, input.workspaceId, userId))!;
+  });
+}
+
+export async function changeMemberRole(
+  pool: pg.Pool,
+  input: { workspaceId: string; actorUserId: string; userId: string; role: WorkspaceRole },
+): Promise<WorkspaceMemberSummary> {
+  return changeMembers(pool, input.workspaceId, input.actorUserId, async (db, actor) => {
+    const before = await roleOf(db, input.workspaceId, input.userId);
+    if (before === null) throw new HttpError(404, "Member not found");
+    if (before !== input.role) {
+      if (before === "security_admin") await keepOneAdmin(db, input.workspaceId, input.userId);
+      await db.query("UPDATE workspace_members SET role = $3 WHERE workspace_id = $1 AND user_id = $2", [
+        input.workspaceId,
+        input.userId,
+        input.role,
+      ]);
+      await audit(db, actor, "member.role_changed", input.workspaceId, { userId: input.userId, from: before, to: input.role });
+    }
+    return (await selectMember(db, input.workspaceId, input.userId))!;
+  });
+}
+
+/** Takes effect on the member's next request: access is read from this table every time. */
+export async function removeMember(
+  pool: pg.Pool,
+  input: { workspaceId: string; actorUserId: string; userId: string },
+): Promise<void> {
+  await changeMembers(pool, input.workspaceId, input.actorUserId, async (db, actor) => {
+    const before = await roleOf(db, input.workspaceId, input.userId);
+    if (before === null) throw new HttpError(404, "Member not found");
+    if (before === "security_admin") await keepOneAdmin(db, input.workspaceId, input.userId);
+    await db.query("DELETE FROM workspace_members WHERE workspace_id = $1 AND user_id = $2", [input.workspaceId, input.userId]);
+    await audit(db, actor, "member.removed", input.workspaceId, { userId: input.userId, role: before });
+  });
 }
 
 /**
@@ -104,6 +270,8 @@ export async function addWorkspace(
     );
     await insertRow(db, "workspaces", { id: workspaceId, name: input.name, sourcePath: input.sourcePath, createdByUserId: ownerId, ...stamps() });
     await insertRow(db, "workspace_members", { workspaceId, userId: ownerId, role: "security_admin", joinedAt: new Date().toISOString() });
+    await audit(db, OPERATOR, "workspace.created", workspaceId, { ownerUserId: ownerId });
+    await audit(db, OPERATOR, "member.added", workspaceId, { userId: ownerId, role: "security_admin" });
     for (const [role, { description, capabilities }] of Object.entries(STANDARD_AGENTS)) {
       const name = role[0]!.toUpperCase() + role.slice(1);
       const profileId = randomUUID();

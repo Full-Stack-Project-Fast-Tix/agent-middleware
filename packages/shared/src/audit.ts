@@ -31,6 +31,8 @@ export const AUDIT_EVENT_TYPES = [
   "member.added",
   "member.role_changed",
   "member.removed",
+  "user.created",
+  "workspace.created",
 ] as const;
 export const auditEventTypeSchema = z.enum(AUDIT_EVENT_TYPES);
 export type AuditEventType = z.infer<typeof auditEventTypeSchema>;

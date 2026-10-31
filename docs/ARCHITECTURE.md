@@ -215,12 +215,13 @@ instead of the shared token, and `index.ts` composes the orchestrator with
 any role may read; `developer` and `security_admin` may also start and cancel
 Runs and answer approvals; `auditor` only reads. `npm run db:admin -w
 @launchpad/server` adds users, workspaces (with the four standard agents and
-the platform baseline policy) and members. The default `token` mode is
-unchanged, and `npm run dev:demo` still runs the simulated demo.
+the platform baseline policy) and members. A `security_admin` can also manage
+their workspace's members over the API (contract decision 13). The default
+`token` mode is unchanged, and `npm run dev:demo` still runs the simulated demo.
 
 Not built yet, by owner:
-- **P3:** an admin UI for users, workspaces and members, limits on sign-in
-  attempts, and tenant isolation beyond workspace roles (every workspace's
+- **P3:** an admin screen for members (users and workspaces stay on the command
+  line), limits on sign-in attempts, and tenant isolation beyond workspace roles (every workspace's
   Runs share one host).
 - **P4:** the app shell, Dashboard and the full Run Detail composition.
 

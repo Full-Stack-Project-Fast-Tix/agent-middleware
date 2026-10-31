@@ -3,7 +3,7 @@ import { idSchema, jsonObjectSchema, requiredTextSchema } from "./common.js";
 import { agentCapabilitiesSchema, agentSchema, capabilityCeilingSchema } from "./agents.js";
 import { approvalDecisionSchema, orchestrationModeSchema, workspaceRoleSchema } from "./enums.js";
 import { runSnapshotSchema } from "./events.js";
-import { userSchema, workspaceSchema } from "./identity.js";
+import { userSchema, workspaceMemberSchema, workspaceSchema } from "./identity.js";
 import { runSchema } from "./runs.js";
 import { approvalSchema } from "./security.js";
 
@@ -114,6 +114,9 @@ export const apiPaths = {
   runEvents: (runId: string) => `/api/runs/${encodeURIComponent(runId)}/events`,
   cancelRun: (runId: string) => `/api/runs/${encodeURIComponent(runId)}/cancel`,
   resolveApproval: (approvalId: string) => `/api/approvals/${encodeURIComponent(approvalId)}/resolve`,
+  workspaceMembers: (workspaceId: string) => `/api/workspaces/${encodeURIComponent(workspaceId)}/members`,
+  workspaceMember: (workspaceId: string, userId: string) =>
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/members/${encodeURIComponent(userId)}`,
 } as const;
 
 /** A workspace as listings show it; where its source lives stays on the server. */
@@ -193,3 +196,36 @@ export const addWorkspaceMemberRequestSchema = z.object({
   role: workspaceRoleSchema,
 });
 export type AddWorkspaceMemberRequest = z.infer<typeof addWorkspaceMemberRequestSchema>;
+
+/**
+ * Workspace members, in password mode only.
+ *
+ *   GET    /api/workspaces/:workspaceId/members                  -> WorkspaceMembersResponse
+ *   POST   /api/workspaces/:workspaceId/members  AddWorkspaceMemberRequest    -> 201 { member }
+ *   PATCH  /api/workspaces/:workspaceId/members/:userId  UpdateWorkspaceMemberRequest -> { member }
+ *   DELETE /api/workspaces/:workspaceId/members/:userId         -> 204
+ *
+ * Any member may read the list. Only `security_admin` may change it (403
+ * otherwise). A workspace the caller is not in answers 404. Adding needs an
+ * existing account (404); someone already in the workspace answers 409, and so
+ * does demoting or removing the workspace's last `security_admin`. Creating
+ * users and workspaces stays with the db:admin command line. See contract
+ * decision 13.
+ */
+export const workspaceMemberSummarySchema = workspaceMemberSchema
+  .pick({ userId: true, role: true, joinedAt: true })
+  .extend({ email: userSchema.shape.email, name: userSchema.shape.name });
+export type WorkspaceMemberSummary = z.infer<typeof workspaceMemberSummarySchema>;
+
+export const workspaceMembersResponseSchema = z.object({
+  members: z.array(workspaceMemberSummarySchema),
+  /** The caller's own role, so a screen can offer only what the server will accept. */
+  viewerRole: workspaceRoleSchema,
+});
+export type WorkspaceMembersResponse = z.infer<typeof workspaceMembersResponseSchema>;
+
+export const workspaceMemberResponseSchema = z.object({ member: workspaceMemberSummarySchema });
+export type WorkspaceMemberResponse = z.infer<typeof workspaceMemberResponseSchema>;
+
+export const updateWorkspaceMemberRequestSchema = z.object({ role: workspaceRoleSchema });
+export type UpdateWorkspaceMemberRequest = z.infer<typeof updateWorkspaceMemberRequestSchema>;
