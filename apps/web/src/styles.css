@@ -46,7 +46,7 @@ label > textarea {
 
 .tab[aria-selected="true"] {
   background: var(--surface);
-  box-shadow: var(--shadow-control), 0 0 0 1px rgb(20 38 44 / 0.04);
+  box-shadow: var(--shadow-raised);
   color: var(--ink);
 }
 

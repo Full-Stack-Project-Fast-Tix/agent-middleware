@@ -401,8 +401,10 @@
   white-space: nowrap;
 }
 
+/* Takes the room the other columns leave, and truncates inside it. */
 .cell-prompt {
-  max-width: 56ch;
+  width: 100%;
+  max-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -420,9 +422,24 @@
   text-decoration-color: var(--line-strong);
 }
 
+/* On a phone a prompt gets two lines, so the status beside it stays in view. */
 @media (max-width: 640px) {
   .cell-prompt {
-    max-width: 26ch;
+    width: auto;
+    min-width: 17ch;
+    max-width: 20ch;
+    white-space: normal;
+  }
+
+  .cell-prompt :where(a) {
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+
+  .data-table :where(th, td) {
+    padding-inline: 12px;
   }
 }
 
@@ -569,6 +586,12 @@
   --caption-room: 25px;
 }
 
+/* With no block to meet, the mark and the verdict sit level with the caption. */
+.gate-row-unproposed {
+  --caption-room: 0px;
+  --gate-y: 10px;
+}
+
 .gate-row-head {
   --row-top: 0;
   color: var(--ink-soft);
@@ -702,7 +725,9 @@
   border-top-style: dashed;
 }
 
-.gate-row-note .gate-link {
+/* Nothing on the agent's side to join to the mark. */
+.gate-row-note .gate-link,
+.gate-row-unproposed .gate-link {
   display: none;
 }
 
@@ -1028,7 +1053,7 @@
   position: fixed;
   inset: 0;
   z-index: 59;
-  background: rgb(15 44 51 / 0.32);
+  background: var(--scrim);
   animation: scrim-in var(--quick) var(--ease);
 }
 
@@ -1272,7 +1297,7 @@
     border-top: 1px solid var(--line);
     border-radius: 0 0 var(--radius-surface) var(--radius-surface);
     background: var(--surface);
-    box-shadow: 0 16px 28px -16px rgb(20 38 44 / 0.25);
+    box-shadow: var(--shadow-pop);
   }
 
   .topbar-menu[hidden] {

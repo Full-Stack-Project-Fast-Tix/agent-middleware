@@ -30,6 +30,7 @@
   --foreign: #f6f4ef;
   --foreign-ink: #4a463b;
   --foreign-edge: #ece8de;
+  --foreign-tile: rgb(74 70 59 / 0.07);
 
   /* Decisions. Each has a tint for fills and a line for edges. */
   --passed: #1b7349;
@@ -67,7 +68,9 @@
   --radius-panel: 18px;
 
   --shadow-control: 0 1px 1px rgb(20 38 44 / 0.05);
+  --shadow-raised: 0 1px 1px rgb(20 38 44 / 0.05), 0 0 0 1px rgb(20 38 44 / 0.04);
   --shadow-pop: 0 0 0 1px rgb(20 38 44 / 0.07), 0 10px 32px -8px rgb(20 38 44 / 0.2);
+  --scrim: rgb(15 44 51 / 0.34);
 
   --ease: cubic-bezier(0.2, 0.7, 0.3, 1);
   --quick: 120ms;

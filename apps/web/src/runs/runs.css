@@ -128,6 +128,16 @@
   max-width: 48ch;
 }
 
+@media (max-width: 640px) {
+  .new-run-form {
+    padding: 18px;
+  }
+
+  .new-run-footer .button {
+    width: 100%;
+  }
+}
+
 /* Lists: Dashboard and Runs. A run's row is one big target for its link. */
 
 .run-row {
@@ -174,7 +184,9 @@
   }
 
   .waiting-on-you .cell-prompt {
-    max-width: 16ch;
+    width: 100%;
+    min-width: 0;
+    max-width: 0;
   }
 }
 

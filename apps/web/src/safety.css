@@ -13,6 +13,10 @@
   min-width: 0;
 }
 
+.cell-name {
+  white-space: nowrap;
+}
+
 .fact-name {
   height: 44px;
   padding-block: 8px;

@@ -134,7 +134,7 @@ function Overview({ overview, agents, onSelectAgent }: {
           <tbody>
             {agents.map((agent) => (
               <tr key={agent.id}>
-                <td>{agent.name}</td>
+                <td className="cell-name">{agent.name}</td>
                 <td className="cell-prompt wide-only">{agent.description || "Coding agent"}</td>
                 <td className="num">{overview.interventions.filter((event) => event.agentId === agent.id).length}</td>
                 <td className="num wide-only">{overview.learnedPatterns.filter((pattern) => pattern.agentId === agent.id).length}</td>

@@ -55,10 +55,12 @@ export function GateRow({ proposal, proposalMissing, caption, decision, decision
   /** Controls for a held action. These stay clickable inside a selectable row. */
   actions?: ReactNode;
 }) {
+  const nothingProposed = proposal === undefined && proposalMissing === undefined;
   const classes = [
     "gate-row",
     "gate-row-" + (decision ?? "note"),
     caption ? "gate-row-captioned" : null,
+    nothingProposed ? "gate-row-unproposed" : null,
     fresh ? "gate-row-fresh" : null,
     selected ? "gate-row-selected" : null,
     onSelect ? "gate-row-open" : null,
