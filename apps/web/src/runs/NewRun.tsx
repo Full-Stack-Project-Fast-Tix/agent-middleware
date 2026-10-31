@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import type { Agent, OrchestrationMode } from "@launchpad/shared";
 import { ApiError } from "../api";
-import { Link, navigate, paths } from "../router";
-import { readRecentRuns, rememberRun } from "./routes";
+import { navigate, paths } from "../router";
+import { Button, PageHeader } from "../ui";
+import { rememberRun } from "./routes";
 import { runsApi, type WorkspaceSummary } from "./runs-api";
 
 const EXAMPLES = [
@@ -20,7 +21,6 @@ export function NewRun() {
   const [prompt, setPrompt] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const recent = readRecentRuns();
 
   useEffect(() => {
     runsApi
@@ -72,13 +72,10 @@ export function NewRun() {
 
   return (
     <div className="runs-page">
-      <header className="runs-header">
-        <div>
-          <span className="eyebrow">Runs</span>
-          <h1>Start a run</h1>
-          <p>Describe the work. A single agent can do it, or a supervisor can split it between specialists.</p>
-        </div>
-      </header>
+      <PageHeader
+        title="Start a run"
+        description="Describe the work. A single agent can do it, or a supervisor can split it between specialists."
+      />
 
       {error && (
         <div className="error-banner" role="alert">
@@ -87,7 +84,7 @@ export function NewRun() {
         </div>
       )}
 
-      <form className="new-run-card" onSubmit={submit}>
+      <form className="new-run-form" onSubmit={submit}>
         {workspaces !== null && workspaces.length > 1 && (
           <label>
             Workspace
@@ -129,7 +126,7 @@ export function NewRun() {
             <option value="">Workspace default</option>
             {usable.map((agent) => (
               <option key={agent.id} value={agent.id}>
-                {agent.name}{agent.description ? ` — ${agent.description}` : ""}
+                {agent.name}{agent.description ? `: ${agent.description}` : ""}
               </option>
             ))}
           </select>
@@ -149,31 +146,17 @@ export function NewRun() {
         </label>
         <div className="new-run-examples">
           {EXAMPLES.map((example) => (
-            <button type="button" key={example} onClick={() => setPrompt(example)}>↗ {example}</button>
+            <button type="button" key={example} onClick={() => setPrompt(example)}>{example}</button>
           ))}
         </div>
 
         <div className="new-run-footer">
-          <span>Commands, file changes and delegations all pass the security checks before they run.</span>
-          <button className="button button-primary" disabled={busy || !workspaceId || !prompt.trim()}>
-            {busy ? "Starting…" : "Start run"}
-          </button>
+          <span>AgentGuard checks commands, file changes and delegations before they run.</span>
+          <Button type="submit" variant="primary" page busy={busy} disabled={!workspaceId || !prompt.trim()}>
+            Start run
+          </Button>
         </div>
       </form>
-
-      {recent.length > 0 && (
-        <section className="recent-runs">
-          <span className="eyebrow">Started in this browser</span>
-          <ul>
-            {recent.map((item) => (
-              <li key={item.id}>
-                <Link to={paths.run(item.id)}>{item.prompt}</Link>
-                <span>{new Date(item.createdAt).toLocaleString()}</span>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
     </div>
   );
 }

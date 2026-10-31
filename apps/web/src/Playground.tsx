@@ -97,7 +97,6 @@ export function Playground({ state }: { state: PlaygroundState }) {
               key={agent.id}
               onClick={() => setSelectedId(agent.id)}
             >
-              <div className="agent-avatar">{agent.name.slice(0, 1).toUpperCase()}</div>
               <div className="agent-card-copy">
                 <strong>{agent.name}</strong>
                 <span>{agent.description || "Coding Agent"}</span>
@@ -386,7 +385,6 @@ export function Playground({ state }: { state: PlaygroundState }) {
           </>
         ) : (
           <div className="no-agent">
-            <div className="no-agent-art">A</div>
             <h1>Your runtime is ready for an Agent.</h1>
             <p>Create a workspace, give Codex a job, and continue the conversation here.</p>
             <button

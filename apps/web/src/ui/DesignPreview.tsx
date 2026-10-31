@@ -39,16 +39,16 @@ export function DesignPreview() {
 
       <section className="page-section">
         <h2>Decisions and statuses</h2>
-        <div className="preview-row">
+        <div className="cluster">
           <DecisionMark decision="allow" />
           <DecisionMark decision="steer" />
           <DecisionMark decision="require_approval" />
           <DecisionMark decision="block" />
         </div>
-        <div className="preview-row">
+        <div className="cluster">
           {STATUSES.map((status) => <StatusBadge key={status} status={status} live={status === "running"} />)}
         </div>
-        <div className="preview-row">
+        <div className="cluster">
           <SeverityBadge severity="info" />
           <SeverityBadge severity="low" />
           <SeverityBadge severity="medium" />
@@ -59,7 +59,7 @@ export function DesignPreview() {
 
       <section className="page-section">
         <h2>Buttons</h2>
-        <div className="preview-row">
+        <div className="cluster">
           <Button variant="primary">Approve</Button>
           <Button>Refresh</Button>
           <Button variant="ghost">Dismiss</Button>

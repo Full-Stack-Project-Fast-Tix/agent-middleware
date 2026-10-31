@@ -46,6 +46,14 @@
   font-size: var(--text-13);
 }
 
+.cluster {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  min-width: 0;
+}
+
 /* Buttons */
 
 .button {
@@ -284,8 +292,8 @@
 .foreign-inline {
   padding: 1px 4px;
   border-radius: var(--radius-control);
+  border-left: 2px solid var(--hatch);
   background: var(--foreign);
-  box-shadow: inset 2px 0 0 var(--hatch);
   font-family: var(--font-foreign);
   font-size: var(--text-13);
   overflow-wrap: anywhere;
@@ -342,6 +350,12 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  .data-table .cell-prompt {
+    max-width: 26ch;
+  }
 }
 
 /* Loading, empty and error states */
@@ -490,6 +504,7 @@
 
 .gate-proposal {
   display: grid;
+  align-content: start;
   gap: 4px;
 }
 
@@ -512,10 +527,6 @@
   content: "";
   position: absolute;
   inset: 0;
-}
-
-.gate-row:hover .gate-cell {
-  background: transparent;
 }
 
 .gate-decision {
