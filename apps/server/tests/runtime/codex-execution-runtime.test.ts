@@ -47,7 +47,7 @@ describe("CodexExecutionRuntime", () => {
   it("runs one execution in its own container on the run's working copy", async () => {
     const { runner, sessions } = fakeRunner(async (server) => {
       await server.turnStarted();
-      server.finish("Validation added.");
+      server.finish(JSON.stringify({ status: "complete", summary: "Validation added." }));
     });
     const outcome = await new CodexExecutionRuntime(runner).execute(request());
 
@@ -56,10 +56,23 @@ describe("CodexExecutionRuntime", () => {
     ]);
     expect(outcome).toEqual({
       output: "Validation added.",
+      disposition: { status: "complete", summary: "Validation added." },
       threadId: "thread-1",
       usage: null,
       tracePath: "/data/traces/execution-1.jsonl",
       traceTruncated: false,
+    });
+  });
+
+  it("returns a null disposition when the final report is not strict JSON", async () => {
+    const { runner } = fakeRunner(async (server) => {
+      await server.turnStarted();
+      server.finish("I could not edit the file.");
+    });
+
+    await expect(new CodexExecutionRuntime(runner).execute(request())).resolves.toMatchObject({
+      output: "I could not edit the file.",
+      disposition: null,
     });
   });
 

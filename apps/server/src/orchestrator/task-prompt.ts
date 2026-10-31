@@ -72,6 +72,15 @@ export function buildTaskPrompt(input: {
     if (item.steer !== null) lines.push(`Platform note: ${item.steer}`);
   }
 
+  lines.push(
+    "",
+    "FINAL REPORT",
+    "Your final response must be exactly one JSON object with no Markdown fence or surrounding text:",
+    '{"status":"complete","summary":"what you completed and any verification performed"}',
+    "Use status incomplete when any required part of this task could not be completed, and explain why in summary.",
+    "This report is required even if the task only involved analysis or review.",
+  );
+
   return lines.join("\n");
 }
 

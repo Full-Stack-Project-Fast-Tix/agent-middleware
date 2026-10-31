@@ -288,6 +288,7 @@ export class StandInRuntime implements ExecutionRuntime {
     }
     return {
       output: `${request.task.title}: done`,
+      disposition: { status: "complete", summary: `${request.task.title}: done` },
       threadId: null,
       usage: null,
       tracePath: null,

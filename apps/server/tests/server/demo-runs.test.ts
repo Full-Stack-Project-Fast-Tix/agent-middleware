@@ -52,10 +52,12 @@ describe("the RUNS_DEMO backend", () => {
 
   it("never reports a denied edit as made, down to the final result", async () => {
     const { snapshot, result } = await demoRun("deny");
-    expect(snapshot.run.status).toBe("completed");
+    expect(snapshot.run.status).toBe("failed");
     expect(snapshot.approvals.map((approval) => approval.status)).toEqual(["denied"]);
     expect(result("Make the change")).toMatch(/^Did not change src\/checkout\.ts/);
-    expect(snapshot.run.finalOutput).toContain("nothing changed");
-    expect(snapshot.run.finalOutput).not.toContain("ready for review");
+    expect(snapshot.tasks.find((task) => task.title === "Make the change")).toMatchObject({ status: "failed" });
+    expect(snapshot.tasks.find((task) => task.title === "Test and review")).toMatchObject({ status: "skipped", result: null });
+    expect(snapshot.run.finalOutput).toBeNull();
+    expect(snapshot.run.error).toContain("The agent reported the task incomplete");
   });
 });

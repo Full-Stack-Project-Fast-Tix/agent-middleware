@@ -239,7 +239,14 @@ class FuzzRuntime implements ExecutionRuntime {
         if (decision.outcome === "block" && decision.stop === "execution") break;
       }
       if (crashing) throw new Error("crashed after acting");
-      return { output: script.output, threadId: null, usage: null, tracePath: null, traceTruncated: false };
+      return {
+        output: script.output,
+        disposition: { status: "complete", summary: script.output },
+        threadId: null,
+        usage: null,
+        tracePath: null,
+        traceTruncated: false,
+      };
     } finally {
       this.active -= 1;
     }

@@ -101,6 +101,8 @@ type ScriptedAction = Omit<CommandAction, "actionId"> | Omit<FileChangeAction, "
 export interface ScriptStep {
   actions?: ScriptedAction[];
   output?: string;
+  /** Defaults to complete. Null simulates a malformed or missing report. */
+  disposition?: "complete" | "incomplete" | null;
   /** Throw on this many attempts before succeeding; Infinity always throws. */
   failAttempts?: number;
   /** Throw after the actions instead of before them. */
@@ -149,8 +151,12 @@ export class ScriptedRuntime implements ExecutionRuntime {
         if (decision.outcome === "block" && decision.stop === "execution") break;
       }
       if (failing) throw new Error(`${title}: runtime crashed`);
+      const output = step.output ?? `${title}: done`;
       return {
-        output: step.output ?? `${title}: done`,
+        output,
+        disposition: step.disposition === null
+          ? null
+          : { status: step.disposition ?? "complete", summary: output },
         threadId: `thread-${request.execution.id}`,
         usage: null,
         tracePath: null,

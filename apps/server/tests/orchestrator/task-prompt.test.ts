@@ -4,6 +4,12 @@ import { MAX_INPUT_CHARS, buildTaskPrompt } from "../../src/orchestrator/task-pr
 const task = { title: "Add validation", objective: "Validate signup fields" };
 
 describe("buildTaskPrompt", () => {
+  it("requires a strict final task disposition", () => {
+    const prompt = buildTaskPrompt({ task, instructions: "", inputs: [], withheld: [], nonce: "n" });
+    expect(prompt).toContain('{"status":"complete","summary":"what you completed and any verification performed"}');
+    expect(prompt).toContain("Use status incomplete");
+  });
+
   it("fences earlier results with a nonce so they cannot pose as the platform", () => {
     const prompt = buildTaskPrompt({
       task,

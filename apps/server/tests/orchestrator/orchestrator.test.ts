@@ -283,6 +283,38 @@ describe("auto mode", () => {
 });
 
 describe("retries and failures", () => {
+  it("fails without retrying when the agent reports that the task is incomplete", async () => {
+    const { run, events } = await start("single", {
+      script: { [PROMPT]: { output: "The workspace was read-only.", disposition: "incomplete" } },
+    }, AGENTS.developer);
+    const snapshot = await settle(run.id, events);
+
+    expect(snapshot.run.status).toBe("failed");
+    expect(snapshot.tasks[0]).toMatchObject({
+      status: "failed",
+      result: "The workspace was read-only.",
+      error: "The agent reported the task incomplete: The workspace was read-only.",
+    });
+    expect(snapshot.executions).toHaveLength(1);
+    expect(snapshot.executions[0]).toMatchObject({ status: "completed", output: "The workspace was read-only." });
+  });
+
+  it("fails without retrying when the agent omits or malforms its disposition", async () => {
+    const { run, events } = await start("single", {
+      script: { [PROMPT]: { output: "Done, probably.", disposition: null } },
+    }, AGENTS.developer);
+    const snapshot = await settle(run.id, events);
+
+    expect(snapshot.run.status).toBe("failed");
+    expect(snapshot.tasks[0]).toMatchObject({
+      status: "failed",
+      result: "Done, probably.",
+      error: "The agent finished without a valid task disposition.",
+    });
+    expect(snapshot.executions).toHaveLength(1);
+    expect(snapshot.executions[0]?.status).toBe("completed");
+  });
+
   it("retries a crashed execution as a new attempt", async () => {
     const { run, events } = await start("auto", {
       script: { ...SIGNUP_SCRIPT, "Find missing validation": { failAttempts: 1 }, "Add validation": {} },

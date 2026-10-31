@@ -601,6 +601,22 @@ export class Orchestrator {
         traceTruncated: outcome.traceTruncated,
         completedAt: this.now(),
       });
+      if (outcome.disposition === null) {
+        await this.moveTask(taskId, "failed", {
+          result: outcome.output,
+          error: "The agent finished without a valid task disposition.",
+          completedAt: this.now(),
+        });
+        return "failed";
+      }
+      if (outcome.disposition.status === "incomplete") {
+        await this.moveTask(taskId, "failed", {
+          result: outcome.output,
+          error: `The agent reported the task incomplete: ${outcome.output}`,
+          completedAt: this.now(),
+        });
+        return "failed";
+      }
       await this.moveTask(taskId, "completed", { result: outcome.output, completedAt: this.now() });
       return "completed";
     } catch (error) {

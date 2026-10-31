@@ -18,6 +18,7 @@ import type {
   TaskDependency,
 } from "@launchpad/shared";
 import type { TraceRecord } from "../trace.js";
+import type { TaskDisposition } from "./task-disposition.js";
 import type { TurnSecurityPolicy } from "../turn-security-policy.js";
 
 // What the orchestrator needs from the subsystems around it. Each one is owned
@@ -152,8 +153,10 @@ export interface ExecutionRequest {
 }
 
 export interface ExecutionOutcome {
-  /** The agent's final message: the task's result. */
+  /** The validated summary, or the unparsed final message when disposition is null. */
   output: string;
+  /** Null when the final message did not satisfy the required JSON contract. */
+  disposition: TaskDisposition | null;
   threadId: string | null;
   usage: ExecutionUsage | null;
   tracePath: string | null;
