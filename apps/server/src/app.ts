@@ -299,7 +299,7 @@ export async function createApp(
     registerRunEventStream(app, extensions.runEvents);
   }
   if (extensions.runs) {
-    registerRunRoutes(app, extensions.runs);
+    registerRunRoutes(app, extensions.runs, config.dataDirectory);
   }
 
   if (config.nodeEnv === "production") {

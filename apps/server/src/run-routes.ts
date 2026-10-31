@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
 import {
@@ -11,6 +12,7 @@ import {
 } from "@launchpad/shared";
 import { HttpError } from "./errors.js";
 import type { Orchestrator } from "./orchestrator/orchestrator.js";
+import { traceFilePath } from "./trace.js";
 
 // HTTP routes for the Run -> Task -> AgentExecution model, as specified in
 // packages/shared/src/api.ts:
@@ -21,6 +23,7 @@ import type { Orchestrator } from "./orchestrator/orchestrator.js";
 //   GET  /api/runs/:runId/snapshot                                  -> { snapshot }
 //   POST /api/runs/:runId/cancel                                    -> 202 { run }
 //   POST /api/approvals/:approvalId/resolve  ResolveApprovalRequest -> { approval }
+//   GET  /api/runs/:runId/executions/:executionId/trace             -> JSON Lines
 //
 // The SSE stream (GET /api/runs/:runId/events) is run-events-route.ts.
 // Authentication is the app's onRequest hook. Authorisation is the caller's
@@ -48,8 +51,9 @@ const ACTING_ROLES: ReadonlySet<WorkspaceRole> = new Set(["developer", "security
 const workspaceParams = z.object({ workspaceId: z.guid() });
 const runParams = z.object({ runId: z.guid() });
 const approvalParams = z.object({ approvalId: z.guid() });
+const executionParams = z.object({ runId: z.guid(), executionId: z.guid() });
 
-export function registerRunRoutes(app: FastifyInstance, options: RunRoutesOptions): void {
+export function registerRunRoutes(app: FastifyInstance, options: RunRoutesOptions, dataDirectory: string): void {
   /** A workspace the caller may not see is reported exactly like one that does not exist. */
   async function roleIn(request: FastifyRequest, workspaceId: string, notFound: string): Promise<WorkspaceRole> {
     const role = await options.workspaceRole(workspaceId, options.currentUserId(request));
@@ -95,6 +99,25 @@ export function registerRunRoutes(app: FastifyInstance, options: RunRoutesOption
   app.get("/api/runs/:runId/snapshot", async (request) => {
     const { runId } = runParams.parse(request.params);
     return { snapshot: (await readableSnapshot(request, runId)).snapshot };
+  });
+
+  /**
+   * One attempt's raw trace. The file is named from the id stored on the Run's
+   * own execution, so the path never comes from the request or a stored path.
+   * It is read whole, not streamed, because the outbound redaction hook skips
+   * streams; TraceWriter bounds its size.
+   */
+  app.get("/api/runs/:runId/executions/:executionId/trace", async (request, reply) => {
+    const { runId, executionId } = executionParams.parse(request.params);
+    const { snapshot } = await readableSnapshot(request, runId);
+    const execution = snapshot.executions.find((candidate) => candidate.id === executionId);
+    if (execution === undefined) throw new HttpError(404, "Execution not found");
+    const contents = await readFile(traceFilePath(dataDirectory, execution.id), "utf8").catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return null;
+      throw error;
+    });
+    if (contents === null) throw new HttpError(404, "No trace for this execution");
+    return reply.type("application/x-ndjson").send(contents);
   });
 
   app.post("/api/runs/:runId/cancel", async (request, reply) => {

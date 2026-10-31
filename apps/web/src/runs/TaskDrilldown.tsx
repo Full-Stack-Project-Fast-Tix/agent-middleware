@@ -1,7 +1,39 @@
+import { useState } from "react";
 import type { Agent, Approval, Task } from "@launchpad/shared";
 import { MessageContent } from "../MessageContent";
 import { agentName, formatClock, formatDuration, SeverityBadge, StatusBadge } from "./format";
+import { runsApi } from "./runs-api";
 import { approvalsOf, executionsOf, findingsOf, type RunView } from "./run-view";
+
+/** Fetched rather than linked: an anchor could not send the Authorization header. */
+function TraceDownload({ runId, executionId, truncated }: { runId: string; executionId: string; truncated: boolean }) {
+  const [note, setNote] = useState<string | null>(null);
+
+  const download = async () => {
+    setNote(null);
+    try {
+      const { text, redactions } = await runsApi.trace(runId, executionId);
+      const url = URL.createObjectURL(new Blob([text], { type: "application/x-ndjson" }));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `trace-${executionId}.jsonl`;
+      link.click();
+      URL.revokeObjectURL(url);
+      // A log that was altered has to say so.
+      if (redactions > 0) setNote(`${redactions} ${redactions === 1 ? "value" : "values"} redacted`);
+    } catch (reason) {
+      setNote(reason instanceof Error ? reason.message : String(reason));
+    }
+  };
+
+  return (
+    <>
+      <button type="button" className="button button-ghost" onClick={() => void download()}>Download trace</button>
+      {truncated ? " (truncated)" : ""}
+      {note !== null && <span role="status"> {note}</span>}
+    </>
+  );
+}
 
 /** Everything about one Task: what it was asked, what it produced, every attempt, and what security did. */
 export function TaskDrilldown({
@@ -152,7 +184,7 @@ export function TaskDrilldown({
                   {execution.tracePath !== null && (
                     <>
                       <dt>Trace</dt>
-                      <dd><code>{execution.tracePath}</code>{execution.traceTruncated ? " (truncated)" : ""}</dd>
+                      <dd><TraceDownload runId={view.run.id} executionId={execution.id} truncated={execution.traceTruncated} /></dd>
                     </>
                   )}
                 </dl>

@@ -288,6 +288,26 @@ without serving the current recovery behavior. Failing/cancelling interrupted
 runs prevents a new middleware process from continuing them with an empty taint
 state.
 
+## 13. An attempt's trace is read through a run route
+
+**Decision:** Add `GET /api/runs/:runId/executions/:executionId/trace`
+(`apiPaths.executionTrace`). Any role in the Run's workspace may read it, and a
+Run in a workspace the caller cannot access answers 404 like the other run
+routes. It serves the bounded raw trace as `application/x-ndjson`, read whole so
+the outbound redaction hook applies, and reports what it changed in
+`x-redactions`. The execution must belong to the named Run. The file path comes
+from that execution's stored id, never from the request or `tracePath`.
+An execution with no trace file, including every demo execution, answers 404.
+
+**Why:** The task drill-down showed a host file path that nobody using the
+browser could open. Reading through the Run keeps workspace access in one place.
+
+**Limit:** Pattern redaction does not make a raw trace safe in general: it can
+still hold sensitive material the patterns miss, and a rolling trace is not a
+complete audit history. Read access for `auditor` follows "any role may read";
+the owners may want to narrow it for raw traces. Owners to review: P1 (exposure
+of trace content), P3 (access rule), P4 (contract).
+
 ## Guidance for P3's schema
 
 These points are implementation guidance, not part of the contract:
