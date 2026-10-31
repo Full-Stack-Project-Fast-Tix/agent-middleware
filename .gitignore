@@ -4,6 +4,7 @@ dist/
 .env.production
 .data/
 .local/
+backups/
 data/
 workspaces/
 codex-home/
