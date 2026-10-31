@@ -1,0 +1,82 @@
+/* The Safety page, and its panel beside the Playground chat. */
+
+.safety-columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr));
+  gap: 24px;
+  align-items: start;
+}
+
+.safety-details {
+  display: grid;
+  gap: 24px;
+  min-width: 0;
+}
+
+.data-table th[scope="row"] {
+  font-size: var(--text-14);
+  font-weight: 400;
+  white-space: normal;
+}
+
+.data-table tr:last-child th[scope="row"] {
+  border-bottom: 0;
+}
+
+.data-table .fact-value {
+  width: 1%;
+  text-align: right;
+  font-weight: 600;
+}
+
+/* On a phone, keep the action in reach rather than behind a sideways scroll. */
+@media (max-width: 640px) {
+  .data-table .wide-only {
+    display: none;
+  }
+}
+
+.safety-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  background: var(--surface);
+  border-top: 2px solid var(--graphite);
+  container-type: inline-size;
+}
+
+.safety-list > li {
+  padding: 12px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.safety-list > li:last-child {
+  border-bottom: 0;
+}
+
+.safety-event {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+}
+
+.safety-event-body {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  max-width: 80ch;
+}
+
+/* Wide enough for a real row; the chat panel keeps the stacked form. */
+@container (min-width: 640px) {
+  .safety-event {
+    grid-template-columns: 160px minmax(0, 1fr) auto;
+    gap: 16px;
+    align-items: start;
+  }
+}
+
+.safety-pattern {
+  display: grid;
+  gap: 6px;
+}

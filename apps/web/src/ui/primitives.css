@@ -302,6 +302,7 @@
 /* Tables: rules between rows only */
 
 .data-table-wrap {
+  position: relative;
   min-width: 0;
   overflow-x: auto;
   background: var(--surface);
@@ -531,6 +532,7 @@
 
 .gate-decision {
   display: grid;
+  align-content: start;
   justify-items: start;
   gap: 2px;
 }
