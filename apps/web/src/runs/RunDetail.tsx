@@ -1,19 +1,26 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Agent, Approval } from "@launchpad/shared";
 import { MessageContent } from "../MessageContent";
-import { formatClock, StatusBadge } from "./format";
 import { paths } from "../router";
-import { ButtonLink } from "../ui";
+import { Button, ButtonLink, DecisionGlyph, ErrorState, Foreign, Loading, StatusBadge } from "../ui";
+import { agentName, formatClock } from "./format";
 import { runsApi } from "./runs-api";
 import { focusTaskId, isRunActive, pendingApprovals } from "./run-view";
+import { GateTimeline, ProposedFiles } from "./RunTimeline";
 import { TaskDrilldown } from "./TaskDrilldown";
 import { TaskGraph } from "./TaskGraph";
+import type { Names } from "./timeline-view";
 import { useRun } from "./useRun";
+import { announceApprovalsChanged } from "./useRunList";
+import { useRunTimeline } from "./useRunTimeline";
+
+/** Longer than this, a prompt starts folded, so the page opens on the run rather than the request. */
+const LONG_PROMPT = 240;
 
 /**
- * One Run, live: its task graph, the selected task's drill-down, pending
- * approvals and the final result. P4 composes the full Run Detail page
- * (timeline, changed files) around these pieces.
+ * One Run, live: its task graph, the gate line, the files that reached the gate,
+ * the selected task's drill-down and the agent's report. The server is the check
+ * on every action here: a role that may not answer gets its refusal shown.
  */
 export function RunDetail({ runId }: { runId: string }) {
   const { view, error: loadError } = useRun(runId);
@@ -22,11 +29,20 @@ export function RunDetail({ runId }: { runId: string }) {
   const [resolvingApprovalId, setResolvingApprovalId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [confirmingCancel, setConfirmingCancel] = useState(false);
+  const [promptOpen, setPromptOpen] = useState(false);
   const workspaceId = view?.run.workspaceId ?? null;
+  const active = view !== null && isRunActive(view.run.status);
+  const timeline = useRunTimeline(runId, active, view?.lastEventSeq ?? 0);
 
   useEffect(() => {
     setPicked(null);
   }, [runId]);
+
+  // This page hears of a held action first; the top bar should not lag behind it.
+  const heldHere = view === null ? 0 : pendingApprovals(view).length;
+  useEffect(() => {
+    announceApprovalsChanged();
+  }, [heldHere]);
 
   useEffect(() => {
     if (workspaceId === null) return;
@@ -42,25 +58,35 @@ export function RunDetail({ runId }: { runId: string }) {
     return view.tasks.find((task) => task.id === id) ?? null;
   }, [picked, view]);
 
-  if (loadError !== null) {
+  const names = useMemo<Names>(() => ({
+    task: (taskId) => view?.tasks.find((task) => task.id === taskId)?.title ?? "another task",
+    agent: (agentId) => agentName(agents, agentId),
+  }), [agents, view?.tasks]);
+
+  if (view === null) {
     return (
-      <div className="runs-page">
-        <div className="error-banner" role="alert"><span>{loadError}</span></div>
-        <ButtonLink to={paths.newRun}>Start a new run</ButtonLink>
+      <div className="page">
+        {loadError !== null ? (
+          <>
+            <ErrorState title="This run did not load" message={loadError} />
+            <div><ButtonLink to={paths.runs}>Go to runs</ButtonLink></div>
+          </>
+        ) : <Loading label="Loading run" />}
       </div>
     );
   }
-  if (view === null) return <div className="runs-page"><span className="spinner" aria-label="Loading run" /></div>;
 
   const { run } = view;
-  const active = isRunActive(run.status);
   const waiting = pendingApprovals(view);
+  const promptIsLong = run.userPrompt.length > LONG_PROMPT;
 
-  const resolve = async (approval: Approval, decision: "approve" | "deny") => {
-    setResolvingApprovalId(approval.id);
+  const resolve = async (approvalId: string, decision: "approve" | "deny") => {
+    setResolvingApprovalId(approvalId);
     setActionError(null);
     try {
-      await runsApi.resolveApproval(approval.id, decision);
+      await runsApi.resolveApproval(approvalId, decision);
+      announceApprovalsChanged();
+      void timeline.reload();
     } catch (reason) {
       setActionError(reason instanceof Error ? reason.message : String(reason));
     } finally {
@@ -78,70 +104,102 @@ export function RunDetail({ runId }: { runId: string }) {
     }
   };
 
+  const review = (approval: Approval) => {
+    setPicked(approval.taskId);
+    // The drill-down sits below the timeline on narrow screens.
+    window.requestAnimationFrame(() => {
+      document.getElementById(`approval-${approval.id}`)?.scrollIntoView({ block: "nearest" });
+    });
+  };
+
   return (
-    <div className="runs-page run-detail">
-      <header className="runs-header">
-        <div>
-          <span className="eyebrow">
-            Run · {run.orchestrationMode === "auto" ? "planned and delegated" : "one agent"} · started {formatClock(run.startedAt ?? run.createdAt)}
-          </span>
-          <h1 className="run-prompt">{run.userPrompt}</h1>
-          <div className="run-header-meta">
-            <StatusBadge status={run.status} />
-            {run.cancelRequestedAt !== null && active && <span className="task-node-flag">Cancelling…</span>}
-            <span>{view.tasks.length} tasks · {view.findings.length} findings</span>
+    <div className="page run-detail">
+      <header className="run-head">
+        <div className="run-head-copy">
+          <h1 className={"run-prompt" + (promptIsLong && !promptOpen ? " run-prompt-folded" : "")}>{run.userPrompt}</h1>
+          {promptIsLong && (
+            <button type="button" className="text-button" aria-expanded={promptOpen} onClick={() => setPromptOpen((open) => !open)}>
+              {promptOpen ? "Fold the request" : "Show the whole request"}
+            </button>
+          )}
+          <div className="cluster meta run-facts">
+            <StatusBadge status={run.status} live={active} />
+            {run.cancelRequestedAt !== null && active && <span>Cancelling</span>}
+            <span>{run.orchestrationMode === "auto" ? "Planned and delegated" : "One agent"}</span>
+            <span className="tabular">Started {formatClock(run.startedAt ?? run.createdAt)}</span>
+            <span className="tabular">{view.tasks.length === 1 ? "1 task" : `${view.tasks.length} tasks`}</span>
+            <span className="tabular">{view.findings.length === 1 ? "1 finding" : `${view.findings.length} findings`}</span>
           </div>
         </div>
-        <div className="header-actions">
-          <ButtonLink to={paths.newRun}>New run</ButtonLink>
+        <div className="run-head-actions">
           {active && !confirmingCancel && (
-            <button className="button button-danger" onClick={() => setConfirmingCancel(true)} disabled={run.cancelRequestedAt !== null}>
+            <Button variant="danger" onClick={() => setConfirmingCancel(true)} disabled={run.cancelRequestedAt !== null}>
               Cancel run
-            </button>
+            </Button>
           )}
           {active && confirmingCancel && (
             <span className="cancel-confirm" role="group" aria-label="Confirm cancelling this run">
-              <span>Stop running work and cancel pending approvals?</span>
-              <button className="button button-ghost" onClick={() => setConfirmingCancel(false)}>Keep running</button>
-              <button className="button button-danger" onClick={() => void cancel()}>Cancel run</button>
+              <span>Stop running work and cancel what is held?</span>
+              <Button onClick={() => setConfirmingCancel(false)}>Keep running</Button>
+              <Button variant="danger" onClick={() => void cancel()}>Cancel run</Button>
             </span>
           )}
+          <ButtonLink to={paths.newRun}>New run</ButtonLink>
         </div>
       </header>
 
-      {actionError && (
-        <div className="error-banner" role="alert">
-          <span>{actionError}</span>
-          <button onClick={() => setActionError(null)} aria-label="Dismiss">×</button>
-        </div>
+      {loadError !== null && <p className="list-stale" role="alert">Live updates stopped: {loadError} Reload the page to reconnect.</p>}
+      {actionError !== null && (
+        <ErrorState title="That did not go through" message={actionError} onRetry={() => setActionError(null)} retryLabel="Dismiss" />
       )}
 
       {waiting.length > 0 && (
-        <div className="approval-banner" role="status">
-          <strong>{waiting.length === 1 ? "An action is waiting for your approval." : `${waiting.length} actions are waiting for your approval.`}</strong>
-          {waiting.map((approval) => (
-            <button key={approval.id} className="button button-ghost" onClick={() => setPicked(approval.taskId)}>
-              Review: {approval.summary}
-            </button>
-          ))}
-        </div>
+        <section className="held-strip" aria-label="Held for your approval" role="status">
+          <DecisionGlyph decision="require_approval" size={20} />
+          <strong>{waiting.length === 1 ? "1 action is held for your approval" : `${waiting.length} actions are held for your approval`}</strong>
+          <ul>
+            {waiting.map((approval) => (
+              <li key={approval.id}>
+                <span>{approval.summary}</span>
+                <Button onClick={() => review(approval)}>Review</Button>
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
 
-      <section className="run-body">
-        <div className="run-graph-panel">
-          <TaskGraph view={view} agents={agents} selectedTaskId={selectedTask?.id ?? null} onSelect={setPicked} />
+      <TaskGraph view={view} agents={agents} selectedTaskId={selectedTask?.id ?? null} onSelect={setPicked} />
 
-          {run.status === "completed" && run.finalOutput !== null && (
-            <article className="run-outcome">
-              <span className="eyebrow">Result</span>
-              <MessageContent content={run.finalOutput} rich />
-            </article>
+      <div className="run-body">
+        <div className="run-main">
+          <GateTimeline
+            timeline={timeline.timeline}
+            error={timeline.error}
+            onRetry={() => void timeline.reload()}
+            fresh={timeline.fresh}
+            active={active}
+            names={names}
+            selectedTaskId={selectedTask?.id ?? null}
+            onSelectTask={setPicked}
+            resolvingApprovalId={resolvingApprovalId}
+            onResolve={(approvalId, decision) => void resolve(approvalId, decision)}
+          />
+          {timeline.timeline !== null && <ProposedFiles timeline={timeline.timeline} />}
+          {run.finalOutput !== null && run.status === "completed" && (
+            <section className="page-section" aria-label="Agent's report">
+              <Foreign label="Agent's report" note="Not verified by AgentGuard">
+                <MessageContent content={run.finalOutput} rich />
+              </Foreign>
+            </section>
           )}
-          {(run.status === "failed" || run.status === "cancelled") && (
-            <article className="run-outcome run-outcome-failed">
-              <span className="eyebrow">{run.status === "failed" ? "Run failed" : "Run cancelled"}</span>
-              <p>{run.error ?? "The run was cancelled before it finished."}</p>
-            </article>
+          {run.status === "failed" && (
+            <ErrorState title="The run failed" message={run.error ?? "The run stopped without saying why. Check the failed task's attempts."} />
+          )}
+          {run.status === "cancelled" && (
+            <section className="page-section">
+              <h2>The run was cancelled</h2>
+              <p className="meta">{run.error ?? "It was cancelled before it finished."}</p>
+            </section>
           )}
         </div>
 
@@ -151,10 +209,10 @@ export function RunDetail({ runId }: { runId: string }) {
             task={selectedTask}
             agents={agents}
             resolvingApprovalId={resolvingApprovalId}
-            onResolveApproval={(approval, decision) => void resolve(approval, decision)}
+            onResolveApproval={(approval, decision) => void resolve(approval.id, decision)}
           />
         )}
-      </section>
+      </div>
     </div>
   );
 }

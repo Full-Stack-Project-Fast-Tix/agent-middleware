@@ -513,6 +513,16 @@
   max-height: 160px;
 }
 
+/* A proposal that was not saved. Trusted words, so not the foreign surface. */
+.gate-missing {
+  display: block;
+  padding: 4px 8px;
+  border: 1px dashed var(--control-edge);
+  border-radius: var(--radius-control);
+  color: var(--steel);
+  font-size: var(--text-13);
+}
+
 .gate-open {
   display: block;
   width: 100%;
@@ -531,6 +541,7 @@
 
 .gate-decision {
   display: grid;
+  align-content: start;
   justify-items: start;
   gap: 2px;
 }

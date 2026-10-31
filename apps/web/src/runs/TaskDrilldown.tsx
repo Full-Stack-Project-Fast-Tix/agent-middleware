@@ -1,9 +1,12 @@
 import { useState } from "react";
 import type { Agent, Approval, Task } from "@launchpad/shared";
 import { MessageContent } from "../MessageContent";
-import { agentName, formatClock, formatDuration, SeverityBadge, StatusBadge } from "./format";
+import { approvalBadgeStatus, Button, Foreign } from "../ui";
+import { agentName, formatClock, formatDuration, humanize, SeverityBadge, StatusBadge } from "./format";
 import { runsApi } from "./runs-api";
-import { approvalsOf, executionsOf, findingsOf, type RunView } from "./run-view";
+import { approvalsOf, executionsOf, findingsOf, isRunActive, type RunView } from "./run-view";
+
+const CAPABILITIES = ["write", "shell", "network", "delegate"] as const;
 
 /** Fetched rather than linked: an anchor could not send the Authorization header. */
 function TraceDownload({ runId, executionId, truncated }: { runId: string; executionId: string; truncated: boolean }) {
@@ -28,7 +31,7 @@ function TraceDownload({ runId, executionId, truncated }: { runId: string; execu
 
   return (
     <>
-      <button type="button" className="button button-ghost" onClick={() => void download()}>Download trace</button>
+      <Button variant="ghost" onClick={() => void download()}>Download trace</Button>
       {truncated ? " (truncated)" : ""}
       {note !== null && <span role="status"> {note}</span>}
     </>
@@ -52,98 +55,112 @@ export function TaskDrilldown({
   const executions = executionsOf(view, task.id);
   const findings = findingsOf(view, task.id);
   const approvals = approvalsOf(view, task.id);
+  const live = isRunActive(view.run.status);
   const delegatedBy = task.parentTaskId === null ? null : view.tasks.find((candidate) => candidate.id === task.parentTaskId);
   const waitsFor = view.dependencies
     .filter((edge) => edge.taskId === task.id)
     .map((edge) => view.tasks.find((candidate) => candidate.id === edge.dependsOnTaskId)?.title ?? "an earlier task");
 
   return (
-    <aside className="task-drilldown" aria-label={`Task: ${task.title}`}>
+    <aside className="task-drilldown" aria-label={`Task: ${task.title}`} tabIndex={0}>
       <header>
-        <span className="eyebrow">Task</span>
         <h2>{task.title}</h2>
-        <div className="task-drilldown-meta">
-          <StatusBadge status={task.status} />
+        <div className="cluster meta">
+          <StatusBadge status={task.status} live={live} />
           <span>{agentName(agents, task.assignedAgentId)}</span>
-          <span>{formatDuration(task.startedAt, task.completedAt)}</span>
+          <span className="tabular">{formatDuration(task.startedAt, task.completedAt)}</span>
         </div>
       </header>
-
-      <section>
-        <h3>Objective</h3>
-        <p className="task-objective">{task.objective}</p>
-        {(delegatedBy || waitsFor.length > 0) && (
-          <p className="task-lineage">
-            {delegatedBy && <>Delegated by <strong>{delegatedBy.title}</strong>. </>}
-            {waitsFor.length > 0 && <>Waits for {waitsFor.map((title) => `“${title}”`).join(", ")}.</>}
-          </p>
-        )}
-      </section>
 
       {approvals.length > 0 && (
         <section>
           <h3>Approvals</h3>
-          {approvals.map((approval) => (
-            <div key={approval.id} className={"approval-card approval-" + approval.status}>
-              <div className="approval-card-head">
-                <strong>{approval.summary}</strong>
-                <StatusBadge status={approval.status} />
-              </div>
-              <span className="approval-card-sub">
-                {approval.actionType.replace("_", " ")} · {approval.reason.replace("_", " ")} · requested {formatClock(approval.requestedAt)}
-              </span>
-              {approval.safeDetails !== null && (
-                <pre className="approval-details">{JSON.stringify(approval.safeDetails, null, 2)}</pre>
-              )}
-              {approval.status === "pending" && (
-                <div className="approval-actions">
-                  <button
-                    className="button button-ghost"
-                    disabled={resolvingApprovalId === approval.id}
-                    onClick={() => onResolveApproval(approval, "deny")}
-                  >
-                    Deny
-                  </button>
-                  <button
-                    className="button button-primary"
-                    disabled={resolvingApprovalId === approval.id}
-                    onClick={() => onResolveApproval(approval, "approve")}
-                  >
-                    Approve once
-                  </button>
+          <div className="approval-list">
+            {approvals.map((approval) => (
+              <div key={approval.id} id={`approval-${approval.id}`} className={"approval-card approval-" + approval.status}>
+                <div className="approval-card-head">
+                  <strong>{approval.summary}</strong>
+                  <StatusBadge status={approvalBadgeStatus(approval.status)} />
                 </div>
-              )}
-            </div>
-          ))}
+                <div className="cluster meta">
+                  <span>{humanize(approval.actionType)}</span>
+                  <span>{humanize(approval.reason)}</span>
+                  <span className="tabular">Requested {formatClock(approval.requestedAt)}</span>
+                </div>
+                {approval.safeDetails !== null && (
+                  <Foreign label="What the agent proposed" preformatted maxHeight={200}>
+                    {JSON.stringify(approval.safeDetails, null, 2)}
+                  </Foreign>
+                )}
+                {approval.status === "pending" && (
+                  <div className="cluster">
+                    <Button
+                      variant="primary"
+                      busy={resolvingApprovalId === approval.id}
+                      onClick={() => onResolveApproval(approval, "approve")}
+                    >
+                      Approve
+                    </Button>
+                    <Button
+                      variant="danger"
+                      disabled={resolvingApprovalId === approval.id}
+                      onClick={() => onResolveApproval(approval, "deny")}
+                    >
+                      Deny
+                    </Button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
         </section>
       )}
 
-      {(task.result !== null || task.error !== null) && (
+      <section>
+        {/* A delegated task's objective was written by the planning agent. */}
+        {task.parentTaskId === null ? (
+          <>
+            <h3>Objective</h3>
+            <p className="task-objective">{task.objective}</p>
+          </>
+        ) : (
+          <Foreign label="Objective" note="Written by the plan">{task.objective}</Foreign>
+        )}
+        {(delegatedBy || waitsFor.length > 0) && (
+          <p className="task-lineage meta">
+            {delegatedBy && <>Started by {delegatedBy.title}. </>}
+            {waitsFor.length > 0 && <>Waits for {waitsFor.join(", ")}.</>}
+          </p>
+        )}
+      </section>
+
+      {task.error !== null && (
         <section>
-          <h3>{task.error !== null ? "Error" : "Result"}</h3>
-          {task.error !== null ? (
-            <p className="task-error">{task.error}</p>
-          ) : (
-            <div className="task-result">
-              <MessageContent content={task.result ?? ""} rich />
-            </div>
-          )}
+          <h3>Error</h3>
+          <p className="task-error">{task.error}</p>
+        </section>
+      )}
+      {task.error === null && task.result !== null && (
+        <section>
+          <Foreign label="Agent's report" note="Not verified by AgentGuard" maxHeight={320}>
+            <MessageContent content={task.result} rich />
+          </Foreign>
         </section>
       )}
 
       <section>
         <h3>Security findings</h3>
         {findings.length === 0 ? (
-          <p className="muted-copy">None for this task.</p>
+          <p className="meta">None for this task.</p>
         ) : (
           <ul className="finding-list">
             {findings.map((finding) => (
               <li key={finding.id}>
-                <div>
+                <div className="cluster">
                   <SeverityBadge severity={finding.severity} />
-                  <code>{finding.layer} · {finding.code}</code>
+                  <span className="meta">{humanize(finding.layer)}, {finding.code}</span>
                   <span className={finding.intervened ? "finding-acted" : "finding-warned"}>
-                    {finding.intervened ? "acted on" : "warning"}
+                    {finding.intervened ? "Acted on" : "Warning"}
                   </span>
                 </div>
                 <p>{finding.message}</p>
@@ -156,29 +173,26 @@ export function TaskDrilldown({
       <section>
         <h3>Attempts</h3>
         {executions.length === 0 ? (
-          <p className="muted-copy">Not started yet.</p>
+          <p className="meta">Not started yet.</p>
         ) : (
           <ol className="execution-list">
             {executions.map((execution) => (
               <li key={execution.id}>
-                <div className="execution-head">
+                <div className="cluster">
                   <strong>Attempt {execution.attempt}</strong>
-                  <StatusBadge status={execution.status} />
-                  <span>{formatDuration(execution.startedAt, execution.completedAt)}</span>
-                </div>
-                <div className="capability-chips" aria-label="Capabilities this attempt ran with">
-                  {(["write", "shell", "network", "delegate"] as const).map((capability) => (
-                    <span key={capability} className={execution.capabilities[capability] ? "chip-on" : "chip-off"}>
-                      {execution.capabilities[capability] ? "" : "no "}{capability}
-                    </span>
-                  ))}
+                  <StatusBadge status={execution.status} live={live} />
+                  <span className="meta tabular">{formatDuration(execution.startedAt, execution.completedAt)}</span>
                 </div>
                 {execution.error !== null && <p className="task-error">{execution.error}</p>}
                 <dl className="execution-facts">
+                  <dt>Allowed</dt>
+                  <dd>{CAPABILITIES.filter((capability) => execution.capabilities[capability]).join(", ") || "Nothing"}</dd>
+                  <dt>Not allowed</dt>
+                  <dd>{CAPABILITIES.filter((capability) => !execution.capabilities[capability]).join(", ") || "Nothing"}</dd>
                   {execution.usage !== null && (
                     <>
                       <dt>Tokens</dt>
-                      <dd>{execution.usage.inputTokens ?? 0} in · {execution.usage.outputTokens ?? 0} out</dd>
+                      <dd className="tabular">{execution.usage.inputTokens ?? 0} in, {execution.usage.outputTokens ?? 0} out</dd>
                     </>
                   )}
                   {execution.tracePath !== null && (
