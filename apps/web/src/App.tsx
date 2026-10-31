@@ -5,6 +5,7 @@ import { Playground } from "./Playground";
 import { navigate, paths, useRoute, type Route } from "./router";
 import { RunsHome, RunsPage } from "./runs/RunsPage";
 import { AppShell, ButtonLink, EmptyState, Loading, type NavItem } from "./ui";
+import { CurrentWorkspaceProvider } from "./useCurrentWorkspace";
 import { usePlayground, type PlaygroundState } from "./usePlayground";
 
 // The primitives gallery is a development aid, left out of production builds.
@@ -192,8 +193,10 @@ export default function App() {
   }
 
   return (
-    <AppShell nav={navItems(route)} heldCount={null}>
-      <CurrentPage route={route} playground={playground} />
-    </AppShell>
+    <CurrentWorkspaceProvider>
+      <AppShell nav={navItems(route)} heldCount={null}>
+        <CurrentPage route={route} playground={playground} />
+      </AppShell>
+    </CurrentWorkspaceProvider>
   );
 }

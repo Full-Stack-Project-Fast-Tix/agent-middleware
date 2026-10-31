@@ -1,0 +1,83 @@
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { runsApi, type WorkspaceSummary } from "./runs/runs-api";
+
+const CURRENT_KEY = "agentguard.currentWorkspace";
+
+export interface CurrentWorkspace {
+  /** Null while the first load is running. */
+  workspaces: WorkspaceSummary[] | null;
+  current: WorkspaceSummary | null;
+  error: string | null;
+  select: (workspaceId: string) => void;
+  reload: () => void;
+}
+
+const Context = createContext<CurrentWorkspace | null>(null);
+
+function readSaved(): string | null {
+  try {
+    return window.localStorage.getItem(CURRENT_KEY);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Which workspace the shell and its pages are looking at. The choice is only a
+ * view preference: the server still checks access on every request.
+ */
+export function CurrentWorkspaceProvider({ children }: { children: ReactNode }) {
+  const [workspaces, setWorkspaces] = useState<WorkspaceSummary[] | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(readSaved);
+  const [error, setError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
+
+  useEffect(() => {
+    let mounted = true;
+    runsApi
+      .workspaces()
+      .then((list) => {
+        if (!mounted) return;
+        setWorkspaces(list);
+        setError(null);
+      })
+      .catch((reason: unknown) => {
+        if (!mounted) return;
+        setWorkspaces([]);
+        setError(reason instanceof Error ? reason.message : String(reason));
+      });
+    return () => {
+      mounted = false;
+    };
+  }, [attempt]);
+
+  const select = useCallback((workspaceId: string) => {
+    setSelectedId(workspaceId);
+    try {
+      window.localStorage.setItem(CURRENT_KEY, workspaceId);
+    } catch {
+      // The choice then lasts only until the page reloads.
+    }
+  }, []);
+
+  const reload = useCallback(() => setAttempt((value) => value + 1), []);
+
+  const value = useMemo<CurrentWorkspace>(
+    () => ({
+      workspaces,
+      current: workspaces?.find((workspace) => workspace.id === selectedId) ?? workspaces?.[0] ?? null,
+      error,
+      select,
+      reload,
+    }),
+    [error, reload, select, selectedId, workspaces],
+  );
+
+  return <Context.Provider value={value}>{children}</Context.Provider>;
+}
+
+export function useCurrentWorkspace(): CurrentWorkspace {
+  const value = useContext(Context);
+  if (value === null) throw new Error("useCurrentWorkspace needs a CurrentWorkspaceProvider");
+  return value;
+}
