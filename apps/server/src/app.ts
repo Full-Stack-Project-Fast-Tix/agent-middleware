@@ -18,6 +18,7 @@ import {
 } from "./workspace-files.js";
 import type { AgentService } from "./agent-service.js";
 import { registerRunEventStream, type RunEventStreamOptions } from "./run-events-route.js";
+import { isOpenRequest } from "./api-access.js";
 import { registerMemberRoutes } from "./member-routes.js";
 import { registerRunRoutes, type RunRoutesOptions } from "./run-routes.js";
 import type { SignInThrottle } from "./sign-in-throttle.js";
@@ -89,13 +90,7 @@ export async function createApp(
   // Signed-in sessions replace the shared token when the server has identity.
   if (extensions.identity) registerSessionAuth(app, extensions.identity, extensions.signInThrottle);
   app.addHook("onRequest", async (request, reply) => {
-    if (
-      extensions.identity !== undefined ||
-      !config.authToken ||
-      !request.url.startsWith("/api/") ||
-      request.url === "/api/health" ||
-      request.url === "/api/auth"
-    ) {
+    if (extensions.identity !== undefined || !config.authToken || isOpenRequest(request)) {
       return;
     }
     const header = request.headers.authorization ?? "";

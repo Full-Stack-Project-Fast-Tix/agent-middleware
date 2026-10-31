@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { signInRequestSchema, type User } from "@launchpad/shared";
+import { isOpenRequest } from "./api-access.js";
 import type { Session } from "./db/postgres-identity.js";
 import { HttpError } from "./errors.js";
 import { SignInThrottle } from "./sign-in-throttle.js";
@@ -41,12 +42,7 @@ export function registerSessionAuth(app: FastifyInstance, identity: Identity, th
   app.decorateRequest("user", null);
 
   app.addHook("onRequest", async (request, reply) => {
-    const open =
-      !request.url.startsWith("/api/") ||
-      request.url === "/api/health" ||
-      request.url === "/api/auth" ||
-      (request.method === "POST" && request.url === "/api/auth/session");
-    if (open) return;
+    if (isOpenRequest(request)) return;
     const token = bearerToken(request);
     request.user = token === "" ? null : await identity.userForToken(token);
     if (request.user === null) return reply.code(401).send({ error: "Authentication required", code: "unauthenticated" });
