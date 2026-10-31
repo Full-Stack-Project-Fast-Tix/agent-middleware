@@ -7,7 +7,6 @@ export * from "./runs.js";
 export * from "./security.js";
 export * from "./middleware.js";
 export * from "./audit.js";
-export * from "./workspace-inspection.js";
 export * from "./events.js";
 export * from "./api.js";
 export * from "./sse-client.js";

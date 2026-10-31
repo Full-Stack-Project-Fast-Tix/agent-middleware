@@ -7,7 +7,7 @@ import { describeEntry, describeFileDecision, fileListLimits, type Names } from 
  * The gate line: what agents proposed on one side, what the middleware decided
  * on the other. Saved rows, not the event stream, so it survives a reload.
  */
-export function GateTimeline({ timeline, error, onRetry, fresh, active, names, selectedTaskId, onSelectTask, resolvingApprovalId, onResolve }: {
+export function GateTimeline({ timeline, error, onRetry, fresh, active, names, selectedTaskId, onSelectTask, resolvingApprovalId, canAnswer, onResolve }: {
   timeline: RunTimelineData | null;
   error: string | null;
   onRetry: () => void;
@@ -17,6 +17,7 @@ export function GateTimeline({ timeline, error, onRetry, fresh, active, names, s
   selectedTaskId: string | null;
   onSelectTask: (taskId: string) => void;
   resolvingApprovalId: string | null;
+  canAnswer: (approvalId: string) => boolean;
   onResolve: (approvalId: string, decision: "approve" | "deny") => void;
 }) {
   return (
@@ -80,7 +81,7 @@ export function GateTimeline({ timeline, error, onRetry, fresh, active, names, s
                   selected={taskId !== null && taskId === selectedTaskId}
                   onSelect={taskId === null || (row.proposal === null && row.missing === null) ? undefined : () => onSelectTask(taskId)}
                   selectLabel={taskTitle === null ? undefined : `Show task: ${taskTitle}`}
-                  actions={row.heldApprovalId === null ? undefined : (
+                  actions={row.heldApprovalId === null || !canAnswer(row.heldApprovalId) ? undefined : (
                     <>
                       <Button
                         variant="primary"

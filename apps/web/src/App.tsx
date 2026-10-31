@@ -1,11 +1,15 @@
 import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import type { User } from "@launchpad/shared";
-import { api, setAuthToken } from "./api";
+import { api, hasSavedSession, setAuthToken } from "./api";
 import { AccountMenu } from "./AccountMenu";
 import { Admin } from "./Admin";
+import { AgentsPage } from "./workspace/AgentsPage";
+import { ApprovalsPage } from "./workspace/ApprovalsPage";
+import { BenchmarksPage } from "./workspace/BenchmarksPage";
+import { PoliciesPage } from "./workspace/PoliciesPage";
+import { SecurityPage } from "./workspace/SecurityPage";
 import { AuthScreen, ConnectingScreen } from "./AuthScreen";
 import { Members, MembersUnavailable } from "./members/Members";
-import { AgentsPage, AuditPage, BenchmarksPage, PoliciesPage } from "./inspection/InspectionPages";
 import { membersApi } from "./members/members-api";
 import { Playground } from "./Playground";
 import { navigate, paths, useRoute, type Route } from "./router";
@@ -27,16 +31,20 @@ function navItems(route: Route, authMethod: "token" | "password"): NavItem[] {
   return [
     { to: paths.dashboard, label: "Dashboard", current: route.page === "dashboard" },
     { to: paths.runs, label: "Runs", current: route.page === "runs" || route.page === "new-run" || route.page === "run" },
-    { to: paths.playground, label: "Playground", current: route.page === "playground" },
-    { to: paths.safety, label: "Safety", current: route.page === "safety" },
-    ...(authMethod === "password" ? [
-      { to: paths.agents, label: "Agents", current: route.page === "agents" },
-      { to: paths.policies, label: "Policies", current: route.page === "policies" },
-      { to: paths.audit, label: "Audit", current: route.page === "audit" },
-      { to: paths.benchmarks, label: "Benchmarks", current: route.page === "benchmarks" },
-    ] : []),
-    // The member routes exist only in password mode.
-    ...(authMethod === "password" ? [{ to: paths.members, label: "Members", current: route.page === "members" }] : []),
+    // The single-agent routes exist only in token mode, and the member routes only in password mode.
+    ...(authMethod === "token"
+      ? [
+          { to: paths.playground, label: "Playground", current: route.page === "playground" },
+          { to: paths.safety, label: "Safety", current: route.page === "safety" },
+        ]
+      : [
+          { to: paths.approvals, label: "Approvals", current: route.page === "approvals" },
+          { to: paths.agents, label: "Agents", current: route.page === "agents" },
+          { to: paths.policies, label: "Policies", current: route.page === "policies" },
+          { to: paths.security, label: "Security", current: route.page === "security" },
+          { to: paths.benchmarks, label: "Benchmarks", current: route.page === "benchmarks" },
+          { to: paths.members, label: "Members", current: route.page === "members" },
+        ]),
   ];
 }
 
@@ -58,6 +66,9 @@ function CurrentPage({ route, playground, authMethod, viewer }: {
   authMethod: "token" | "password";
   viewer: User | null;
 }) {
+  if (authMethod === "password" && (route.page === "playground" || route.page === "safety")) return <NotFound />;
+  // These read Postgres, which the shared-token mode does not have.
+  if (authMethod === "token" && ["agents", "policies", "approvals", "security", "benchmarks"].includes(route.page)) return <NotFound />;
   switch (route.page) {
     case "dashboard":
       return <Dashboard />;
@@ -94,12 +105,18 @@ function CurrentPage({ route, playground, authMethod, viewer }: {
           />
         </>
       );
+    case "agents":
+      return <AgentsPage />;
+    case "policies":
+      return <PoliciesPage />;
+    case "approvals":
+      return <ApprovalsPage />;
+    case "security":
+      return <SecurityPage />;
+    case "benchmarks":
+      return <BenchmarksPage />;
     case "members":
       return authMethod === "password" ? <Members viewerId={viewer?.id ?? null} /> : <MembersUnavailable />;
-    case "agents": return authMethod === "password" ? <AgentsPage /> : <NotFound />;
-    case "policies": return authMethod === "password" ? <PoliciesPage /> : <NotFound />;
-    case "audit": return authMethod === "password" ? <AuditPage /> : <NotFound />;
-    case "benchmarks": return authMethod === "password" ? <BenchmarksPage /> : <NotFound />;
     case "design":
       if (DesignPreview === null) return <NotFound />;
       return <Suspense fallback={<Loading />}><DesignPreview /></Suspense>;
@@ -147,6 +164,15 @@ function AppSession({ notice, onSignedOut }: { notice: string | null; onSignedOu
       .then(async ({ required, method }) => {
         if (!mounted) return;
         setAuthMethod(method);
+        if (required && method === "password" && hasSavedSession()) {
+          const valid = await membersApi.me().then(() => true, () => false);
+          if (!mounted) return;
+          if (valid) {
+            setAuthRequired(false);
+            return;
+          }
+          setAuthToken("");
+        }
         setAuthRequired(required);
         if (!required) await bootstrap();
       })
@@ -156,7 +182,7 @@ function AppSession({ notice, onSignedOut }: { notice: string | null; onSignedOu
     };
   }, [bootstrap]);
 
-  const onSafetyPage = route.page === "safety" && authRequired === false;
+  const onSafetyPage = route.page === "safety" && authRequired === false && authMethod === "token";
   useEffect(() => {
     if (onSafetyPage) openAdmin();
   }, [onSafetyPage, openAdmin]);
@@ -179,8 +205,12 @@ function AppSession({ notice, onSignedOut }: { notice: string | null; onSignedOu
   }, [signedIn]);
 
   const unlock = async ({ email, secret }: { email: string; secret: string }) => {
-    setAuthToken(authMethod === "password" ? (await api.signIn(email, secret)).token : secret);
-    await bootstrap();
+    if (authMethod === "password") {
+      setAuthToken((await api.signIn(email, secret)).token, { remember: true });
+    } else {
+      setAuthToken(secret);
+      await bootstrap();
+    }
     setAuthRequired(false);
   };
 

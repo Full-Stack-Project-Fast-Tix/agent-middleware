@@ -16,7 +16,7 @@ const service = {
 const identity = {
   signIn: async () => null,
   signOut: async () => undefined,
-  userForToken: async (token: string) => (token === "good" ? { id: "user" } : null),
+  userForToken: async (token: string) => (token === "good" ? { id: "visible-only-with-a-credential" } : null),
 } as unknown as Identity;
 
 const apps: Array<Awaited<ReturnType<typeof createApp>>> = [];
@@ -63,5 +63,19 @@ describe("API access", () => {
     // Only POST signs in: reading or deleting a session still needs one.
     expect((await app.inject({ method: "DELETE", url: "/api/auth/session" })).statusCode).toBe(401);
     expect((await app.inject({ method: "DELETE", url: "/%61pi/auth/session" })).statusCode).toBe(401);
+  });
+
+  it("fails the health check when the database cannot answer, without saying why", async () => {
+    const app = await createApp(loadConfig({ NODE_ENV: "test" }), service, {
+      checkDatabase: async () => {
+        throw new Error("password authentication failed for user launchpad");
+      },
+    });
+    apps.push(app);
+
+    const response = await app.inject({ method: "GET", url: "/api/health" });
+    expect(response.statusCode).toBe(503);
+    expect(response.json().ok).toBe(false);
+    expect(response.body).not.toContain("password");
   });
 });

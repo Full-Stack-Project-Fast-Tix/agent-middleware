@@ -1,20 +1,32 @@
 import { z } from "zod";
-import { idSchema, jsonObjectSchema, nonEmptyStringSchema, requiredTextSchema, timestampSchema } from "./common.js";
-import { agentCapabilitiesSchema, agentSchema, capabilityCeilingSchema } from "./agents.js";
+import { idSchema, nonEmptyStringSchema, requiredTextSchema, timestampSchema } from "./common.js";
+import {
+  agentCapabilitiesSchema,
+  agentProfileSchema,
+  agentSchema,
+  capabilityCeilingSchema,
+  effectivePolicySchema,
+  policyRulesSchema,
+  securityPolicySchema,
+} from "./agents.js";
+import { auditEventSchema, auditEventTypeSchema } from "./audit.js";
 import {
   actionTypeSchema,
   approvalDecisionSchema,
+  approvalStatusSchema,
   findingSeveritySchema,
   orchestrationModeSchema,
   runStatusSchema,
   securityDecisionOutcomeSchema,
   workspaceRoleSchema,
+  type ApprovalReason,
+  type WorkspaceRole,
 } from "./enums.js";
 import { runSnapshotSchema } from "./events.js";
 import { userSchema, workspaceMemberSchema, workspaceSchema } from "./identity.js";
 import { fileChangeSchema } from "./middleware.js";
 import { runSchema } from "./runs.js";
-import { approvalSchema } from "./security.js";
+import { approvalSchema, securityFindingSchema } from "./security.js";
 
 // HTTP conventions, matching what the server already does:
 //
@@ -112,7 +124,8 @@ export type MeResponse = z.infer<typeof meResponseSchema>;
  *
  * The workspaces are the caller's own. Reading needs any role in the
  * workspace; starting or cancelling a run and answering an approval need
- * `developer` or `security_admin` (403 for an `auditor`). The agents include
+ * `developer` or `security_admin` (403 for an `auditor`). An approval also has
+ * to be the caller's to answer: see mayAnswerApproval. The agents include
  * disabled and archived ones, so a past Run's agent can still be named.
  *
  * Cancel is idempotent: the first call sets cancelRequestedAt and the run
@@ -125,7 +138,6 @@ export const apiPaths = {
   me: () => "/api/auth/me",
   workspaces: () => "/api/workspaces",
   workspaceAgents: (workspaceId: string) => `/api/workspaces/${encodeURIComponent(workspaceId)}/agents`,
-  workspaceConfiguration: (workspaceId: string) => `/api/workspaces/${encodeURIComponent(workspaceId)}/configuration`,
   workspaceAudit: (workspaceId: string) => `/api/workspaces/${encodeURIComponent(workspaceId)}/audit`,
   runs: (workspaceId: string) => `/api/workspaces/${encodeURIComponent(workspaceId)}/runs`,
   runSnapshot: (runId: string) => `/api/runs/${encodeURIComponent(runId)}/snapshot`,
@@ -138,13 +150,27 @@ export const apiPaths = {
     `/api/workspaces/${encodeURIComponent(workspaceId)}/members/${encodeURIComponent(userId)}`,
   executionTrace: (runId: string, executionId: string) =>
     `/api/runs/${encodeURIComponent(runId)}/executions/${encodeURIComponent(executionId)}/trace`,
+  benchmarks: () => "/api/benchmarks",
+  workspaceFindings: (workspaceId: string) => `/api/workspaces/${encodeURIComponent(workspaceId)}/findings`,
+  workspaceApprovals: (workspaceId: string) => `/api/workspaces/${encodeURIComponent(workspaceId)}/approvals`,
+  workspaceEffectivePermissions: (workspaceId: string) => `/api/workspaces/${encodeURIComponent(workspaceId)}/effective-permissions`,
+  workspaceAgent: (workspaceId: string, agentId: string) =>
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/agents/${encodeURIComponent(agentId)}`,
+  workspaceProfiles: (workspaceId: string) => `/api/workspaces/${encodeURIComponent(workspaceId)}/profiles`,
+  workspaceProfile: (workspaceId: string, profileId: string) =>
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/profiles/${encodeURIComponent(profileId)}`,
+  workspacePolicies: (workspaceId: string) => `/api/workspaces/${encodeURIComponent(workspaceId)}/policies`,
+  workspacePolicy: (workspaceId: string, policyId: string) =>
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/policies/${encodeURIComponent(policyId)}`,
 } as const;
 
 /** A workspace as listings show it; where its source lives stays on the server. */
-export const workspaceSummarySchema = workspaceSchema.pick({ id: true, name: true });
+export const workspaceSummarySchema = workspaceSchema
+  .pick({ id: true, name: true })
+  .extend({ /** The caller's own role, so a screen can offer only what the server will accept. */ role: workspaceRoleSchema });
 export type WorkspaceSummary = z.infer<typeof workspaceSummarySchema>;
 
-export const workspacesResponseSchema = z.object({ workspaces: z.array(workspaceSummarySchema) });
+export const workspacesResponseSchema = z.object({ workspaces: z.array(workspaceSummarySchema), viewerId: idSchema });
 export type WorkspacesResponse = z.infer<typeof workspacesResponseSchema>;
 
 export const agentsResponseSchema = z.object({ agents: z.array(agentSchema) });
@@ -308,6 +334,23 @@ export const createRunRequestSchema = z.object({
 });
 export type CreateRunRequest = z.input<typeof createRunRequestSchema>;
 
+/**
+ * Who may answer a pending approval (contract decision 19): `policy_required`
+ * needs a Security Admin of the workspace, and every other reason needs the
+ * developer or Security Admin who started the Run. The server enforces this;
+ * the web app uses it only to offer what the server will accept.
+ */
+export function mayAnswerApproval(input: {
+  role: WorkspaceRole;
+  userId: string;
+  runCreatedByUserId: string;
+  reason: ApprovalReason;
+}): boolean {
+  if (input.role === "auditor") return false;
+  if (input.reason === "policy_required") return input.role === "security_admin";
+  return input.userId === input.runCreatedByUserId;
+}
+
 export const resolveApprovalRequestSchema = z.object({
   decision: approvalDecisionSchema,
 });
@@ -342,8 +385,7 @@ export type UpdateAgentProfileRequest = z.infer<typeof updateAgentProfileRequest
 export const createSecurityPolicyRequestSchema = z.object({
   name: requiredTextSchema.max(120),
   capabilityCeiling: capabilityCeilingSchema.default({}),
-  rules: jsonObjectSchema,
-  rulesSchemaVersion: z.number().int().positive(),
+  rules: policyRulesSchema.default({}),
 });
 export type CreateSecurityPolicyRequest = z.input<typeof createSecurityPolicyRequestSchema>;
 
@@ -388,3 +430,67 @@ export type WorkspaceMemberResponse = z.infer<typeof workspaceMemberResponseSche
 
 export const updateWorkspaceMemberRequestSchema = z.object({ role: workspaceRoleSchema });
 export type UpdateWorkspaceMemberRequest = z.infer<typeof updateWorkspaceMemberRequestSchema>;
+
+/**
+ * Evidence across a workspace, in password mode only. Any role in the workspace
+ * may read; a workspace the caller is not in answers 404. Newest first, paged by
+ * an opaque cursor (an unknown one is a 400).
+ *
+ *   GET /api/workspaces/:workspaceId/findings   FindingListQuery  -> FindingPage
+ *   GET /api/workspaces/:workspaceId/approvals  ApprovalListQuery -> ApprovalPage
+ *   GET /api/workspaces/:workspaceId/audit      AuditListQuery    -> AuditPage
+ *
+ * Configuration, in password mode only (contract decision 21). Any role may
+ * read. Developers and Security Admins may add and edit agents, but only a
+ * Security Admin may give an existing agent another profile, or change profiles
+ * and policies. A stale `expectedVersion` is a 409. DELETE archives, so history
+ * can still name the row. Platform and locked policies are read-only here.
+ *
+ *   GET                    /api/workspaces/:workspaceId/effective-permissions -> { agents }
+ *   POST | PATCH | DELETE  /api/workspaces/:workspaceId/agents[/:agentId]     -> { agent }
+ *   GET  | POST | PATCH | DELETE  /api/workspaces/:workspaceId/profiles[/:id] -> { profiles } | { profile }
+ *   GET  | POST | PATCH | DELETE  /api/workspaces/:workspaceId/policies[/:id] -> { policies } | { policy }
+ */
+export const findingListQuerySchema = pageQuerySchema.extend({ severity: findingSeveritySchema.optional() });
+export type FindingListQuery = z.infer<typeof findingListQuerySchema>;
+export const findingPageSchema = pageSchema(securityFindingSchema);
+export type FindingPage = z.infer<typeof findingPageSchema>;
+
+export const approvalListQuerySchema = pageQuerySchema.extend({ status: approvalStatusSchema.optional() });
+export type ApprovalListQuery = z.infer<typeof approvalListQuerySchema>;
+/** An approval with what a queue needs to name it and to know whose it is. */
+export const approvalQueueItemSchema = approvalSchema.extend({
+  runCreatedByUserId: idSchema,
+  taskTitle: z.string().nullable(),
+});
+export type ApprovalQueueItem = z.infer<typeof approvalQueueItemSchema>;
+export const approvalPageSchema = pageSchema(approvalQueueItemSchema);
+export type ApprovalPage = z.infer<typeof approvalPageSchema>;
+
+export const auditListQuerySchema = pageQuerySchema.extend({ eventType: auditEventTypeSchema.optional() });
+export type AuditListQuery = z.infer<typeof auditListQuerySchema>;
+export const auditPageSchema = pageSchema(auditEventSchema);
+export type AuditPage = z.infer<typeof auditPageSchema>;
+
+/** What an agent may actually do once every policy applied. Null `policy` means it could not be resolved, so it cannot run. */
+export const effectivePermissionsResponseSchema = z.object({
+  agents: z.array(
+    z.object({
+      agentId: idSchema,
+      policy: effectivePolicySchema.nullable(),
+    }),
+  ),
+});
+export type EffectivePermissionsResponse = z.infer<typeof effectivePermissionsResponseSchema>;
+
+/** Saved benchmark reports, for any signed-in user: `GET /api/benchmarks`. */
+export const benchmarksResponseSchema = z.object({
+  results: z.array(z.object({ name: z.string(), report: z.string() })),
+});
+export type BenchmarksResponse = z.infer<typeof benchmarksResponseSchema>;
+
+export const agentResponseSchema = z.object({ agent: agentSchema });
+export const profileResponseSchema = z.object({ profile: agentProfileSchema });
+export const profilesResponseSchema = z.object({ profiles: z.array(agentProfileSchema) });
+export const policyResponseSchema = z.object({ policy: securityPolicySchema });
+export const policiesResponseSchema = z.object({ policies: z.array(securityPolicySchema) });

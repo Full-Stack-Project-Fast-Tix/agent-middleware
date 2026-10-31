@@ -11,6 +11,7 @@ import { PostgresRunStore } from "./db/postgres-run-store.js";
 import { startApprovalSweep } from "./orchestrator/orchestrator.js";
 import { createPostgresRuns } from "./postgres-runs.js";
 import { RunEventHub } from "./run-events.js";
+import { startRunFileSweep } from "./run-retention.js";
 import { createRunner } from "./runner-factory.js";
 import { JsonStore } from "./store.js";
 import { WorkspaceManager } from "./workspace.js";
@@ -75,12 +76,14 @@ const app = await createApp(config, service, {
     lastEventSeq: async (runId) => (await runs?.store.snapshot(runId))?.lastEventSeq ?? 0,
   },
   ...(runs === null ? {} : { runs: runs.routes }),
-  ...(identity === null ? {} : { identity, memberDatabase: database!, inspectionDatabase: database!, inspectionIdentity: identity }),
+  ...(identity === null ? {} : { identity, memberDatabase: database! }),
+  ...(database === null ? {} : { checkDatabase: () => database.query("SELECT 1") }),
 });
 if (identity !== null && runs === null) {
   app.log.warn("Multi-agent runs need RUNTIME_PROVIDER=container, so their routes are off.");
 }
 let stopApprovalSweep = () => {};
+let stopRunFileSweep = () => {};
 if (runs !== null) {
   if (runsDemo) app.log.warn("RUNS_DEMO is on: multi-agent runs use a simulated runtime and security middleware.");
   const recovered = await runs.orchestrator.recoverInterruptedRuns();
@@ -88,6 +91,14 @@ if (runs !== null) {
   stopApprovalSweep = startApprovalSweep(runs.orchestrator, {
     onError: (error) => app.log.error({ err: error }, "Approval timeout sweep failed"),
   });
+  if (identity !== null) {
+    stopRunFileSweep = startRunFileSweep(database!, {
+      dataDirectory: config.dataDirectory,
+      retentionDays: config.runArtifactRetentionDays,
+      onError: (error) => app.log.error({ err: error }, "Removing old run files failed"),
+      onRemoved: (count) => app.log.info({ count }, "Removed files of runs past retention"),
+    });
+  }
 }
 
 if (arkProxy) {
@@ -100,6 +111,7 @@ if (arkProxy) {
 const shutdown = async (signal: string) => {
   app.log.info({ signal }, "Shutting down");
   stopApprovalSweep();
+  stopRunFileSweep();
   await app.close();
   await arkProxy?.close();
   await database?.end();

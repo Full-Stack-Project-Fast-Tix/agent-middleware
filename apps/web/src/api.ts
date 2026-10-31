@@ -19,11 +19,32 @@ export class ApiError extends Error {
   }
 }
 
-let authToken = "";
+const SESSION_KEY = "agentguard.session";
 
-export function setAuthToken(token: string): void {
-  authToken = token.trim();
+function savedSession(): string {
+  try {
+    return window.sessionStorage.getItem(SESSION_KEY) ?? "";
+  } catch {
+    return "";
+  }
 }
+
+// Only until this tab closes, and only for a signed-in session: a shared token
+// stays in memory, because it does not expire.
+let authToken = savedSession();
+
+export function setAuthToken(token: string, options: { remember?: boolean } = {}): void {
+  authToken = token.trim();
+  try {
+    if (options.remember && authToken !== "") window.sessionStorage.setItem(SESSION_KEY, authToken);
+    else window.sessionStorage.removeItem(SESSION_KEY);
+  } catch {
+    // Storage unavailable: reloading the page then signs out.
+  }
+}
+
+/** Whether this tab holds a session from before a reload, which may have expired. */
+export const hasSavedSession = (): boolean => authToken !== "";
 
 /** For requests that cannot go through `request`, such as the event stream. */
 export function authHeaders(): Record<string, string> {

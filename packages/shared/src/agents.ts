@@ -34,6 +34,9 @@ export type AgentCapabilities = z.infer<typeof agentCapabilitiesSchema>;
 
 /** A layer's upper bound. A missing key does not restrict that capability. */
 export const capabilityCeilingSchema = agentCapabilitiesSchema.partial();
+
+/** `SecurityPolicy.rules` at version 1: none yet. A rule stays unsupported until P1 has reviewed its schema. */
+export const policyRulesSchema = z.strictObject({});
 export type CapabilityCeiling = z.infer<typeof capabilityCeilingSchema>;
 
 /** Soft delete. Archived rows stay referenced by history; they cannot be used for new work. */

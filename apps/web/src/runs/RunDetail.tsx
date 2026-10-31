@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import type { Agent, Approval } from "@launchpad/shared";
+import { mayAnswerApproval, type Agent, type Approval } from "@launchpad/shared";
 import { MessageContent } from "../MessageContent";
 import { paths } from "../router";
 import { Button, ButtonLink, DecisionGlyph, ErrorState, Foreign, Loading, StatusBadge } from "../ui";
@@ -13,6 +13,7 @@ import { heldProposals, type Names } from "./timeline-view";
 import { useRun } from "./useRun";
 import { announceApprovalsChanged } from "./useRunList";
 import { useRunTimeline } from "./useRunTimeline";
+import { useCurrentWorkspace } from "../useCurrentWorkspace";
 
 /** Longer than this, a prompt starts folded, so the page opens on the run rather than the request. */
 const LONG_PROMPT = 240;
@@ -24,6 +25,7 @@ const LONG_PROMPT = 240;
  */
 export function RunDetail({ runId }: { runId: string }) {
   const { view, error: loadError } = useRun(runId);
+  const { workspaces, viewerId } = useCurrentWorkspace();
   const [agents, setAgents] = useState<ReadonlyMap<string, Agent>>(new Map());
   const [picked, setPicked] = useState<string | null>(null);
   const [resolvingApprovalId, setResolvingApprovalId] = useState<string | null>(null);
@@ -87,6 +89,11 @@ export function RunDetail({ runId }: { runId: string }) {
 
   const { run } = view;
   const waiting = pendingApprovals(view);
+  // Only hides what the server would refuse. Until the role is known, it still offers the buttons.
+  const role = workspaces?.find((workspace) => workspace.id === view.run.workspaceId)?.role;
+  const canAnswer = (approval: Approval) =>
+    role === undefined || viewerId === null ||
+    mayAnswerApproval({ role, userId: viewerId, runCreatedByUserId: view.run.createdByUserId, reason: approval.reason });
   const promptIsLong = run.userPrompt.length > LONG_PROMPT;
 
   const resolve = async (approvalId: string, decision: "approve" | "deny") => {
@@ -163,10 +170,10 @@ export function RunDetail({ runId }: { runId: string }) {
       )}
 
       {waiting.length > 0 && (
-        <section className="held-strip" aria-label="Held for your approval" role="status">
+        <section className="held-strip" aria-label="Held for approval" role="status">
           <div className="held-title">
             <span className="held-glyph"><DecisionGlyph decision="require_approval" size={15} /></span>
-            {waiting.length === 1 ? "1 action is held for your approval" : `${waiting.length} actions are held for your approval`}
+            {waiting.length === 1 ? "1 action is held for approval" : `${waiting.length} actions are held for approval`}
           </div>
           <ul>
             {waiting.map((approval) => {
@@ -178,7 +185,12 @@ export function RunDetail({ runId }: { runId: string }) {
                     {proposal !== undefined && <Foreign preformatted maxHeight={68}>{proposal}</Foreign>}
                   </div>
                   <div className="held-actions">
-                    {proposal !== undefined && (
+                    {!canAnswer(approval) && (
+                      <span className="held-owner">
+                        {approval.reason === "policy_required" ? "A Security Admin answers this" : "The person who started this run answers this"}
+                      </span>
+                    )}
+                    {proposal !== undefined && canAnswer(approval) && (
                       <>
                         <Button
                           variant="primary"
@@ -237,6 +249,10 @@ export function RunDetail({ runId }: { runId: string }) {
             selectedTaskId={selectedTask?.id ?? null}
             onSelectTask={setPicked}
             resolvingApprovalId={resolvingApprovalId}
+            canAnswer={(approvalId) => {
+              const approval = view.approvals.find((candidate) => candidate.id === approvalId);
+              return approval !== undefined && canAnswer(approval);
+            }}
             onResolve={(approvalId, decision) => void resolve(approvalId, decision)}
           />
           {timeline.timeline !== null && <ProposedFiles timeline={timeline.timeline} runEnded={!active} />}
@@ -248,6 +264,7 @@ export function RunDetail({ runId }: { runId: string }) {
             task={selectedTask}
             agents={agents}
             resolvingApprovalId={resolvingApprovalId}
+            canAnswer={canAnswer}
             onResolveApproval={(approval, decision) => void resolve(approval.id, decision)}
           />
         )}

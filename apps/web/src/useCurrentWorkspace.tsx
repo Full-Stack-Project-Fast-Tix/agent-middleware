@@ -8,6 +8,8 @@ export interface CurrentWorkspace {
   /** Null while the first load is running. */
   workspaces: WorkspaceSummary[] | null;
   current: WorkspaceSummary | null;
+  /** Who the server says is signed in. Null until the first load finishes. */
+  viewerId: string | null;
   error: string | null;
   select: (workspaceId: string) => void;
   reload: () => void;
@@ -29,6 +31,7 @@ function readSaved(): string | null {
  */
 export function CurrentWorkspaceProvider({ children }: { children: ReactNode }) {
   const [workspaces, setWorkspaces] = useState<WorkspaceSummary[] | null>(null);
+  const [viewerId, setViewerId] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(readSaved);
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -37,9 +40,10 @@ export function CurrentWorkspaceProvider({ children }: { children: ReactNode }) 
     let mounted = true;
     runsApi
       .workspaces()
-      .then((list) => {
+      .then((response) => {
         if (!mounted) return;
-        setWorkspaces(list);
+        setWorkspaces(response.workspaces);
+        setViewerId(response.viewerId);
         setError(null);
       })
       .catch((reason: unknown) => {
@@ -73,11 +77,12 @@ export function CurrentWorkspaceProvider({ children }: { children: ReactNode }) 
     () => ({
       workspaces,
       current: workspaces?.find((workspace) => workspace.id === selectedId) ?? workspaces?.[0] ?? null,
+      viewerId,
       error,
       select,
       reload,
     }),
-    [error, reload, select, selectedId, workspaces],
+    [error, reload, select, selectedId, viewerId, workspaces],
   );
 
   return <Context.Provider value={value}>{children}</Context.Provider>;

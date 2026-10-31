@@ -33,6 +33,7 @@ export function createPostgresRuns(config: AppConfig, pool: pg.Pool, hub: RunEve
       semanticMonitor: config.semanticGuardEnabled ? createSemanticIntentMonitor(config) : null,
     }),
     planner: createModelPlanner(config),
+    limits: { maxRunTokens: config.runTokenBudget },
     // The middleware runs the semantic checks for Runs, so the runner does not repeat them.
     runtime: new CodexExecutionRuntime(new ContainerCodexRunner(config, null)),
     workingCopies: new DirectoryWorkingCopies({
@@ -53,6 +54,7 @@ export function createPostgresRuns(config: AppConfig, pool: pg.Pool, hub: RunEve
     listRuns: (workspaceId, query) => store.listRuns(workspaceId, query),
     runAudit: (runId, eventType, limit) => store.runAudit(runId, eventType, limit),
     approval: (approvalId) => store.getApproval(approvalId),
+    artifactRetentionDays: config.runArtifactRetentionDays,
     currentUserId: (request) => signedInUser(request).id,
     workspaceRole: (workspaceId, userId) => identity.workspaceRole(workspaceId, userId),
     listWorkspaces: (userId) => identity.listWorkspaces(userId),

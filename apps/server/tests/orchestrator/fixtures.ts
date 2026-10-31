@@ -108,6 +108,7 @@ export interface ScriptStep {
   /** Throw after the actions instead of before them. */
   failAfterActions?: boolean;
   delayMs?: number;
+  usage?: { inputTokens: number; outputTokens: number };
 }
 
 /** Stands in for the Codex runtime: proposes scripted actions through the gate, keyed by task title. */
@@ -158,7 +159,7 @@ export class ScriptedRuntime implements ExecutionRuntime {
           ? null
           : { status: step.disposition ?? "complete", summary: output },
         threadId: `thread-${request.execution.id}`,
-        usage: null,
+        usage: step.usage ?? null,
         tracePath: null,
         traceTruncated: false,
       };

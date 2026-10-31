@@ -334,8 +334,8 @@ export async function startStandIn(options: StandInOptions = {}): Promise<StandI
       snapshot: async (runId) => store.snapshot(runId),
       approval: (approvalId) => store.getApproval(approvalId),
       currentUserId: () => USER_ID,
-      workspaceRole: async (workspaceId) => (workspaceId === WORKSPACE_ID ? "developer" : null),
-      listWorkspaces: async () => [{ id: WORKSPACE_ID, name: "Workspace" }],
+      workspaceRole: async (workspaceId) => (workspaceId === WORKSPACE_ID ? "security_admin" : null),
+      listWorkspaces: async () => [{ id: WORKSPACE_ID, name: "Workspace", role: "security_admin" }],
       listAgents: (workspaceId) => agents.listAgents(workspaceId),
     },
   });

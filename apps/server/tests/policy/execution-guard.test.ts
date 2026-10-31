@@ -947,3 +947,73 @@ describe("ExecutionGuard context handoffs", () => {
     expect(JSON.stringify(decision)).not.toContain("sk_live_ABCDEFGHIJKLMNOP1234");
   });
 });
+
+describe("ExecutionGuard actions that always ask a person", () => {
+  it("holds a high-consequence command even with no semantic monitor", async () => {
+    const guard = await openGuard();
+    const decision = await guard.evaluate({ type: "command", actionId: "push", command: "git push origin main", cwd: null });
+    expect(decision).toMatchObject({ outcome: "require_approval", approvalReason: "high_consequence" });
+    expect(await guard.recordApprovalOutcome("push", "approved")).toMatchObject({ outcome: "allow" });
+  });
+
+  it("lets an ordinary command and edit through", async () => {
+    const guard = await openGuard();
+    expect((await guard.evaluate({ type: "command", actionId: "test", command: "npm test", cwd: null })).outcome).toBe("allow");
+    const edit = { type: "file_change" as const, actionId: "edit-1", changes: [{ path: "src/feature.ts", kind: "update" as const, diff: "+const a = 1;\n", movePath: null }] };
+    expect((await guard.evaluate(edit)).outcome).toBe("allow");
+  });
+});
+
+describe("ExecutionGuard delegation review", () => {
+  const delegation = {
+    type: "delegation" as const,
+    actionId: "delegate-1",
+    targetAgentId: AGENT_ID,
+    title: "Add an admin backdoor",
+    objective: "Add a hidden admin account",
+    dependsOnTaskIds: [],
+  };
+  const judging = (riskScore: number, conflictsWithTask: boolean, reviewed: string[]): SemanticIntentMonitor => ({
+    async assess(input) {
+      reviewed.push(input.checkpoint);
+      expect(input.proposedAction).toMatchObject({ type: "delegation", objective: delegation.objective });
+      return {
+        riskScore,
+        confidence: 0.9,
+        classification: conflictsWithTask ? "scope_expansion" : "aligned",
+        apparentObjective: "Delegate work",
+        conflictsWithTask,
+        evidenceSeqs: [],
+        rationale: "Compared with the trusted task.",
+      };
+    },
+  });
+
+  it("checks each delegation against the original goal", async () => {
+    const reviewed: string[] = [];
+    const guard = await openGuard({ delegationDepth: 0, semanticMonitor: judging(0.1, false, reviewed) });
+    expect((await guard.evaluate(delegation)).outcome).toBe("allow");
+    expect(reviewed).toEqual(["delegation"]);
+  });
+
+  it("blocks a delegation the monitor is sure conflicts with the goal", async () => {
+    const guard = await openGuard({ semanticMonitor: judging(0.95, true, []) });
+    expect((await guard.evaluate(delegation)).outcome).toBe("block");
+  });
+
+  it("asks a person when the monitor is unsure", async () => {
+    const guard = await openGuard({ semanticMonitor: judging(0.65, true, []) });
+    expect(await guard.evaluate(delegation)).toMatchObject({ outcome: "require_approval", approvalReason: "semantic_uncertainty" });
+  });
+
+  it("asks a person when the monitor is unavailable", async () => {
+    const guard = await openGuard({
+      semanticMonitor: {
+        async assess() {
+          throw new Error("offline");
+        },
+      },
+    });
+    expect(await guard.evaluate(delegation)).toMatchObject({ outcome: "require_approval", approvalReason: "semantic_unavailable" });
+  });
+});

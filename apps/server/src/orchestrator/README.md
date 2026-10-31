@@ -127,9 +127,6 @@ recovers interrupted Runs before it listens, and starts the approval sweep.
 
 ## Still to do
 
-- **Artifact cleanup:** the policy is settled at 30 days after a Run becomes
-  terminal. P3 still needs to implement cleanup and an explicit expired-artifact
-  response while retaining audit rows, findings, statuses and task results.
 - **Nested delegation:** specialists cannot delegate yet, so the effective
   depth is deliberately 1 whatever `maxDelegationDepth` allows. Enabling it
   requires trusted parent/child lineage and middleware coverage at every hop.

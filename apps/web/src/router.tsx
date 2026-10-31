@@ -13,7 +13,8 @@ export type Route =
   | { page: "members" }
   | { page: "agents" }
   | { page: "policies" }
-  | { page: "audit" }
+  | { page: "approvals" }
+  | { page: "security" }
   | { page: "benchmarks" }
   | { page: "design" }
   | { page: "not-found" };
@@ -30,7 +31,8 @@ export const paths = {
   members: "/members",
   agents: "/agents",
   policies: "/policies",
-  audit: "/audit",
+  approvals: "/approvals",
+  security: "/security",
   benchmarks: "/benchmarks",
   design: "/design",
 } as const;
@@ -55,8 +57,10 @@ export function parseRoute(pathname: string): Route {
       return { page: "agents" };
     case paths.policies:
       return { page: "policies" };
-    case paths.audit:
-      return { page: "audit" };
+    case paths.approvals:
+      return { page: "approvals" };
+    case paths.security:
+      return { page: "security" };
     case paths.benchmarks:
       return { page: "benchmarks" };
     case paths.design:

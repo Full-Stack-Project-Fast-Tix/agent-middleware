@@ -440,8 +440,80 @@ that no execution occurred.
 
 P2 owns these lifecycle semantics. P3 owns the cleanup job, storage operations
 and any schema needed to distinguish expiry from an unexpected missing file.
-The 30-day value is the fixed POC default; making it configurable is a later
-deployment feature.
+The 30-day value is the POC default. `apps/server/src/run-retention.ts` does the
+cleanup, `RUN_ARTIFACT_RETENTION_DAYS` overrides the value, and no schema was needed:
+a missing trace of a Run past retention answers 410, and any other answers 404.
+
+## 19. Who may answer an approval
+
+**Decision (31 October 2026):** The work plan's section 3.8 default is now
+enforced. A `policy_required` approval needs a `security_admin` of the workspace.
+Every other reason needs the `developer` or `security_admin` who started the Run,
+and a `security_admin` who did not start it gets a 403 too. An `auditor` never
+answers one. `mayAnswerApproval` in the shared package holds the rule; the route
+enforces it and the web app uses it only to hide buttons the server would refuse.
+
+If that person is away, the approval times out and declines only that action,
+which is the safe outcome. The plan calls this a proposed default for the team to
+confirm, so changing it means changing `mayAnswerApproval` and this entry.
+
+## 20. What always asks a person
+
+**Decision (31 October 2026):** Two things produce a `require_approval` in
+multi-agent runs:
+
+1. A command that `isHighConsequenceCommand` matches, such as `git push` or a
+   deploy, gives `high_consequence`. The single-agent path already did this.
+2. The semantic monitor being unsure or unavailable gives `semantic_uncertainty`
+   or `semantic_unavailable`, as before.
+
+An ordinary edit does **not** ask by default. Holding every edit would interrupt
+most benign runs, against the plan's target of at most 1 in 10, and an unanswered
+approval declines the action. Blocks run first, so a capability refusal or a
+violation never turns into a question.
+
+Nothing produces `policy_required` yet. A rule such as "every edit asks" would need
+a rules schema, and P1 reviews any such schema before it is enabled, so
+`policyRulesSchema` accepts no rules and anything else still fails closed.
+
+Delegations now get the semantic review too, on every delegation, against the
+trusted user prompt. That closes the "steered supervisor" row of the threat model
+at the semantic layer; the capability, depth and target checks still run first.
+
+## 21. Editing agents, profiles and policies
+
+**Decision (31 October 2026):** The routes are in `packages/shared/src/api.ts`.
+Any role reads. Developers and Security Admins add and edit agents, because the
+plan has developers configure the specialist team, but only a Security Admin may
+give an existing agent another profile, or change profiles and policies. Platform
+and locked policies are read-only over the API; nothing can grant `platform_admin`
+yet (decision 15).
+
+Each change takes the workspace lock, reads the role inside the transaction,
+checks `expectedVersion` (a stale one is a 409), and writes its audit row in the
+same transaction. Profile and policy events record capabilities, ceilings and
+rules before and after. Agent events record which fields changed but not the
+instruction text, which can hold anything. DELETE archives.
+
+`POST` and `PATCH` validate rules with `policyRulesSchema`, so a rule the resolver
+would refuse is a 400 and cannot stop every run in the workspace (decision 20). A second enabled
+agent that may delegate is a 409, because `auto` runs need exactly one.
+
+## 22. Paging cursors stay plain text
+
+**Decision (31 October 2026):** A cursor is `<milliseconds>_<id>`, still opaque to
+clients. The earlier base64 JSON was replaced by the outbound redactor as a
+possible secret, so every second page over HTTP answered 400 "Unknown cursor". A
+cursor must not look like a credential.
+
+## 23. Token-mode records are not migrated to PostgreSQL
+
+**Decision (31 October 2026):** The plan's JSON-to-Postgres migration is dropped.
+Token mode remains a working path on its own JSON store, as `CLAUDE.md` requires,
+and its demo records have no users or workspaces to map to, so a migration would
+invent ownership for them. A deployment that needs old single-agent records keeps
+them in token mode. This can be revisited if real single-agent data ever has to
+move.
 
 ## Guidance for P3's schema
 

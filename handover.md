@@ -94,9 +94,10 @@ P2 should:
 
 ### P3
 
-- Implement terminal artifact cleanup at 30 days. Keep artifacts for every
-  non-terminal or approval-waiting Run, retain durable evidence, and distinguish
-  an expired artifact from an unexpected missing file.
+- Terminal artifact cleanup is implemented (`run-retention.ts`); P2 reviews it
+  against the lifecycle rules.
+- Run `scripts/deploy-multi-agent.sh` on a real ECS host. Its systemd steps have
+  not been exercised yet.
 - Decide whether sign-in throttling must move from process memory to a shared
   store before deploying multiple replicas.
 - Continue admin workflows for creating users and workspaces; these currently
@@ -105,12 +106,12 @@ P2 should:
 
 ### P4
 
-- Review and integrate the Agents, Policies, Audit and Benchmarks views. They
-  are now wired into the workspace console with member-scoped read APIs.
-- Keep Benchmarks explicit that the Leash slice is replay evidence and that
-  multi-agent load results use simulated agents; do not imply live efficacy.
-- If artifact expiry is displayed, use P3's explicit expired state rather than
-  presenting a broken trace link.
+- The Agents, Policies, Approvals, Security and Benchmarks views exist; review them
+  and refine as needed.
+- Keep Benchmarks clear that saved reports are committed evidence, not live
+  workspace measurements or a live-model efficacy claim. Multi-agent load
+  numbers use simulated agents.
+- An expired trace answers 410, which the trace view shows as its error.
 - Keep UI wording clear that `complete` is the specialist's report, while tests
   and review are separate evidence.
 
@@ -118,15 +119,15 @@ P2 should:
 
 | Work | Dependency |
 | --- | --- |
-| P3 artifact cleanup | The P2 policy is settled; implementation can start now. P2 reviews lifecycle behavior. |
+| P3 artifact cleanup | Implemented. P2 reviews lifecycle behavior. |
 | Nested delegation | Waits for joint P1/P2 design and security regression coverage. It is outside the current milestone. |
 | Provider-only egress | Waits for a joint P1/P3 threat model and deployment design. |
 | Production tenant isolation | Waits for a separately scoped P1/P3 architecture and threat-model review. |
-| P4 artifact-expiry UI | Waits for P3's API/storage representation of expiry. |
 
 ## Settled references
 
 The authoritative choices are in `docs/contract-decisions.md`, especially
 decisions 14 (timeline and command storage), 16 (raw trace access), 17 (task
-disposition) and 18 (artifact retention). Current implementation status is in
+disposition), 18 (artifact retention), 19 (who answers an approval), 20 (what always
+asks a person) and 21 (editing configuration). Current implementation status is in
 `docs/ARCHITECTURE.md`.

@@ -2,6 +2,7 @@ import {
   agentProfileSchema,
   agentSchema,
   effectivePolicySchema,
+  policyRulesSchema,
   securityPolicySchema,
   type AgentCapabilities,
   type AgentProfile,
@@ -62,7 +63,7 @@ export async function resolveAgentPolicy(
   // Until a rules engine is defined, silently ignoring a nonempty policy rules
   // object would create a misleading effective-permissions result.
   for (const policy of [...platformPolicies, ...workspacePolicies]) {
-    if (policy.rulesSchemaVersion !== 1 || Object.keys(policy.rules).length > 0) {
+    if (policy.rulesSchemaVersion !== 1 || !policyRulesSchema.safeParse(policy.rules).success) {
       throw new Error(`Security policy resolution failed: unsupported rules in policy ${policy.id}`);
     }
   }

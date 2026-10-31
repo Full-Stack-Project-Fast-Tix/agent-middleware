@@ -250,7 +250,7 @@ function decide(action: ProposedAction): SecurityDecision {
   if (action.type === "file_change") {
     return {
       outcome: "require_approval",
-      approvalReason: "policy_required",
+      approvalReason: "high_consequence",
       reason: "Workspace policy requires approval before source can change.",
       severity: "medium",
       appliedPolicies,
@@ -313,7 +313,7 @@ export function createDemoRuns(hub: RunEventHub, options: { pauseScale?: number;
       approval: (approvalId) => store.getApproval(approvalId),
       currentUserId: () => DEMO_USER_ID,
       workspaceRole: async (workspaceId) => (workspaceId === DEMO_WORKSPACE.id ? "developer" : null),
-      listWorkspaces: async () => [DEMO_WORKSPACE],
+      listWorkspaces: async () => [{ ...DEMO_WORKSPACE, role: "developer" }],
       listAgents: (workspaceId) => directory.listAgents(workspaceId),
     },
   };

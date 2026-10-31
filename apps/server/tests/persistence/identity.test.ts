@@ -108,7 +108,7 @@ describe.skipIf(!url)("PostgresIdentity", () => {
     expect(await identity.workspaceRole(workspaceId, auditorId)).toBe("auditor");
     expect(await identity.workspaceRole(randomUUID(), ownerId)).toBeNull();
     expect((await identity.listWorkspaces(ownerId)).map((workspace) => workspace.name)).toEqual(["checkout-service", "second"]);
-    expect(await identity.listWorkspaces(auditorId)).toEqual([{ id: workspaceId, name: "checkout-service" }]);
+    expect(await identity.listWorkspaces(auditorId)).toEqual([{ id: workspaceId, name: "checkout-service", role: "auditor" }]);
 
     const directory = new PostgresAgentDirectory(pool!);
     const agents = new Map((await directory.listAgents(workspaceId)).map((agent) => [agent.name, agent.id]));

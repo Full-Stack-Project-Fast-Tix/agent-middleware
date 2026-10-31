@@ -1,7 +1,12 @@
 # Architecture
 
-Agent Launchpad is a single-node control plane for running and supervising
-Codex-based Agents.
+AgentGuard is a single-node control plane for running and supervising coding
+agents. It has two modes. **Password mode** is the multi-agent platform: signed-in
+users, workspace roles, PostgreSQL and Run → Task → AgentExecution, described under
+"Multi-agent model" below. **Token mode** is the original single-agent path: one
+shared token and a JSON store. Its routes do not exist in password mode.
+
+The diagram and components here are token mode's.
 
 ```mermaid
 flowchart LR
@@ -221,9 +226,11 @@ instead of the shared token, and `index.ts` composes the orchestrator with
 `PostgresSecuritySource`, the model planner and Codex containers
 ([`postgres-runs.ts`](../apps/server/src/postgres-runs.ts)). In a workspace,
 any role may read bounded Run data; `developer` and `security_admin` may also
-start and cancel Runs, answer approvals, and read redacted raw execution
-traces. An `auditor` reads snapshots and the bounded timeline, but not raw
-traces. `npm run db:admin -w
+start and cancel Runs and read redacted raw execution traces. An `auditor` reads
+snapshots and the bounded timeline, but not raw traces. An approval needs the person
+who started the Run, or a `security_admin` when its reason is `policy_required`
+(contract decision 19). What always asks a person is decision 20, and editing agents,
+profiles and policies is decision 21. `npm run db:admin -w
 @launchpad/server` adds users, workspaces (with the four standard agents and
 the platform baseline policy) and members. A `security_admin` can also manage
 their workspace's members over the API (contract decision 15). Failed sign-ins
@@ -235,22 +242,30 @@ check as the other run routes. Password mode rejects the legacy global
 `/api/agents`, `/api/admin`, `/api/system` and single-agent Run routes because
 their JSON store has no workspace identity to authorize against.
 
+Each Run has a token budget (`RUN_TOKEN_BUDGET`). Files of a finished Run
+are removed after `RUN_ARTIFACT_RETENTION_DAYS` (contract decision 18), while its rows
+stay, and reading such a trace answers 410 rather than a plain 404.
+
 Not built yet, by owner:
+- **P1:** reflection memory in multi-agent runs. The tables exist and are unused,
+  so a guard's catch does not carry into later Runs here as it does in token mode.
+  A live, container-backed multi-agent benchmark has not been run. Policy `rules`
+  stay unsupported until P1 reviews a schema, so nothing yet produces
+  `policy_required`.
 - **P3:** tenant isolation beyond workspace roles (every workspace's Runs share one
-  host). Members has a web page; creating users and workspaces stays on the command
-  line.
-- **P3:** artifact cleanup after the settled 30-day terminal-Run retention
-  window, including an explicit expired-artifact response.
+  host). Creating users and workspaces stays on the command line (decision 15), and
+  migrating token-mode JSON records was decided against (decision 23). The
+  integration harness still runs on `InMemoryRunStore`; the fuzz suite and the
+  store suite are what exercise Postgres.
 - **P3/P4:** applied file changes on the gate timeline. Saved data does not hold
   them, so the timeline says so. Command text is deliberately not added to
   permanent audit storage for this milestone (contract decision 14).
-- **P4:** workspace views for Agents, Policies, Audit and Benchmarks are wired
-  into the console. Agent/profile/policy reads and bounded audit pages require
-  workspace membership. Audit responses omit arbitrary metadata and raw traces.
-  The Policies screen shows effective capability projections only when the
-  active rules are supported; the server remains authoritative. Benchmarks
-  presents committed replay and simulated orchestration evidence, not live
-  workspace or live-model results.
+
+The password-mode console includes workspace Agents and Policies management,
+Approvals, Security findings and audit history, and saved Benchmarks reports.
+Workspace routes check membership and enforce role/version rules in the server;
+the UI only reflects those permissions. Benchmark reports are read from
+committed results and are not live measurements or runs initiated by the UI.
 
 Orchestration test and load results are in
 [orchestration-evaluation.md](orchestration-evaluation.md).
@@ -260,6 +275,7 @@ Orchestration test and load results are in
 | Profile | Control plane | Agent execution |
 | --- | --- | --- |
 | Local POC | Host Node.js | Disposable local container |
+| Multi-agent host (`scripts/deploy-multi-agent.sh`) | Host Node.js under systemd, Postgres in Compose | Disposable local container |
 | ECS | Application container | Codex process in the same container |
 | Local development | Host Node.js | Host Codex process |
 

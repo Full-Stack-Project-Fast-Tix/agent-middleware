@@ -20,8 +20,8 @@ import type { AgentService } from "./agent-service.js";
 import { registerRunEventStream, type RunEventStreamOptions } from "./run-events-route.js";
 import { isOpenRequest } from "./api-access.js";
 import { registerMemberRoutes } from "./member-routes.js";
-import { registerWorkspaceInspectionRoutes } from "./workspace-inspection-routes.js";
 import { registerRunRoutes, type RunRoutesOptions } from "./run-routes.js";
+import { registerWorkspaceConfigRoutes } from "./workspace-config-routes.js";
 import type { SignInThrottle } from "./sign-in-throttle.js";
 import { registerSessionAuth, type Identity } from "./auth-routes.js";
 
@@ -83,14 +83,10 @@ export interface AppExtensions {
   runs?: RunRoutesOptions;
   /** Where workspace members live. Their routes need signed-in users, so this also needs `identity`. */
   memberDatabase?: pg.Pool;
-  /** PostgreSQL workspace configuration and bounded audit reads. */
-  inspectionDatabase?: pg.Pool;
-  /** Identity adapter with workspace-role lookup for inspection endpoints. */
-  inspectionIdentity?: import("./auth-routes.js").Identity & {
-    workspaceRole(workspaceId: string, userId: string): Promise<"developer" | "security_admin" | "auditor" | null>;
-  };
   /** Signed-in users with sessions, instead of the shared APP_AUTH_TOKEN. */
   identity?: Identity;
+  /** Rejects when the database cannot answer, which fails the health check. */
+  checkDatabase?: () => Promise<unknown>;
   /** Limits on sign-in attempts. Omitted, each app gets its own. */
   signInThrottle?: SignInThrottle;
 }
@@ -183,10 +179,15 @@ export async function createApp(
     return isBuffer ? Buffer.from(text, "utf8") : text;
   });
 
-  app.get("/api/health", async () => ({
-    ok: true,
-    service: "volc-agent-launchpad",
-  }));
+  app.get("/api/health", async (_request, reply) => {
+    try {
+      await extensions.checkDatabase?.();
+    } catch (error) {
+      app.log.error({ err: error }, "Health check could not reach the database");
+      return reply.code(503).send({ ok: false, service: "volc-agent-launchpad", error: "The database is unavailable" });
+    }
+    return { ok: true, service: "volc-agent-launchpad" };
+  });
 
   app.get("/api/auth", async () =>
     extensions.identity
@@ -338,9 +339,7 @@ export async function createApp(
   }
   if (extensions.identity && extensions.memberDatabase) {
     registerMemberRoutes(app, extensions.memberDatabase);
-  }
-  if (extensions.inspectionIdentity && extensions.inspectionDatabase) {
-    registerWorkspaceInspectionRoutes(app, extensions.inspectionDatabase, extensions.inspectionIdentity);
+    registerWorkspaceConfigRoutes(app, extensions.memberDatabase);
   }
 
   if (config.nodeEnv === "production") {

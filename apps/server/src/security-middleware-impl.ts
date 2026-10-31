@@ -19,7 +19,7 @@ import {
   sensitiveReadSeqs,
 } from "./check-sensitive-egress.js";
 import { buildGuardChecks } from "./container-codex-runner.js";
-import { IntentController, type IntentControllerResult } from "./intent-controller.js";
+import { IntentController, isHighConsequenceCommand, type IntentControllerResult } from "./intent-controller.js";
 import { sharedSeverityOf, type ExecutionGuard, type ResolvedPolicy, type SecurityMiddleware } from "./security-middleware.js";
 import { resolveAgentPolicy, type SecurityPolicySource } from "./security-policy-resolver.js";
 import type { SemanticIntentMonitor } from "./semantic-intent-monitor.js";
@@ -222,7 +222,7 @@ class StatefulExecutionGuard implements ExecutionGuard {
     let semanticResult: IntentControllerResult | undefined;
     if (
       this.semantic &&
-      (parsed.type === "command" || parsed.type === "file_change" || parsed.type === "context_handoff")
+      (parsed.type === "command" || parsed.type === "file_change" || parsed.type === "context_handoff" || parsed.type === "delegation")
     ) {
       semanticResult = await this.semantic.reviewAction(
         [...this.trace, ...records],
@@ -233,14 +233,23 @@ class StatefulExecutionGuard implements ExecutionGuard {
                 type: "file_change", seq: records[0]!.seq, itemId: parsed.actionId,
                 changes: parsed.changes.map((change) => ({ ...change, diff: change.diff ?? "" })),
               }
-            : {
-                type: "context_handoff",
-                seq: (this.trace.at(-1)?.seq ?? 0) + 1,
-                itemId: parsed.actionId,
-                fromTaskId: parsed.fromTaskId,
-                toTaskId: parsed.toTaskId,
-                content: parsed.content,
-              },
+            : parsed.type === "context_handoff"
+              ? {
+                  type: "context_handoff",
+                  seq: (this.trace.at(-1)?.seq ?? 0) + 1,
+                  itemId: parsed.actionId,
+                  fromTaskId: parsed.fromTaskId,
+                  toTaskId: parsed.toTaskId,
+                  content: parsed.content,
+                }
+              : {
+                  type: "delegation",
+                  seq: (this.trace.at(-1)?.seq ?? 0) + 1,
+                  itemId: parsed.actionId,
+                  targetAgentId: parsed.targetAgentId,
+                  title: parsed.title,
+                  objective: parsed.objective,
+                },
       );
       if (semanticResult.decision === "decline" || semanticResult.decision === "interrupt") {
         return this.blockAction(
@@ -260,6 +269,14 @@ class StatefulExecutionGuard implements ExecutionGuard {
     }
 
     const warnings = [...deferredFindings, ...actionFindings, ...(semanticResult?.finding ? [semanticResult.finding] : [])];
+    // Asked regardless of what the checks thought: the effect reaches outside the working copy.
+    if (parsed.type === "command" && isHighConsequenceCommand(parsed.command)) {
+      this.pending.set(parsed.actionId, parsed);
+      return this.decision("require_approval", warnings, {
+        approvalReason: "high_consequence",
+        ...(deferredSteer === null ? {} : { steer: deferredSteer }),
+      });
+    }
     if (deferredSteer !== null) {
       return this.decision("steer", warnings, { steer: deferredSteer });
     }

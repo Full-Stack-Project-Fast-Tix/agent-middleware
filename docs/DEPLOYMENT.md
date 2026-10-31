@@ -1,11 +1,15 @@
 # Deployment
 
-Use one of two Volcengine ECS paths:
+Use one of these Volcengine ECS paths:
 
-- Install and deploy to an existing Linux ECS instance.
-- Provision the complete network and ECS stack with Terraform.
+- Install and deploy to an existing Linux ECS instance. This runs token mode, the
+  single-agent path.
+- Provision the complete network and ECS stack with Terraform. This also runs token
+  mode.
+- [Multi-agent deployment](#multi-agent-deployment) on an existing Linux host, for
+  signed-in users and multi-agent Runs.
 
-Both profiles require a Volcengine Ark API key and a Responses-capable endpoint.
+All of them require a Volcengine Ark API key and a Responses-capable endpoint.
 
 ## Existing Linux ECS
 
@@ -189,6 +193,54 @@ terraform -chdir=deploy/volcengine destroy
 > Destroying the stack removes the ECS instance, system disk, and Agent
 > workspaces. Back up required code first.
 
+## Multi-agent deployment
+
+Multi-agent Runs need one disposable container per execution, and the Compose app
+container cannot start containers. `scripts/deploy-multi-agent.sh` therefore runs the
+control plane on the host under systemd, with PostgreSQL still in Compose. Giving the
+app container the Docker socket would work too, but it would hand it control of the
+host.
+
+Needs Linux with systemd, Docker Engine 24+, the Compose plugin, Node.js 22+ and
+`sudo`. Install Docker as above, then set these in `.env.production`:
+
+```dotenv
+APP_AUTH_MODE=password
+POSTGRES_PASSWORD=letters-digits-only-and-not-the-default
+ARK_API_KEY=your-ark-api-key
+ARK_MODEL=ep-your-endpoint-id
+PUBLIC_PORT=3000
+# Optional. Copies each nightly backup off the machine; the dump's path is $1.
+BACKUP_UPLOAD_COMMAND=tosutil cp "$1" tos://your-bucket/agentguard/
+```
+
+Then deploy and add people:
+
+```bash
+chmod 600 .env.production
+./scripts/deploy-multi-agent.sh .env.production
+export DATABASE_URL=postgres://launchpad:your-password@127.0.0.1:5433/launchpad
+printf '%s' 'a-long-password' | npm run db:admin -w @launchpad/server -- add-user you@example.com "Your Name"
+npm run db:admin -w @launchpad/server -- add-workspace checkout /srv/checkout you@example.com
+```
+
+For a demo, `seed-demo <source-path>` makes one workspace with one person per role,
+with the password from stdin.
+
+What it sets up: `agentguard.service`, and `agentguard-backup.timer`, which runs
+`scripts/pg-backup-nightly.sh` at 03:00. State is under `.state/`, or
+`AGENTGUARD_STATE_DIR`. Its `agentguard.env` holds the database password, readable
+only by you. `GET /api/health` answers 503 when the database is down.
+
+> [!IMPORTANT]
+> This script has not yet been run on a real ECS host: its checks and the backup
+> script were tested, the systemd steps were not. Terraform's cloud-init still deploys
+> token mode. Serve it over TLS before real use, because sessions are bearer tokens.
+
+Settings worth knowing: `RUN_ARTIFACT_RETENTION_DAYS` (30, 0 keeps files forever)
+removes a finished Run's working copy and raw traces, and `RUN_TOKEN_BUDGET`
+(2,000,000) stops new attempts once a Run has used that many tokens.
+
 ## Back up and restore PostgreSQL
 
 `scripts/pg-backup.sh` works on the running compose stack's `postgres` container
@@ -225,9 +277,11 @@ while anything is connected to the database.
 
 What to know before relying on this:
 
-- **Nothing runs on a schedule.** Run `backup` from cron or similar, and copy the
-  file to another machine. A backup on the database's own disk does not survive
-  losing that disk.
+- **Only the multi-agent deployment runs on a schedule.** Elsewhere, run
+  `scripts/pg-backup-nightly.sh` from cron. Set `BACKUP_UPLOAD_COMMAND` to copy each
+  dump to another machine: a backup on the database's own disk does not survive
+  losing that disk. A failed upload fails the run, and only `nightly-*` dumps older
+  than `BACKUP_KEEP_DAYS` (14) are removed, and only after the upload has worked.
 - **A backup is sensitive.** It holds password hashes, session token hashes, and
   stored agent output. Encrypt it wherever it is kept. `backups/` is ignored by
   Git.
@@ -236,6 +290,9 @@ What to know before relying on this:
   sessions` after restoring.
 - **Restoring loses what came after the backup,** including audit events. Audit
   rows are append-only for the application, not for whoever operates the database.
+- **Restore drill.** On 31 October 2026 a backup was restored into a new database on
+  a disposable local PostgreSQL 16, and every table's row count matched. That was a
+  small test database, not a deployed one, so repeat it on the real host.
 - **Only PostgreSQL is covered.** Traces under `data/`, Run working copies under
   `workspaces/`, and `codex-home/` are files on the host. Back them up separately.
   A restored Run can point at a trace that no longer exists.

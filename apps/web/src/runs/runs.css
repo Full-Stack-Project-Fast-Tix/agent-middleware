@@ -310,7 +310,12 @@
 .held-actions {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 8px;
+}
+
+.held-owner {
+  color: var(--ink-soft);
 }
 
 @media (max-width: 900px) {

@@ -198,7 +198,7 @@ describe("resolveAgentPolicy", () => {
     ).rejects.toThrow("no active mandatory platform policy");
   });
 
-  it("rejects policy rules until a supported rules schema exists", async () => {
+  it("rejects policy rules outside the supported schema", async () => {
     await expect(
       resolveAgentPolicy(
         source({
