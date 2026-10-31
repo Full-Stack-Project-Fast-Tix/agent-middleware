@@ -4,6 +4,10 @@
 
 **Repository state reviewed:** `main`, including the P1 runtime commits and merged PRs #8 and #9. This is a working handoff, not a claim that the project is production-ready.
 
+> **Update, 31 October 2026:** the false-completion fix, sign-in throttling, admin
+> APIs, retention cleanup, approval ownership, delegation review and the deployment
+> script below have landed. `docs/ARCHITECTURE.md` lists what is still not built.
+
 ## Current state
 
 - The multi-agent path is implemented and is wired into password-auth mode with PostgreSQL, the real security middleware, the supervisor planner, and container-backed Codex executions. See [`apps/server/src/index.ts`](apps/server/src/index.ts), [`apps/server/src/postgres-runs.ts`](apps/server/src/postgres-runs.ts), and [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).

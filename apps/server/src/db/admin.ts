@@ -292,3 +292,15 @@ export async function addWorkspace(
     return workspaceId;
   });
 }
+
+/** A workspace for the role-aware demo, with one person in each role. Returns the workspace's id. */
+export async function seedRoleDemo(pool: pg.Pool, input: { sourcePath: string; password: string }): Promise<string> {
+  const email = (role: string) => `${role}@demo.agentguard.test`;
+  await addUser(pool, { email: email("admin"), name: "Demo Security Admin", password: input.password });
+  await addUser(pool, { email: email("developer"), name: "Demo Developer", password: input.password });
+  await addUser(pool, { email: email("auditor"), name: "Demo Auditor", password: input.password });
+  const workspaceId = await addWorkspace(pool, { name: "Demo workspace", sourcePath: input.sourcePath, ownerEmail: email("admin") });
+  await setMember(pool, { workspaceId, email: email("developer"), role: "developer" });
+  await setMember(pool, { workspaceId, email: email("auditor"), role: "auditor" });
+  return workspaceId;
+}

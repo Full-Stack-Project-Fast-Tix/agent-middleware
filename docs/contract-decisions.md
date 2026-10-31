@@ -469,6 +469,15 @@ clients. The earlier base64 JSON was replaced by the outbound redactor as a
 possible secret, so every second page over HTTP answered 400 "Unknown cursor". A
 cursor must not look like a credential.
 
+## 21. Token-mode records are not migrated to PostgreSQL
+
+**Decision (31 October 2026):** The plan's JSON-to-Postgres migration is dropped.
+Token mode remains a working path on its own JSON store, as `CLAUDE.md` requires,
+and its demo records have no users or workspaces to map to, so a migration would
+invent ownership for them. A deployment that needs old single-agent records keeps
+them in token mode. This can be revisited if real single-agent data ever has to
+move.
+
 ## Guidance for P3's schema
 
 These points are implementation guidance, not part of the contract:

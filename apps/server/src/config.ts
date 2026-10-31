@@ -27,6 +27,10 @@ const envSchema = z.object({
   HOST: z.string().default("0.0.0.0"),
   PORT: z.coerce.number().int().min(1).max(65535).default(3000),
   LOG_LEVEL: z.string().default("info"),
+  /** Days a finished Run's working copy and raw traces are kept. 0 keeps them forever. */
+  RUN_ARTIFACT_RETENTION_DAYS: z.coerce.number().int().min(0).default(30),
+  /** Input plus output tokens one Run may use. No new attempt starts past it. */
+  RUN_TOKEN_BUDGET: z.coerce.number().int().positive().default(2_000_000),
   APP_DATA_DIR: z.string().default(path.resolve(".data")),
   AGENT_WORKSPACE_ROOT: z.string().default(path.resolve("workspaces")),
   CODEX_HOME: z.string().default(path.resolve("codex-home")),
@@ -209,6 +213,8 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env) {
     codexTimeoutMs: env.CODEX_TIMEOUT_MS,
     codexMaxOutputBytes: env.CODEX_MAX_OUTPUT_BYTES,
     runtimeProvider: env.RUNTIME_PROVIDER,
+    runArtifactRetentionDays: env.RUN_ARTIFACT_RETENTION_DAYS,
+    runTokenBudget: env.RUN_TOKEN_BUDGET,
     containerEngine: env.CONTAINER_ENGINE,
     containerRuntimeImage: env.CONTAINER_RUNTIME_IMAGE,
     containerCpuLimit: env.CONTAINER_CPU_LIMIT,

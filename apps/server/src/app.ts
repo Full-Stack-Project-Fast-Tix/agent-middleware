@@ -64,6 +64,8 @@ export interface AppExtensions {
   memberDatabase?: pg.Pool;
   /** Signed-in users with sessions, instead of the shared APP_AUTH_TOKEN. */
   identity?: Identity;
+  /** Rejects when the database cannot answer, which fails the health check. */
+  checkDatabase?: () => Promise<unknown>;
   /** Limits on sign-in attempts. Omitted, each app gets its own. */
   signInThrottle?: SignInThrottle;
 }
@@ -151,10 +153,15 @@ export async function createApp(
     return isBuffer ? Buffer.from(text, "utf8") : text;
   });
 
-  app.get("/api/health", async () => ({
-    ok: true,
-    service: "volc-agent-launchpad",
-  }));
+  app.get("/api/health", async (_request, reply) => {
+    try {
+      await extensions.checkDatabase?.();
+    } catch (error) {
+      app.log.error({ err: error }, "Health check could not reach the database");
+      return reply.code(503).send({ ok: false, service: "volc-agent-launchpad", error: "The database is unavailable" });
+    }
+    return { ok: true, service: "volc-agent-launchpad" };
+  });
 
   app.get("/api/auth", async () =>
     extensions.identity

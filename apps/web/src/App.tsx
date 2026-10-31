@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import type { User } from "@launchpad/shared";
-import { api, setAuthToken } from "./api";
+import { api, hasSavedSession, setAuthToken } from "./api";
 import { AccountMenu } from "./AccountMenu";
 import { Admin } from "./Admin";
 import { AgentsPage } from "./workspace/AgentsPage";
@@ -164,6 +164,15 @@ function AppSession({ notice, onSignedOut }: { notice: string | null; onSignedOu
       .then(async ({ required, method }) => {
         if (!mounted) return;
         setAuthMethod(method);
+        if (required && method === "password" && hasSavedSession()) {
+          const valid = await membersApi.me().then(() => true, () => false);
+          if (!mounted) return;
+          if (valid) {
+            setAuthRequired(false);
+            return;
+          }
+          setAuthToken("");
+        }
         setAuthRequired(required);
         if (!required) await bootstrap();
       })
@@ -197,7 +206,7 @@ function AppSession({ notice, onSignedOut }: { notice: string | null; onSignedOu
 
   const unlock = async ({ email, secret }: { email: string; secret: string }) => {
     if (authMethod === "password") {
-      setAuthToken((await api.signIn(email, secret)).token);
+      setAuthToken((await api.signIn(email, secret)).token, { remember: true });
     } else {
       setAuthToken(secret);
       await bootstrap();

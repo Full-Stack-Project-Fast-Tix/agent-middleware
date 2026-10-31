@@ -124,7 +124,7 @@ The shared boundary between the orchestrator and security middleware consists of
 
 | Contract | Purpose |
 | --- | --- |
-| `SecurityContext` | Trusted workspace/run/task/execution/agent identities, original user goal, delegated objective, parent context, agent instructions, effective policy, and limited recent trajectory |
+| `SecurityContext` | Trusted identifiers only (workspace, run, task, execution, agent). The middleware loads the user goal, instructions and policy itself (contract decision 2) |
 | `ProposedAction` | Normalized command/tool action, file-change action, or delegation action |
 | `SecurityDecision` | Outcome (`allow`, `steer`, `block`, `require_approval`), reasons/findings/severity, and optional steering guidance |
 | Effective policy | Mandatory platform controls + workspace restrictions + agent capability profile; narrower layers cannot weaken mandatory controls |

@@ -142,6 +142,24 @@ describe("what the agent reports", () => {
   });
 });
 
+describe("token budget", () => {
+  it("starts no more work once a run has used its budget, and says why", async () => {
+    const analyst = (key: string, dependsOn: string[] = []) => ({ key, title: key, objective: key, agentId: AGENTS.analyst, dependsOn });
+    const { run, events } = await start("auto", {
+      plan: { tasks: [analyst("first"), analyst("second", ["first"])] },
+      script: { first: { usage: { inputTokens: 80, outputTokens: 40 } } },
+      limits: { maxRunTokens: 100 },
+    });
+    const snapshot = await settle(run.id, events);
+
+    expect(snapshot.run.status).toBe("failed");
+    const second = snapshot.tasks.find((task) => task.title === "second")!;
+    expect(second.status).toBe("failed");
+    expect(second.error).toMatch(/120 tokens.*budget of 100/);
+    expect(harness.runtime.prompts.has("second")).toBe(false);
+  });
+});
+
 describe("single mode", () => {
   it("runs one task for the named agent without planning", async () => {
     const { run, events } = await start("single", { script: { [PROMPT]: { output: "Validation added." } } }, AGENTS.analyst);

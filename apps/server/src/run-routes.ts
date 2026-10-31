@@ -154,7 +154,7 @@ export function registerRunRoutes(app: FastifyInstance, options: RunRoutesOption
       if (error.code === "ENOENT") return null;
       throw error;
     });
-    if (contents === null) throw new HttpError(404, "No trace for this execution");
+    if (contents === null) throw new HttpError(404, "No trace for this execution. It may have been removed after the retention period.");
     return reply.type("application/x-ndjson").send(contents);
   });
 

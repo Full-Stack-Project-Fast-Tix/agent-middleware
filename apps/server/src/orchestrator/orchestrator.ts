@@ -60,6 +60,8 @@ export interface OrchestratorLimits {
   maxAttempts: number;
   /** Sets Approval.expiresAt. The timeout sweep calls expireApproval. */
   approvalTtlMs: number;
+  /** Input plus output tokens one Run may use. Checked before each attempt, so one attempt can overshoot it. */
+  maxRunTokens: number;
 }
 
 export const DEFAULT_ORCHESTRATOR_LIMITS: OrchestratorLimits = {
@@ -67,6 +69,7 @@ export const DEFAULT_ORCHESTRATOR_LIMITS: OrchestratorLimits = {
   maxParallel: 2,
   maxAttempts: 2,
   approvalTtlMs: 120_000,
+  maxRunTokens: 2_000_000,
 };
 
 export interface OrchestratorOptions {
@@ -555,6 +558,18 @@ export class Orchestrator {
   ): Promise<TaskResult> {
     let task = await this.requireTask(taskId);
     if (attempt === 1) task = await this.moveTask(taskId, "running", { startedAt: this.now() });
+
+    const used = (await this.store.listExecutions(run.id)).reduce(
+      (total, execution) => total + (execution.usage?.inputTokens ?? 0) + (execution.usage?.outputTokens ?? 0),
+      0,
+    );
+    if (used >= this.limits.maxRunTokens) {
+      await this.moveTask(taskId, "failed", {
+        error: `This run used ${used} tokens, reaching its budget of ${this.limits.maxRunTokens}, so no more work was started.`,
+        completedAt: this.now(),
+      });
+      return "failed";
+    }
 
     const agent = task.assignedAgentId === null ? null : await this.agents.getAgent(task.assignedAgentId);
     if (agent === null || !agent.enabled || agent.archivedAt !== null) {

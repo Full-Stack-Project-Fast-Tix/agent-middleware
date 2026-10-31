@@ -122,8 +122,6 @@ recovers interrupted Runs before it listens, and starts the approval sweep.
 
 ## Still to do
 
-- **Working-copy retention:** copies are kept after a Run for inspection;
-  deleting old ones is a retention policy still to be decided.
 - **Nested delegation:** specialists cannot delegate yet, so the effective
   depth is 1 whatever `maxDelegationDepth` allows.
 

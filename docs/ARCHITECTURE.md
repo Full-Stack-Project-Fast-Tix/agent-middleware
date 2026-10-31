@@ -1,7 +1,12 @@
 # Architecture
 
-Agent Launchpad is a single-node control plane for running and supervising
-Codex-based Agents.
+AgentGuard is a single-node control plane for running and supervising coding
+agents. It has two modes. **Password mode** is the multi-agent platform: signed-in
+users, workspace roles, PostgreSQL and Run → Task → AgentExecution, described under
+"Multi-agent model" below. **Token mode** is the original single-agent path: one
+shared token and a JSON store. Its routes do not exist in password mode.
+
+The diagram and components here are token mode's.
 
 ```mermaid
 flowchart LR
@@ -219,7 +224,11 @@ instead of the shared token, and `index.ts` composes the orchestrator with
 `PostgresSecuritySource`, the model planner and Codex containers
 ([`postgres-runs.ts`](../apps/server/src/postgres-runs.ts)). In a workspace,
 any role may read; `developer` and `security_admin` may also start and cancel
-Runs and answer approvals; `auditor` only reads. `npm run db:admin -w
+Runs; `auditor` only reads. An approval needs the person who started the Run, or a
+`security_admin` when its reason is `policy_required` (contract decision 17). What
+always asks a person is contract decision 18, and editing agents, profiles and
+policies is decision 19. The single-agent routes check no workspace role, so they
+are not registered in this mode. `npm run db:admin -w
 @launchpad/server` adds users, workspaces (with the four standard agents and
 the platform baseline policy) and members. A `security_admin` can also manage
 their workspace's members over the API (contract decision 15). Failed sign-ins
@@ -229,15 +238,23 @@ demo. An attempt's bounded, redacted raw trace is read through
 `GET /api/runs/:runId/executions/:executionId/trace`, under the same workspace
 check as the other run routes.
 
+A task completes only when its agent's last line reports `TASK_STATUS: complete`.
+That is the agent's own report: it can fail a task, but it does not prove the work
+is right. Each Run has a token budget (`RUN_TOKEN_BUDGET`). Files of a finished Run
+are removed after `RUN_ARTIFACT_RETENTION_DAYS`, while its rows stay.
+
 Not built yet, by owner:
-- **P3:** tenant isolation beyond workspace roles (every workspace's Runs share one
-  host). Members has a web page; creating users and workspaces stays on the command
-  line.
+- **P1:** reflection memory in multi-agent runs. The tables exist and are unused,
+  so a guard's catch does not carry into later Runs here as it does in token mode.
+  A multi-agent attack benchmark with 3 trials per cell has not been run.
 - **P1/P3:** command text and applied file changes on the gate timeline. Saved
   data does not hold them, so the timeline says so (contract decision 14 gives the
   schema each would need, and whether command text may be stored is P1's decision).
-- **P4:** views for Agents, Policies, Audit and Benchmarks. The console links only
-  to views that exist.
+- **P3:** tenant isolation beyond workspace roles (every workspace's Runs share one
+  host). Creating users and workspaces stays on the command line (decision 15), and
+  migrating token-mode JSON records was decided against (decision 21). The
+  integration harness still runs on `InMemoryRunStore`; the fuzz suite and the
+  store suite are what exercise Postgres.
 
 Orchestration test and load results are in
 [orchestration-evaluation.md](orchestration-evaluation.md).
@@ -247,6 +264,7 @@ Orchestration test and load results are in
 | Profile | Control plane | Agent execution |
 | --- | --- | --- |
 | Local POC | Host Node.js | Disposable local container |
+| Multi-agent host (`scripts/deploy-multi-agent.sh`) | Host Node.js under systemd, Postgres in Compose | Disposable local container |
 | ECS | Application container | Codex process in the same container |
 | Local development | Host Node.js | Host Codex process |
 

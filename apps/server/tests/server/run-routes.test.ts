@@ -132,7 +132,7 @@ describe("an attempt's trace", () => {
     const response = await inject("GET", apiPaths.executionTrace(RUN, UNTRACED));
 
     expect(response.statusCode).toBe(404);
-    expect(response.json().error).toBe("No trace for this execution");
+    expect(response.json().error).toBe("No trace for this execution. It may have been removed after the retention period.");
   });
 
   it("rejects an execution id that is not an id", async () => {
