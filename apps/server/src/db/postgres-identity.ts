@@ -93,7 +93,7 @@ export class PostgresIdentity {
 
   async listWorkspaces(userId: string): Promise<WorkspaceSummary[]> {
     const { rows } = await this.pool.query<WorkspaceSummary>(
-      `SELECT w.id, w.name FROM workspaces w JOIN workspace_members m ON m.workspace_id = w.id
+      `SELECT w.id, w.name, m.role FROM workspaces w JOIN workspace_members m ON m.workspace_id = w.id
         WHERE m.user_id = $1 ORDER BY w.name, w.id`,
       [userId],
     );

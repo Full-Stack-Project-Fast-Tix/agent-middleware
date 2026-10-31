@@ -45,12 +45,14 @@ export function TaskDrilldown({
   task,
   agents,
   resolvingApprovalId,
+  canAnswer,
   onResolveApproval,
 }: {
   view: RunView;
   task: Task;
   agents: ReadonlyMap<string, Agent>;
   resolvingApprovalId: string | null;
+  canAnswer: (approval: Approval) => boolean;
   onResolveApproval: (approval: Approval, decision: "approve" | "deny") => void;
 }) {
   const executions = executionsOf(view, task.id);
@@ -94,7 +96,7 @@ export function TaskDrilldown({
                     {JSON.stringify(approval.safeDetails, null, 2)}
                   </Foreign>
                 )}
-                {approval.status === "pending" && (
+                {approval.status === "pending" && canAnswer(approval) && (
                   <div className="cluster">
                     <Button
                       variant="primary"

@@ -404,6 +404,19 @@ complete audit history. Read access for `auditor` follows "any role may read";
 the owners may want to narrow it for raw traces. Owners to review: P1 (exposure
 of trace content), P3 (access rule), P4 (contract).
 
+## 17. Who may answer an approval
+
+**Decision (31 October 2026):** The work plan's section 3.8 default is now
+enforced. A `policy_required` approval needs a `security_admin` of the workspace.
+Every other reason needs the `developer` or `security_admin` who started the Run,
+and a `security_admin` who did not start it gets a 403 too. An `auditor` never
+answers one. `mayAnswerApproval` in the shared package holds the rule; the route
+enforces it and the web app uses it only to hide buttons the server would refuse.
+
+If that person is away, the approval times out and declines only that action,
+which is the safe outcome. The plan calls this a proposed default for the team to
+confirm, so changing it means changing `mayAnswerApproval` and this entry.
+
 ## Guidance for P3's schema
 
 These points are implementation guidance, not part of the contract:

@@ -3,6 +3,7 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
 import {
   createRunRequestSchema,
+  mayAnswerApproval,
   resolveApprovalRequestSchema,
   RUN_TIMELINE_MAX_ENTRIES,
   runListQuerySchema,
@@ -36,8 +37,8 @@ import { traceFilePath } from "./trace.js";
 //
 // The SSE stream (GET /api/runs/:runId/events) is run-events-route.ts.
 // Authentication is the app's onRequest hook. Authorisation is the caller's
-// role in the workspace: any role may read, and only ACTING_ROLES may start or
-// cancel a run or answer an approval.
+// role in the workspace: any role may read, only ACTING_ROLES may start or cancel
+// a run, and mayAnswerApproval says who may answer an approval.
 
 export interface RunRoutesOptions {
   orchestrator: Pick<Orchestrator, "createRun" | "cancel" | "resolveApproval">;
@@ -84,9 +85,10 @@ export function registerRunRoutes(app: FastifyInstance, options: RunRoutesOption
     return { snapshot, role: await roleIn(request, snapshot.run.workspaceId, "Run not found") };
   }
 
-  app.get("/api/workspaces", async (request) => ({
-    workspaces: await options.listWorkspaces(options.currentUserId(request)),
-  }));
+  app.get("/api/workspaces", async (request) => {
+    const viewerId = options.currentUserId(request);
+    return { workspaces: await options.listWorkspaces(viewerId), viewerId };
+  });
 
   app.get("/api/workspaces/:workspaceId/agents", async (request) => {
     const { workspaceId } = workspaceParams.parse(request.params);
@@ -167,12 +169,21 @@ export function registerRunRoutes(app: FastifyInstance, options: RunRoutesOption
     const { decision } = resolveApprovalRequestSchema.parse(request.body);
     const existing = await options.approval(approvalId);
     if (existing === null) throw new HttpError(404, "Approval not found");
-    const { role } = await readableSnapshot(request, existing.runId).catch((error: unknown) => {
+    const { role, snapshot } = await readableSnapshot(request, existing.runId).catch((error: unknown) => {
       throw error instanceof HttpError && error.statusCode === 404 ? new HttpError(404, "Approval not found") : error;
     });
     mayAct(role);
+    const userId = options.currentUserId(request);
+    if (!mayAnswerApproval({ role, userId, runCreatedByUserId: snapshot.run.createdByUserId, reason: existing.reason })) {
+      throw new HttpError(
+        403,
+        existing.reason === "policy_required"
+          ? "Only a Security Admin of this workspace can answer this approval"
+          : "Only the person who started this run can answer this approval",
+      );
+    }
     // The orchestrator answers 409 for an approval that is already answered.
-    const approval = await options.orchestrator.resolveApproval(approvalId, decision, options.currentUserId(request));
+    const approval = await options.orchestrator.resolveApproval(approvalId, decision, userId);
     return { approval };
   });
 }

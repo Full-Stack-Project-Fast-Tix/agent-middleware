@@ -28,8 +28,8 @@ import { ApiError, authHeaders, request } from "../api";
 export type { WorkspaceSummary };
 
 export const runsApi = {
-  workspaces: async (): Promise<WorkspaceSummary[]> =>
-    workspacesResponseSchema.parse(await request(apiPaths.workspaces())).workspaces,
+  workspaces: async (): Promise<{ workspaces: WorkspaceSummary[]; viewerId: string }> =>
+    workspacesResponseSchema.parse(await request(apiPaths.workspaces())),
 
   agents: async (workspaceId: string): Promise<Agent[]> =>
     agentsResponseSchema.parse(await request(apiPaths.workspaceAgents(workspaceId))).agents,

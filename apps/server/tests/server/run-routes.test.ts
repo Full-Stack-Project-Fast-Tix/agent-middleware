@@ -25,7 +25,14 @@ afterEach(async () => {
   await app.close();
 });
 
-async function start(runWorkspace: string, role: WorkspaceRole = "developer") {
+const VIEWER = "00000000-0000-4000-8000-0000000000ee";
+const SOMEONE_ELSE = "00000000-0000-4000-8000-0000000000ef";
+
+async function start(
+  runWorkspace: string,
+  role: WorkspaceRole = "developer",
+  approvalFacts: { startedBy?: string; reason?: Approval["reason"] } = {},
+) {
   const calls: string[] = [];
   const options: RunRoutesOptions = {
     orchestrator: {
@@ -42,7 +49,7 @@ async function start(runWorkspace: string, role: WorkspaceRole = "developer") {
         return { id: APPROVAL } as never;
       },
     },
-    snapshot: async (runId) => (runId === RUN ? ({ run: { id: RUN, workspaceId: runWorkspace }, approvals: [] } as unknown as RunSnapshot) : null),
+    snapshot: async (runId) => (runId === RUN ? ({ run: { id: RUN, workspaceId: runWorkspace, createdByUserId: approvalFacts.startedBy ?? VIEWER }, approvals: [] } as unknown as RunSnapshot) : null),
     runAudit: async (_runId, eventType) => {
       calls.push(`runAudit:${eventType}`);
       return { events: [], total: 0 };
@@ -51,10 +58,10 @@ async function start(runWorkspace: string, role: WorkspaceRole = "developer") {
       calls.push(`listRuns:${query.limit ?? "default"}:${query.status ?? "any"}`);
       return { runs: [], nextCursor: null, pendingApprovalCount: 3 };
     },
-    approval: async (approvalId) => (approvalId === APPROVAL ? ({ id: APPROVAL, runId: RUN } as Approval) : null),
+    approval: async (approvalId) => (approvalId === APPROVAL ? ({ id: APPROVAL, runId: RUN, reason: approvalFacts.reason ?? "semantic_uncertainty" } as Approval) : null),
     currentUserId: () => "00000000-0000-4000-8000-0000000000ee",
     workspaceRole: async (workspaceId) => (workspaceId === MINE ? role : null),
-    listWorkspaces: async () => [{ id: MINE, name: "Mine" }],
+    listWorkspaces: async () => [{ id: MINE, name: "Mine", role }],
     listAgents: async () => [],
   };
   app = await createApp(loadConfig({ NODE_ENV: "test" }), {} as AgentService, { runs: options });
@@ -146,7 +153,7 @@ describe("run routes", () => {
     expect((await inject("POST", `/api/runs/${RUN}/cancel`)).statusCode).toBe(202);
     expect((await inject("POST", `/api/approvals/${APPROVAL}/resolve`, { decision: "approve" })).statusCode).toBe(200);
     expect(calls).toEqual(["createRun", "cancel", "resolveApproval"]);
-    expect((await inject("GET", "/api/workspaces")).json()).toEqual({ workspaces: [{ id: MINE, name: "Mine" }] });
+    expect((await inject("GET", "/api/workspaces")).json()).toEqual({ workspaces: [{ id: MINE, name: "Mine", role: "developer" }], viewerId: VIEWER });
     expect((await inject("GET", `/api/workspaces/${MINE}/agents`)).json()).toEqual({ agents: [] });
   });
 
@@ -229,5 +236,38 @@ describe("run routes", () => {
     expect((await inject("GET", "/api/runs/not-an-id/snapshot")).statusCode).toBe(400);
     expect((await inject("POST", `/api/workspaces/${MINE}/runs`, { userPrompt: "  " })).statusCode).toBe(400);
     expect((await inject("POST", `/api/approvals/${APPROVAL}/resolve`, { decision: "maybe" })).statusCode).toBe(400);
+  });
+
+  describe("who may answer an approval", () => {
+    const answer = () => inject("POST", `/api/approvals/${APPROVAL}/resolve`, { decision: "approve" });
+
+    it.each(["high_consequence", "semantic_uncertainty", "semantic_unavailable"] as const)(
+      "%s belongs to whoever started the run",
+      async (reason) => {
+        const calls = await start(MINE, "security_admin", { startedBy: SOMEONE_ELSE, reason });
+        const refused = await answer();
+        expect(refused.statusCode).toBe(403);
+        expect(calls).not.toContain("resolveApproval");
+        await app.close();
+
+        await start(MINE, "developer", { reason });
+        expect((await answer()).statusCode).toBe(200);
+      },
+    );
+
+    it("policy_required needs a Security Admin, even for the run's own developer", async () => {
+      const calls = await start(MINE, "developer", { reason: "policy_required" });
+      expect((await answer()).statusCode).toBe(403);
+      expect(calls).not.toContain("resolveApproval");
+      await app.close();
+
+      await start(MINE, "security_admin", { startedBy: SOMEONE_ELSE, reason: "policy_required" });
+      expect((await answer()).statusCode).toBe(200);
+    });
+
+    it("never lets an auditor answer, even on a run the auditor started", async () => {
+      await start(MINE, "auditor");
+      expect((await answer()).statusCode).toBe(403);
+    });
   });
 });

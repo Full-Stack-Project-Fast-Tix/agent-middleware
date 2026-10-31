@@ -9,6 +9,8 @@ import {
   runStatusSchema,
   securityDecisionOutcomeSchema,
   workspaceRoleSchema,
+  type ApprovalReason,
+  type WorkspaceRole,
 } from "./enums.js";
 import { runSnapshotSchema } from "./events.js";
 import { userSchema, workspaceMemberSchema, workspaceSchema } from "./identity.js";
@@ -110,7 +112,8 @@ export type MeResponse = z.infer<typeof meResponseSchema>;
  *
  * The workspaces are the caller's own. Reading needs any role in the
  * workspace; starting or cancelling a run and answering an approval need
- * `developer` or `security_admin` (403 for an `auditor`). The agents include
+ * `developer` or `security_admin` (403 for an `auditor`). An approval also has
+ * to be the caller's to answer: see mayAnswerApproval. The agents include
  * disabled and archived ones, so a past Run's agent can still be named.
  *
  * Cancel is idempotent: the first call sets cancelRequestedAt and the run
@@ -137,10 +140,12 @@ export const apiPaths = {
 } as const;
 
 /** A workspace as listings show it; where its source lives stays on the server. */
-export const workspaceSummarySchema = workspaceSchema.pick({ id: true, name: true });
+export const workspaceSummarySchema = workspaceSchema
+  .pick({ id: true, name: true })
+  .extend({ /** The caller's own role, so a screen can offer only what the server will accept. */ role: workspaceRoleSchema });
 export type WorkspaceSummary = z.infer<typeof workspaceSummarySchema>;
 
-export const workspacesResponseSchema = z.object({ workspaces: z.array(workspaceSummarySchema) });
+export const workspacesResponseSchema = z.object({ workspaces: z.array(workspaceSummarySchema), viewerId: idSchema });
 export type WorkspacesResponse = z.infer<typeof workspacesResponseSchema>;
 
 export const agentsResponseSchema = z.object({ agents: z.array(agentSchema) });
@@ -303,6 +308,23 @@ export const createRunRequestSchema = z.object({
   agentId: idSchema.optional(),
 });
 export type CreateRunRequest = z.input<typeof createRunRequestSchema>;
+
+/**
+ * Who may answer a pending approval (contract decision 17): `policy_required`
+ * needs a Security Admin of the workspace, and every other reason needs the
+ * developer or Security Admin who started the Run. The server enforces this;
+ * the web app uses it only to offer what the server will accept.
+ */
+export function mayAnswerApproval(input: {
+  role: WorkspaceRole;
+  userId: string;
+  runCreatedByUserId: string;
+  reason: ApprovalReason;
+}): boolean {
+  if (input.role === "auditor") return false;
+  if (input.reason === "policy_required") return input.role === "security_admin";
+  return input.userId === input.runCreatedByUserId;
+}
 
 export const resolveApprovalRequestSchema = z.object({
   decision: approvalDecisionSchema,
