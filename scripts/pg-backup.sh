@@ -121,11 +121,17 @@ restore() {
   # including the audit table's append-only ones, are created after the data.
   in_postgres 'pg_restore -U "$POSTGRES_USER" -d "$1" --no-owner --single-transaction --exit-on-error' _ "$target" <"$file"
 
-  if db_exists "$db"; then
-    sql postgres "DROP DATABASE \"$db\"" >/dev/null || fail "could not replace $db. Is the app still connected? Stop it first."
-  fi
-  sql postgres "ALTER DATABASE \"$target\" RENAME TO \"$db\"" >/dev/null
+  # From here the restored copy may be the only one left, so nothing may drop it
+  # automatically: only a refused DROP, which leaves the original intact, cleans up.
   trap - EXIT
+  if db_exists "$db"; then
+    if ! sql postgres "DROP DATABASE \"$db\"" >/dev/null; then
+      sql postgres "DROP DATABASE IF EXISTS \"$target\"" >/dev/null || true
+      fail "could not replace $db. Is the app still connected? Stop it first."
+    fi
+  fi
+  sql postgres "ALTER DATABASE \"$target\" RENAME TO \"$db\"" >/dev/null \
+    || fail "the restored data is in $target, not $db. Rename it by hand: ALTER DATABASE \"$target\" RENAME TO \"$db\""
   echo "Restored $file into $db"
 }
 
