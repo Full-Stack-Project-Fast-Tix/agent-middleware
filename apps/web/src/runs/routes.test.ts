@@ -23,12 +23,15 @@ describe("parseRoute", () => {
     expect(parseRoute("/runs/..%2F..%2Fadmin")).toEqual({ page: "not-found" });
     expect(parseRoute("/runs/not-a-run")).toEqual({ page: "not-found" });
     expect(parseRoute(`/runs/${RUN_ID}/extra`)).toEqual({ page: "not-found" });
-    expect(parseRoute("/agents")).toEqual({ page: "not-found" });
+    expect(parseRoute("/not-a-page")).toEqual({ page: "not-found" });
   });
 
   it("round-trips the paths it hands out", () => {
     expect(parseRoute(paths.run(RUN_ID))).toEqual({ page: "run", runId: RUN_ID });
     expect(parseRoute(paths.newRun)).toEqual({ page: "new-run" });
+    for (const page of ["agents", "policies", "approvals", "security", "benchmarks"] as const) {
+      expect(parseRoute(paths[page])).toEqual({ page });
+    }
   });
 });
 
