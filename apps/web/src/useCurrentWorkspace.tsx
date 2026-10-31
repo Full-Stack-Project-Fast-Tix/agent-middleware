@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { ApiError } from "./api";
 import { runsApi, type WorkspaceSummary } from "./runs/runs-api";
 
 const CURRENT_KEY = "agentguard.currentWorkspace";
@@ -44,7 +45,13 @@ export function CurrentWorkspaceProvider({ children }: { children: ReactNode }) 
       .catch((reason: unknown) => {
         if (!mounted) return;
         setWorkspaces([]);
-        setError(reason instanceof Error ? reason.message : String(reason));
+        setError(
+          reason instanceof ApiError && reason.status === 404
+            ? "This server does not offer multi-agent runs. Start it with RUNS_DEMO=1 for the local demo, or in password mode with RUNTIME_PROVIDER=container."
+            : reason instanceof Error
+              ? reason.message
+              : String(reason),
+        );
       });
     return () => {
       mounted = false;
