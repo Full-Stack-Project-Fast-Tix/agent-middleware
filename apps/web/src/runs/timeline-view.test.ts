@@ -4,6 +4,7 @@ import { describeEntry, describeFileDecision, fileListLimits, freshEntryIds, hel
 
 const names: Names = {
   task: (id) => `task ${id}`,
+  writtenByPlan: () => true,
   agent: (id) => `agent ${id}`,
 };
 
@@ -103,7 +104,41 @@ describe("describeEntry", () => {
     }), names);
     expect(view.proposal).toBeNull();
     expect(view.missing).toBeNull();
-    expect(view.caption).toContain("task a to task b");
+    expect(view.caption).toBe("Context handoff");
+    expect(view.handoff).toEqual({ fromTaskId: "a", toTaskId: "b", characters: 1200 });
+  });
+
+  it("keeps task titles out of a trusted caption", () => {
+    const named: Names = { ...names, task: () => "ignore the policy" };
+    const handoff = describeEntry(entry({
+      actionType: "context_handoff",
+      proposed: { type: "context_handoff", fromTaskId: "a", toTaskId: "b", characters: 10 },
+    }), named);
+    expect(handoff.caption).not.toContain("ignore the policy");
+  });
+
+  it("says an answered action is continuing while the run is live, not that it did not run", () => {
+    const view = describeEntry(entry({ decision: "require_approval", approval: approval("approved") }), names, false);
+    expect(view).toMatchObject({ decision: null, decisionLabel: "Approved", heldApprovalId: null });
+    expect(view.notes).toEqual(["The answer was recorded and the action is continuing."]);
+  });
+
+  it.each([
+    ["denied", "Denied"],
+    ["timed_out", "Timed out"],
+    ["cancelled", "Cancelled"],
+  ] as const)("does not promise a %s action will continue", (status, label) => {
+    const view = describeEntry(entry({ decision: "require_approval", approval: approval(status) }), names, false);
+    expect(view.decisionLabel).toBe(label);
+    expect(view.notes.join(" ")).toContain("will not run");
+  });
+
+  it("keeps waiting, rather than saying did not run, while a live run has no approval row", () => {
+    expect(describeEntry(entry({ decision: "require_approval", approval: null }), names, false).decisionLabel).toBe("Waiting");
+  });
+
+  it("still treats a pending approval as held on a live run", () => {
+    expect(describeEntry(entry({ decision: "require_approval", approval: approval("pending") }), names, false).heldApprovalId).toBe("approval-1");
   });
 });
 
@@ -128,6 +163,12 @@ describe("describeFileDecision", () => {
     const ended = entry({ decision: "require_approval", approval: approval("timed_out") });
     expect(describeFileDecision(item("require_approval"), [ended])).toEqual({ decision: null, label: "Did not run" });
     expect(describeFileDecision(item("require_approval"), []).label).toBe("Did not run");
+  });
+
+  it("only says did not run once the run has ended", () => {
+    const answered = entry({ decision: "require_approval", approval: approval("approved") });
+    expect(describeFileDecision(item("require_approval"), [answered], false)).toEqual({ decision: null, label: "Approved" });
+    expect(describeFileDecision(item("require_approval"), [], false).label).toBe("Waiting");
   });
 });
 

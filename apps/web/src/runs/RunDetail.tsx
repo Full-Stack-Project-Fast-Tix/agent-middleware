@@ -5,7 +5,7 @@ import { paths } from "../router";
 import { Button, ButtonLink, DecisionGlyph, ErrorState, Foreign, Loading, StatusBadge } from "../ui";
 import { agentName, formatClock } from "./format";
 import { runsApi } from "./runs-api";
-import { focusTaskId, isRunActive, pendingApprovals } from "./run-view";
+import { focusTaskId, isRunActive, isWrittenByPlan, pendingApprovals } from "./run-view";
 import { GateTimeline, ProposedFiles } from "./RunTimeline";
 import { TaskDrilldown } from "./TaskDrilldown";
 import { TaskGraph } from "./TaskGraph";
@@ -60,6 +60,10 @@ export function RunDetail({ runId }: { runId: string }) {
 
   const names = useMemo<Names>(() => ({
     task: (taskId) => view?.tasks.find((task) => task.id === taskId)?.title ?? "another task",
+    writtenByPlan: (taskId) => {
+      const task = view?.tasks.find((candidate) => candidate.id === taskId);
+      return task !== undefined && isWrittenByPlan(task);
+    },
     agent: (agentId) => agentName(agents, agentId),
   }), [agents, view?.tasks]);
 
@@ -217,7 +221,7 @@ export function RunDetail({ runId }: { runId: string }) {
             resolvingApprovalId={resolvingApprovalId}
             onResolve={(approvalId, decision) => void resolve(approvalId, decision)}
           />
-          {timeline.timeline !== null && <ProposedFiles timeline={timeline.timeline} />}
+          {timeline.timeline !== null && <ProposedFiles timeline={timeline.timeline} runEnded={!active} />}
           {run.finalOutput !== null && run.status === "completed" && (
             <section className="page-section" aria-label="Agent's report">
               <Foreign label="Agent's report" note="Not verified by AgentGuard">

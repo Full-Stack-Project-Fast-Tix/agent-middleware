@@ -2,7 +2,7 @@ import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { highestSeverity, type Agent } from "@launchpad/shared";
 import { agentName, humanize, SeverityBadge, StatusBadge } from "./format";
 import { layoutTaskGraph, placeTaskGraph } from "./graph-layout";
-import { executionsOf, findingsOf, isRunActive, type RunView } from "./run-view";
+import { executionsOf, findingsOf, isRunActive, isWrittenByPlan, type RunView } from "./run-view";
 
 /** The frame's width, which decides which way the graph runs. */
 function useFrameWidth() {
@@ -57,10 +57,15 @@ export function TaskGraph({
     <section className="page-section" aria-labelledby="task-graph-heading">
       <div className="section-head">
         <h2 id="task-graph-heading">Tasks</h2>
-        {kinds.size > 1 && (
+        {(kinds.size > 1 || view.tasks.some(isWrittenByPlan)) && (
           <div className="task-graph-legend meta">
-            <span><i className="legend-line" /> waits for</span>
-            <span><i className="legend-line legend-line-delegation" /> started by the plan</span>
+            {view.tasks.some(isWrittenByPlan) && <span>Task names are written by the plan</span>}
+            {kinds.size > 1 && (
+              <>
+                <span><i className="legend-line" /> waits for</span>
+                <span><i className="legend-line legend-line-delegation" /> started by the plan</span>
+              </>
+            )}
           </div>
         )}
       </div>

@@ -547,6 +547,11 @@
   overflow-wrap: anywhere;
 }
 
+.task-drilldown h2 .foreign-inline {
+  font-size: var(--text-15);
+  font-weight: 500;
+}
+
 .task-drilldown h3 {
   margin: 0 0 8px;
   font-size: var(--text-13);

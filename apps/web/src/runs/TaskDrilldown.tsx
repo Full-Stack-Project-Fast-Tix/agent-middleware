@@ -2,9 +2,9 @@ import { useState } from "react";
 import type { Agent, Approval, Task } from "@launchpad/shared";
 import { MessageContent } from "../MessageContent";
 import { approvalBadgeStatus, Button, Foreign } from "../ui";
-import { agentName, formatClock, formatDuration, humanize, SeverityBadge, StatusBadge } from "./format";
+import { agentName, formatClock, formatDuration, humanize, SeverityBadge, StatusBadge, TaskName } from "./format";
 import { runsApi } from "./runs-api";
-import { approvalsOf, executionsOf, findingsOf, isRunActive, type RunView } from "./run-view";
+import { approvalsOf, executionsOf, findingsOf, isRunActive, isWrittenByPlan, type RunView } from "./run-view";
 
 const CAPABILITIES = ["write", "shell", "network", "delegate"] as const;
 
@@ -60,14 +60,15 @@ export function TaskDrilldown({
   const delegatedBy = task.parentTaskId === null ? null : view.tasks.find((candidate) => candidate.id === task.parentTaskId);
   const waitsFor = view.dependencies
     .filter((edge) => edge.taskId === task.id)
-    .map((edge) => view.tasks.find((candidate) => candidate.id === edge.dependsOnTaskId)?.title ?? "an earlier task");
+    .map((edge) => ({ id: edge.dependsOnTaskId, task: view.tasks.find((candidate) => candidate.id === edge.dependsOnTaskId) }));
 
   return (
     <aside className="task-drilldown" aria-label={`Task: ${task.title}`} tabIndex={0}>
       <header>
-        <h2>{task.title}</h2>
+        <h2><TaskName title={task.title} writtenByPlan={isWrittenByPlan(task)} /></h2>
         <div className="cluster meta">
           <StatusBadge status={task.status} live={live} />
+          {isWrittenByPlan(task) && <span>Named by the plan</span>}
           <span>{agentName(agents, task.assignedAgentId)}</span>
           <span className="tabular">{formatDuration(task.startedAt, task.completedAt)}</span>
         </div>
@@ -129,8 +130,19 @@ export function TaskDrilldown({
         )}
         {(delegatedBy || waitsFor.length > 0) && (
           <p className="task-lineage meta">
-            {delegatedBy && <>Started by {delegatedBy.title}. </>}
-            {waitsFor.length > 0 && <>Waits for {waitsFor.join(", ")}.</>}
+            {delegatedBy && <>Started by <TaskName title={delegatedBy.title} writtenByPlan={isWrittenByPlan(delegatedBy)} />. </>}
+            {waitsFor.length > 0 && (
+              <>
+                Waits for{" "}
+                {waitsFor.map(({ id, task: waited }, index) => (
+                  <span key={id}>
+                    {index > 0 && ", "}
+                    {waited === undefined ? "an earlier task" : <TaskName title={waited.title} writtenByPlan={isWrittenByPlan(waited)} />}
+                  </span>
+                ))}
+                .
+              </>
+            )}
           </p>
         )}
       </section>
