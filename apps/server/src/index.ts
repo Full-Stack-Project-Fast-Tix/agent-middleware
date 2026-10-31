@@ -75,7 +75,7 @@ const app = await createApp(config, service, {
     lastEventSeq: async (runId) => (await runs?.store.snapshot(runId))?.lastEventSeq ?? 0,
   },
   ...(runs === null ? {} : { runs: runs.routes }),
-  ...(identity === null ? {} : { identity }),
+  ...(identity === null ? {} : { identity, memberDatabase: database! }),
 });
 if (identity !== null && runs === null) {
   app.log.warn("Multi-agent runs need RUNTIME_PROVIDER=container, so their routes are off.");
