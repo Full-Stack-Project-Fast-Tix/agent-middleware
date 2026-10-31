@@ -127,6 +127,19 @@ export function describeEntry(entry: RunTimelineEntry, names: Names): GateEntryV
   return { caption, proposal: shown.proposal, missing, decision: entry.decision, decisionLabel: undefined, notes, heldApprovalId: null };
 }
 
+/**
+ * What each held action proposes, by approval id. An action is only answerable
+ * away from its gate row when this says what is being answered.
+ */
+export function heldProposals(entries: readonly RunTimelineEntry[], names: Names): ReadonlyMap<string, string> {
+  const held = new Map<string, string>();
+  for (const entry of entries) {
+    const view = describeEntry(entry, names);
+    if (view.heldApprovalId !== null && view.proposal !== null) held.set(view.heldApprovalId, view.proposal);
+  }
+  return held;
+}
+
 export interface FileDecisionView {
   /** Null when no decision took effect. */
   decision: SecurityDecisionOutcome | null;

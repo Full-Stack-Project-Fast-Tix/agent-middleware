@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { RunTimeline, RunTimelineEntry } from "@launchpad/shared";
-import { describeEntry, describeFileDecision, fileListLimits, freshEntryIds, type Names } from "./timeline-view";
+import { describeEntry, describeFileDecision, fileListLimits, freshEntryIds, heldProposals, type Names } from "./timeline-view";
 
 const names: Names = {
   task: (id) => `task ${id}`,
@@ -156,5 +156,23 @@ describe("freshEntryIds", () => {
     expect([...first]).toEqual(["b"]);
     const second = freshEntryIds(new Set(["a", "b"]), first, [{ id: "a" }, { id: "b" }]);
     expect(second).toBe(first);
+  });
+});
+
+describe("heldProposals", () => {
+  const held = { decision: "require_approval", approval: approval("pending") } as const;
+
+  it("gives what a held action proposes, by approval id", () => {
+    const proposals = heldProposals([entry(held)], names);
+    expect(proposals.get("approval-1")).toBe("npm test");
+  });
+
+  it("leaves out an answered action", () => {
+    expect(heldProposals([entry({ decision: "require_approval", approval: approval("approved") })], names).size).toBe(0);
+    expect(heldProposals([entry({ decision: "allow", approval: approval("approved") })], names).size).toBe(0);
+  });
+
+  it("leaves out a held action whose proposal was not saved, so nobody answers it blind", () => {
+    expect(heldProposals([entry({ ...held, proposed: null })], names).size).toBe(0);
   });
 });

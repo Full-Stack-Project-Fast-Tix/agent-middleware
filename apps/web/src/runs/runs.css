@@ -295,11 +295,30 @@
 }
 
 .held-strip li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px 24px;
+}
+
+.held-what {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 8px 24px;
+}
+
+.held-actions {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px 16px;
+  gap: 8px;
+}
+
+@media (max-width: 900px) {
+  .held-strip li,
+  .held-what {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 /* Task graph */
