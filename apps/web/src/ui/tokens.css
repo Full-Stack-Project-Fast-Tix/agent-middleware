@@ -46,19 +46,6 @@
   --topbar-height: 48px;
   --page-gutter: 24px;
   --page-max: 1440px;
-
-  /* Names used by rules written before this system. New code uses the names
-     above; these go away as each page is rebuilt. */
-  --ink: var(--graphite);
-  --muted: var(--steel);
-  --line: var(--rule);
-  --paper: var(--surface);
-  --purple: var(--cobalt);
-  --purple-dark: var(--cobalt);
-  --purple-soft: var(--selection-tint);
-  --green: var(--passed);
-  --red: var(--blocked);
-  --shadow: none;
 }
 
 @media (max-width: 640px) {

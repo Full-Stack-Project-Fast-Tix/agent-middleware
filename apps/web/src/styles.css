@@ -83,14 +83,3 @@ label > textarea {
   align-items: stretch;
   gap: 12px;
 }
-
-.eyebrow {
-  display: block;
-  color: var(--steel);
-  font-size: var(--text-13);
-}
-
-.muted-copy {
-  color: var(--steel);
-  font-size: var(--text-13);
-}
