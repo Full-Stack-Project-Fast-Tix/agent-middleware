@@ -129,14 +129,14 @@ function Overview({ overview, agents, onSelectAgent }: {
       <p className="meta">Open an agent to see only its interventions, approvals and learned memory.</p>
       {agents.length === 0 ? <p className="meta">No agents have been created.</p> : (
         <DataTable caption="Safety records by agent">
-          <thead><tr><th>Agent</th><th className="wide-only">Description</th><th>Interventions</th><th>Patterns</th><th><span className="sr-only">Open</span></th></tr></thead>
+          <thead><tr><th>Agent</th><th className="wide-only">Description</th><th>Interventions</th><th className="wide-only">Patterns</th><th><span className="sr-only">Open</span></th></tr></thead>
           <tbody>
             {agents.map((agent) => (
               <tr key={agent.id}>
                 <td>{agent.name}</td>
                 <td className="cell-prompt wide-only">{agent.description || "Coding agent"}</td>
                 <td className="num">{overview.interventions.filter((event) => event.agentId === agent.id).length}</td>
-                <td className="num">{overview.learnedPatterns.filter((pattern) => pattern.agentId === agent.id).length}</td>
+                <td className="num wide-only">{overview.learnedPatterns.filter((pattern) => pattern.agentId === agent.id).length}</td>
                 <td><Button onClick={() => onSelectAgent(agent.id)} aria-label={`View safety for ${agent.name}`}>View safety</Button></td>
               </tr>
             ))}
