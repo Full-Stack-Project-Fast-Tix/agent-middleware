@@ -21,6 +21,7 @@ import { registerRunEventStream, type RunEventStreamOptions } from "./run-events
 import { isOpenRequest } from "./api-access.js";
 import { registerMemberRoutes } from "./member-routes.js";
 import { registerRunRoutes, type RunRoutesOptions } from "./run-routes.js";
+import { registerWorkspaceConfigRoutes } from "./workspace-config-routes.js";
 import type { SignInThrottle } from "./sign-in-throttle.js";
 import { registerSessionAuth, type Identity } from "./auth-routes.js";
 
@@ -310,6 +311,7 @@ export async function createApp(
   }
   if (extensions.identity && extensions.memberDatabase) {
     registerMemberRoutes(app, extensions.memberDatabase);
+    registerWorkspaceConfigRoutes(app, extensions.memberDatabase);
   }
 
   if (config.nodeEnv === "production") {

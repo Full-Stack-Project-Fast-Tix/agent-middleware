@@ -443,6 +443,32 @@ Delegations now get the semantic review too, on every delegation, against the
 trusted user prompt. That closes the "steered supervisor" row of the threat model
 at the semantic layer; the capability, depth and target checks still run first.
 
+## 19. Editing agents, profiles and policies
+
+**Decision (31 October 2026):** The routes are in `packages/shared/src/api.ts`.
+Any role reads. Developers and Security Admins add and edit agents, because the
+plan has developers configure the specialist team, but only a Security Admin may
+give an existing agent another profile, or change profiles and policies. Platform
+and locked policies are read-only over the API; nothing can grant `platform_admin`
+yet (decision 15).
+
+Each change takes the workspace lock, reads the role inside the transaction,
+checks `expectedVersion` (a stale one is a 409), and writes its audit row in the
+same transaction. Profile and policy events record capabilities, ceilings and
+rules before and after. Agent events record which fields changed but not the
+instruction text, which can hold anything. DELETE archives.
+
+`POST` and `PATCH` validate rules with `policyRulesSchema`, so a rule the resolver
+would refuse is a 400 and cannot stop every run in the workspace. A second enabled
+agent that may delegate is a 409, because `auto` runs need exactly one.
+
+## 20. Paging cursors stay plain text
+
+**Decision (31 October 2026):** A cursor is `<milliseconds>_<id>`, still opaque to
+clients. The earlier base64 JSON was replaced by the outbound redactor as a
+possible secret, so every second page over HTTP answered 400 "Unknown cursor". A
+cursor must not look like a credential.
+
 ## Guidance for P3's schema
 
 These points are implementation guidance, not part of the contract:

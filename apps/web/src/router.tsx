@@ -11,6 +11,11 @@ export type Route =
   | { page: "playground" }
   | { page: "safety" }
   | { page: "members" }
+  | { page: "agents" }
+  | { page: "policies" }
+  | { page: "approvals" }
+  | { page: "security" }
+  | { page: "benchmarks" }
   | { page: "design" }
   | { page: "not-found" };
 
@@ -24,6 +29,11 @@ export const paths = {
   playground: "/playground",
   safety: "/safety",
   members: "/members",
+  agents: "/agents",
+  policies: "/policies",
+  approvals: "/approvals",
+  security: "/security",
+  benchmarks: "/benchmarks",
   design: "/design",
 } as const;
 
@@ -43,6 +53,16 @@ export function parseRoute(pathname: string): Route {
       return { page: "safety" };
     case paths.members:
       return { page: "members" };
+    case paths.agents:
+      return { page: "agents" };
+    case paths.policies:
+      return { page: "policies" };
+    case paths.approvals:
+      return { page: "approvals" };
+    case paths.security:
+      return { page: "security" };
+    case paths.benchmarks:
+      return { page: "benchmarks" };
     case paths.design:
       return { page: "design" };
   }

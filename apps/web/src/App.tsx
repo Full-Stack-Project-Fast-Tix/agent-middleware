@@ -3,6 +3,11 @@ import type { User } from "@launchpad/shared";
 import { api, setAuthToken } from "./api";
 import { AccountMenu } from "./AccountMenu";
 import { Admin } from "./Admin";
+import { AgentsPage } from "./workspace/AgentsPage";
+import { ApprovalsPage } from "./workspace/ApprovalsPage";
+import { BenchmarksPage } from "./workspace/BenchmarksPage";
+import { PoliciesPage } from "./workspace/PoliciesPage";
+import { SecurityPage } from "./workspace/SecurityPage";
 import { AuthScreen, ConnectingScreen } from "./AuthScreen";
 import { Members, MembersUnavailable } from "./members/Members";
 import { membersApi } from "./members/members-api";
@@ -32,7 +37,14 @@ function navItems(route: Route, authMethod: "token" | "password"): NavItem[] {
           { to: paths.playground, label: "Playground", current: route.page === "playground" },
           { to: paths.safety, label: "Safety", current: route.page === "safety" },
         ]
-      : [{ to: paths.members, label: "Members", current: route.page === "members" }]),
+      : [
+          { to: paths.approvals, label: "Approvals", current: route.page === "approvals" },
+          { to: paths.agents, label: "Agents", current: route.page === "agents" },
+          { to: paths.policies, label: "Policies", current: route.page === "policies" },
+          { to: paths.security, label: "Security", current: route.page === "security" },
+          { to: paths.benchmarks, label: "Benchmarks", current: route.page === "benchmarks" },
+          { to: paths.members, label: "Members", current: route.page === "members" },
+        ]),
   ];
 }
 
@@ -55,6 +67,8 @@ function CurrentPage({ route, playground, authMethod, viewer }: {
   viewer: User | null;
 }) {
   if (authMethod === "password" && (route.page === "playground" || route.page === "safety")) return <NotFound />;
+  // These read Postgres, which the shared-token mode does not have.
+  if (authMethod === "token" && ["agents", "policies", "approvals", "security", "benchmarks"].includes(route.page)) return <NotFound />;
   switch (route.page) {
     case "dashboard":
       return <Dashboard />;
@@ -91,6 +105,16 @@ function CurrentPage({ route, playground, authMethod, viewer }: {
           />
         </>
       );
+    case "agents":
+      return <AgentsPage />;
+    case "policies":
+      return <PoliciesPage />;
+    case "approvals":
+      return <ApprovalsPage />;
+    case "security":
+      return <SecurityPage />;
+    case "benchmarks":
+      return <BenchmarksPage />;
     case "members":
       return authMethod === "password" ? <Members viewerId={viewer?.id ?? null} /> : <MembersUnavailable />;
     case "design":

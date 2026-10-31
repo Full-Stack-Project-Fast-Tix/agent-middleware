@@ -9,13 +9,15 @@ import { HttpError } from "./errors.js";
 const cursorSchema = z.object({ createdAt: z.iso.datetime(), id: z.guid() });
 export type RunCursor = z.infer<typeof cursorSchema>;
 
+/** Plain on purpose: the outbound redactor would replace a long base64 cursor as a possible secret. */
 export function encodeRunCursor(run: RunCursor): string {
-  return Buffer.from(JSON.stringify({ createdAt: run.createdAt, id: run.id })).toString("base64url");
+  return `${Date.parse(run.createdAt)}_${run.id}`;
 }
 
 export function decodeRunCursor(cursor: string): RunCursor {
   try {
-    return cursorSchema.parse(JSON.parse(Buffer.from(cursor, "base64url").toString("utf8")));
+    const [at, id] = cursor.split("_");
+    return cursorSchema.parse({ createdAt: new Date(Number(at)).toISOString(), id });
   } catch {
     throw new HttpError(400, "Unknown cursor");
   }

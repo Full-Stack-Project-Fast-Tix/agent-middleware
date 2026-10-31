@@ -1,0 +1,82 @@
+.workspace-page {
+  display: grid;
+  gap: 24px;
+}
+
+.config-note {
+  display: block;
+  max-width: 48ch;
+  margin-top: 2px;
+}
+
+.config-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.config-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  padding: 16px 0;
+}
+
+.config-form label:not(.config-check) {
+  display: grid;
+  gap: 6px;
+}
+
+.config-form fieldset {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.config-form legend {
+  margin-bottom: 6px;
+  font-weight: 500;
+}
+
+.config-wide {
+  grid-column: 1 / -1;
+}
+
+.config-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.config-cards {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.config-card {
+  display: grid;
+  gap: 8px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-block);
+}
+
+.config-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+@media (max-width: 720px) {
+  .config-form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

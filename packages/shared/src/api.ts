@@ -1,9 +1,19 @@
 import { z } from "zod";
-import { idSchema, jsonObjectSchema, nonEmptyStringSchema, requiredTextSchema, timestampSchema } from "./common.js";
-import { agentCapabilitiesSchema, agentSchema, capabilityCeilingSchema } from "./agents.js";
+import { idSchema, nonEmptyStringSchema, requiredTextSchema, timestampSchema } from "./common.js";
+import {
+  agentCapabilitiesSchema,
+  agentProfileSchema,
+  agentSchema,
+  capabilityCeilingSchema,
+  effectivePolicySchema,
+  policyRulesSchema,
+  securityPolicySchema,
+} from "./agents.js";
+import { auditEventSchema, auditEventTypeSchema } from "./audit.js";
 import {
   actionTypeSchema,
   approvalDecisionSchema,
+  approvalStatusSchema,
   findingSeveritySchema,
   orchestrationModeSchema,
   runStatusSchema,
@@ -16,7 +26,7 @@ import { runSnapshotSchema } from "./events.js";
 import { userSchema, workspaceMemberSchema, workspaceSchema } from "./identity.js";
 import { fileChangeSchema } from "./middleware.js";
 import { runSchema } from "./runs.js";
-import { approvalSchema } from "./security.js";
+import { approvalSchema, securityFindingSchema } from "./security.js";
 
 // HTTP conventions, matching what the server already does:
 //
@@ -137,6 +147,19 @@ export const apiPaths = {
     `/api/workspaces/${encodeURIComponent(workspaceId)}/members/${encodeURIComponent(userId)}`,
   executionTrace: (runId: string, executionId: string) =>
     `/api/runs/${encodeURIComponent(runId)}/executions/${encodeURIComponent(executionId)}/trace`,
+  benchmarks: () => "/api/benchmarks",
+  workspaceFindings: (workspaceId: string) => `/api/workspaces/${encodeURIComponent(workspaceId)}/findings`,
+  workspaceApprovals: (workspaceId: string) => `/api/workspaces/${encodeURIComponent(workspaceId)}/approvals`,
+  workspaceAudit: (workspaceId: string) => `/api/workspaces/${encodeURIComponent(workspaceId)}/audit`,
+  workspaceEffectivePermissions: (workspaceId: string) => `/api/workspaces/${encodeURIComponent(workspaceId)}/effective-permissions`,
+  workspaceAgent: (workspaceId: string, agentId: string) =>
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/agents/${encodeURIComponent(agentId)}`,
+  workspaceProfiles: (workspaceId: string) => `/api/workspaces/${encodeURIComponent(workspaceId)}/profiles`,
+  workspaceProfile: (workspaceId: string, profileId: string) =>
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/profiles/${encodeURIComponent(profileId)}`,
+  workspacePolicies: (workspaceId: string) => `/api/workspaces/${encodeURIComponent(workspaceId)}/policies`,
+  workspacePolicy: (workspaceId: string, policyId: string) =>
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/policies/${encodeURIComponent(policyId)}`,
 } as const;
 
 /** A workspace as listings show it; where its source lives stays on the server. */
@@ -360,8 +383,7 @@ export type UpdateAgentProfileRequest = z.infer<typeof updateAgentProfileRequest
 export const createSecurityPolicyRequestSchema = z.object({
   name: requiredTextSchema.max(120),
   capabilityCeiling: capabilityCeilingSchema.default({}),
-  rules: jsonObjectSchema,
-  rulesSchemaVersion: z.number().int().positive(),
+  rules: policyRulesSchema.default({}),
 });
 export type CreateSecurityPolicyRequest = z.input<typeof createSecurityPolicyRequestSchema>;
 
@@ -406,3 +428,67 @@ export type WorkspaceMemberResponse = z.infer<typeof workspaceMemberResponseSche
 
 export const updateWorkspaceMemberRequestSchema = z.object({ role: workspaceRoleSchema });
 export type UpdateWorkspaceMemberRequest = z.infer<typeof updateWorkspaceMemberRequestSchema>;
+
+/**
+ * Evidence across a workspace, in password mode only. Any role in the workspace
+ * may read; a workspace the caller is not in answers 404. Newest first, paged by
+ * an opaque cursor (an unknown one is a 400).
+ *
+ *   GET /api/workspaces/:workspaceId/findings   FindingListQuery  -> FindingPage
+ *   GET /api/workspaces/:workspaceId/approvals  ApprovalListQuery -> ApprovalPage
+ *   GET /api/workspaces/:workspaceId/audit      AuditListQuery    -> AuditPage
+ *
+ * Configuration, in password mode only (contract decision 19). Any role may
+ * read. Developers and Security Admins may add and edit agents, but only a
+ * Security Admin may give an existing agent another profile, or change profiles
+ * and policies. A stale `expectedVersion` is a 409. DELETE archives, so history
+ * can still name the row. Platform and locked policies are read-only here.
+ *
+ *   GET                    /api/workspaces/:workspaceId/effective-permissions -> { agents }
+ *   POST | PATCH | DELETE  /api/workspaces/:workspaceId/agents[/:agentId]     -> { agent }
+ *   GET  | POST | PATCH | DELETE  /api/workspaces/:workspaceId/profiles[/:id] -> { profiles } | { profile }
+ *   GET  | POST | PATCH | DELETE  /api/workspaces/:workspaceId/policies[/:id] -> { policies } | { policy }
+ */
+export const findingListQuerySchema = pageQuerySchema.extend({ severity: findingSeveritySchema.optional() });
+export type FindingListQuery = z.infer<typeof findingListQuerySchema>;
+export const findingPageSchema = pageSchema(securityFindingSchema);
+export type FindingPage = z.infer<typeof findingPageSchema>;
+
+export const approvalListQuerySchema = pageQuerySchema.extend({ status: approvalStatusSchema.optional() });
+export type ApprovalListQuery = z.infer<typeof approvalListQuerySchema>;
+/** An approval with what a queue needs to name it and to know whose it is. */
+export const approvalQueueItemSchema = approvalSchema.extend({
+  runCreatedByUserId: idSchema,
+  taskTitle: z.string().nullable(),
+});
+export type ApprovalQueueItem = z.infer<typeof approvalQueueItemSchema>;
+export const approvalPageSchema = pageSchema(approvalQueueItemSchema);
+export type ApprovalPage = z.infer<typeof approvalPageSchema>;
+
+export const auditListQuerySchema = pageQuerySchema.extend({ eventType: auditEventTypeSchema.optional() });
+export type AuditListQuery = z.infer<typeof auditListQuerySchema>;
+export const auditPageSchema = pageSchema(auditEventSchema);
+export type AuditPage = z.infer<typeof auditPageSchema>;
+
+/** What an agent may actually do once every policy applied. Null `policy` means it could not be resolved, so it cannot run. */
+export const effectivePermissionsResponseSchema = z.object({
+  agents: z.array(
+    z.object({
+      agentId: idSchema,
+      policy: effectivePolicySchema.extend({ approvalActions: z.array(actionTypeSchema) }).nullable(),
+    }),
+  ),
+});
+export type EffectivePermissionsResponse = z.infer<typeof effectivePermissionsResponseSchema>;
+
+/** Saved benchmark reports, for any signed-in user: `GET /api/benchmarks`. */
+export const benchmarksResponseSchema = z.object({
+  results: z.array(z.object({ name: z.string(), report: z.string() })),
+});
+export type BenchmarksResponse = z.infer<typeof benchmarksResponseSchema>;
+
+export const agentResponseSchema = z.object({ agent: agentSchema });
+export const profileResponseSchema = z.object({ profile: agentProfileSchema });
+export const profilesResponseSchema = z.object({ profiles: z.array(agentProfileSchema) });
+export const policyResponseSchema = z.object({ policy: securityPolicySchema });
+export const policiesResponseSchema = z.object({ policies: z.array(securityPolicySchema) });

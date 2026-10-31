@@ -12,6 +12,7 @@ import "./playground.css";
 import "./safety.css";
 import "./runs/runs.css";
 import "./members/members.css";
+import "./workspace/workspace.css";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";

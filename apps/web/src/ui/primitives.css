@@ -1268,7 +1268,7 @@
   outline: none;
 }
 
-@media (max-width: 960px) {
+@media (max-width: 1240px) {
   .topbar-row {
     gap: 12px;
     padding-inline: var(--page-gutter);

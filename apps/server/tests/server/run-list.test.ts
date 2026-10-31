@@ -1,6 +1,7 @@
 import { RUN_SUMMARY_PROMPT_LENGTH } from "@launchpad/shared";
 import { describe, expect, it } from "vitest";
-import { summaryPrompt } from "../../src/run-list.js";
+import { redactText } from "../../src/redaction/index.js";
+import { decodeRunCursor, encodeRunCursor, summaryPrompt } from "../../src/run-list.js";
 
 describe("summaryPrompt", () => {
   it("leaves a short prompt alone", () => {
@@ -19,5 +20,11 @@ describe("summaryPrompt", () => {
     const summary = summaryPrompt(prompt);
     expect(summary).not.toContain("AKIA");
     expect(summary.length).toBeLessThanOrEqual(RUN_SUMMARY_PROMPT_LENGTH);
+  });
+
+  it("makes a cursor the outbound redactor leaves alone", () => {
+    const cursor = encodeRunCursor({ createdAt: "2026-10-31T10:02:00.123Z", id: "0d3e0000-0000-4000-8000-000000000001" });
+    expect(redactText(cursor).text).toBe(cursor);
+    expect(decodeRunCursor(cursor)).toEqual({ createdAt: "2026-10-31T10:02:00.123Z", id: "0d3e0000-0000-4000-8000-000000000001" });
   });
 });
