@@ -50,6 +50,8 @@ export function createPostgresRuns(config: AppConfig, pool: pg.Pool, hub: RunEve
   const routes: RunRoutesOptions = {
     orchestrator,
     snapshot: (runId) => store.snapshot(runId),
+    listRuns: (workspaceId, query) => store.listRuns(workspaceId, query),
+    runAudit: (runId, eventType, limit) => store.runAudit(runId, eventType, limit),
     approval: (approvalId) => store.getApproval(approvalId),
     currentUserId: (request) => signedInUser(request).id,
     workspaceRole: (workspaceId, userId) => identity.workspaceRole(workspaceId, userId),

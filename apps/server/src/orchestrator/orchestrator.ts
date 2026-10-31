@@ -715,6 +715,7 @@ export class Orchestrator {
           actionId: action.actionId,
           requiredApproval: decision.outcome === "require_approval",
           ...decisionSummary(final),
+          ...auditedProposal(action),
         });
         return final;
       },
@@ -1137,7 +1138,14 @@ function safeDetailsOf(action: ProposedAction): JsonObject {
     case "command":
       return { command: bounded(redactSensitiveText(action.command), 500), cwd: action.cwd };
     case "file_change":
-      return { files: action.changes.slice(0, 50).map((change) => ({ path: change.path, kind: change.kind })) };
+      return {
+        files: action.changes.slice(0, 50).map((change) => ({
+          path: bounded(redactSensitiveText(change.path), 300),
+          kind: change.kind,
+          ...(change.movePath === null ? {} : { movePath: bounded(redactSensitiveText(change.movePath), 300) }),
+        })),
+        ...(action.changes.length > 50 ? { filesTotal: action.changes.length } : {}),
+      };
     case "delegation":
       return {
         targetAgentId: action.targetAgentId,
@@ -1147,6 +1155,15 @@ function safeDetailsOf(action: ProposedAction): JsonObject {
     case "context_handoff":
       return { fromTaskId: action.fromTaskId, toTaskId: action.toTaskId, characters: action.content.length };
   }
+}
+
+/**
+ * What the Run Detail timeline shows of an action that goes to no person. Only
+ * file paths and handoff ids: a command's text stays out of the audit trail,
+ * and a delegation's details are already on its delegation.requested event.
+ */
+function auditedProposal(action: ProposedAction): JsonObject {
+  return action.type === "file_change" || action.type === "context_handoff" ? { proposed: safeDetailsOf(action) } : {};
 }
 
 /** Free text for audit metadata, such as an error that may quote a container's stderr. */

@@ -1,19 +1,24 @@
 import {
   auditEventSchema,
   isTerminalRunStatus,
+  RUN_LIST_DEFAULT_LIMIT,
   type AgentExecution,
   type Approval,
   type ApprovalStatus,
   type AuditEvent,
+  type AuditEventType,
   type Run,
   type RunEventDraft,
+  type RunListQuery,
+  type RunListResponse,
   type RunSnapshot,
   type SecurityFinding,
   type Task,
   type TaskDependency,
 } from "@launchpad/shared";
 import type { RunEventHub } from "../run-events.js";
-import type { AuditFor, RunStore } from "./ports.js";
+import { decodeRunCursor, encodeRunCursor, summaryPrompt } from "../run-list.js";
+import type { AuditFor, RunAudit, RunReads, RunStore } from "./ports.js";
 
 type Uncommitted = RunEventDraft extends infer D ? (D extends RunEventDraft ? Omit<D, "seq"> : never) : never;
 
@@ -23,7 +28,7 @@ type Uncommitted = RunEventDraft extends infer D ? (D extends RunEventDraft ? Om
  * assigns each Run's next event seq together with the write and publishes
  * after it.
  */
-export class InMemoryRunStore implements RunStore {
+export class InMemoryRunStore implements RunStore, RunReads {
   private readonly runs = new Map<string, Run>();
   private readonly tasks = new Map<string, Task>();
   private readonly dependencies: TaskDependency[] = [];
@@ -66,6 +71,11 @@ export class InMemoryRunStore implements RunStore {
   /** Audit events in the order they were appended, optionally for one run. Not part of RunStore. */
   auditEvents(runId?: string): AuditEvent[] {
     return runId === undefined ? [...this.audit] : this.audit.filter((event) => event.runId === runId);
+  }
+
+  async runAudit(runId: string, eventType: AuditEventType, limit: number): Promise<RunAudit> {
+    const events = this.audit.filter((event) => event.runId === runId && event.eventType === eventType);
+    return { events: events.slice(-limit), total: events.length };
   }
 
   async updateRun(runId: string, changes: Partial<Run>, audit?: AuditFor<Run>): Promise<Run> {
@@ -178,6 +188,42 @@ export class InMemoryRunStore implements RunStore {
     return approval;
   }
 
+  async listRuns(workspaceId: string, query: RunListQuery): Promise<RunListResponse> {
+    const after = query.cursor === undefined ? null : decodeRunCursor(query.cursor);
+    const limit = query.limit ?? RUN_LIST_DEFAULT_LIMIT;
+    const inWorkspace = [...this.runs.values()].filter((run) => run.workspaceId === workspaceId);
+    const matching = inWorkspace
+      .filter((run) => query.status === undefined || run.status === query.status)
+      .sort(newestFirst)
+      .filter((run) => after === null || newestFirst(run, after) > 0);
+    const page = matching.slice(0, limit);
+    const last = page.at(-1);
+    return {
+      runs: page.map((run) => ({
+        id: run.id,
+        workspaceId: run.workspaceId,
+        createdByUserId: run.createdByUserId,
+        orchestrationMode: run.orchestrationMode,
+        status: run.status,
+        cancelRequestedAt: run.cancelRequestedAt,
+        createdAt: run.createdAt,
+        updatedAt: run.updatedAt,
+        startedAt: run.startedAt,
+        completedAt: run.completedAt,
+        userPrompt: summaryPrompt(run.userPrompt),
+        taskCount: this.inRun(this.tasks, run.id).length,
+        pendingApprovalCount: this.pendingIn(run.id),
+        findingCount: this.inRun(this.findings, run.id).length,
+      })),
+      nextCursor: matching.length > limit && last !== undefined ? encodeRunCursor(last) : null,
+      pendingApprovalCount: inWorkspace.reduce((total, run) => total + this.pendingIn(run.id), 0),
+    };
+  }
+
+  private pendingIn(runId: string): number {
+    return this.inRun(this.approvals, runId).filter((approval) => approval.status === "pending").length;
+  }
+
   /** What GET /api/runs/:runId/snapshot returns. */
   snapshot(runId: string): RunSnapshot | null {
     const run = this.runs.get(runId);
@@ -212,4 +258,10 @@ export class InMemoryRunStore implements RunStore {
     this.lastEventSeq.set(draft.runId, seq);
     this.hub.publish({ ...draft, seq } as RunEventDraft);
   }
+}
+
+/** The listing's order, the same as ORDER BY created_at DESC, id DESC. */
+function newestFirst(a: { createdAt: string; id: string }, b: { createdAt: string; id: string }): number {
+  if (a.createdAt !== b.createdAt) return a.createdAt < b.createdAt ? 1 : -1;
+  return a.id === b.id ? 0 : a.id < b.id ? 1 : -1;
 }

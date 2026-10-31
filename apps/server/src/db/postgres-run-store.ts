@@ -2,7 +2,10 @@ import {
   agentExecutionSchema,
   approvalSchema,
   auditEventSchema,
+  RUN_LIST_DEFAULT_LIMIT,
+  RUN_SUMMARY_PROMPT_LENGTH,
   runSchema,
+  runSummarySchema,
   securityFindingSchema,
   taskDependencySchema,
   taskSchema,
@@ -10,8 +13,11 @@ import {
   type Approval,
   type ApprovalStatus,
   type AuditEvent,
+  type AuditEventType,
   type Run,
   type RunEventDraft,
+  type RunListQuery,
+  type RunListResponse,
   type RunSnapshot,
   type SecurityFinding,
   type Task,
@@ -19,8 +25,9 @@ import {
 } from "@launchpad/shared";
 import type pg from "pg";
 import { HttpError } from "../errors.js";
-import type { AuditFor, RunStore } from "../orchestrator/ports.js";
+import type { AuditFor, RunAudit, RunReads, RunStore } from "../orchestrator/ports.js";
 import type { RunEventHub } from "../run-events.js";
+import { decodeRunCursor, encodeRunCursor } from "../run-list.js";
 import { fromRow, insertRow, updateRow } from "./rows.js";
 
 const DEPENDENCIES =
@@ -35,7 +42,7 @@ type OutboxEntry = { event: RunEventDraft; committed: boolean };
  * in seq order, so seqs keep increasing across server restarts. A write that
  * committed resolves even if publishing its event fails.
  */
-export class PostgresRunStore implements RunStore {
+export class PostgresRunStore implements RunStore, RunReads {
   private readonly outboxes = new Map<string, OutboxEntry[]>();
 
   constructor(
@@ -180,6 +187,55 @@ export class PostgresRunStore implements RunStore {
       const approval = approvalSchema.parse(fromRow(rows[0]));
       return { result: approval, event: { runId: approval.runId, type: "approval.resolved", payload: { approval } } };
     });
+  }
+
+  /** audit_events has no creation sequence, so events in the same millisecond can read in either order. */
+  async runAudit(runId: string, eventType: AuditEventType, limit: number): Promise<RunAudit> {
+    const { rows } = await this.pool.query(
+      `SELECT *, count(*) OVER ()::int AS total FROM audit_events
+        WHERE run_id = $1 AND event_type = $2
+        ORDER BY created_at DESC, id DESC LIMIT $3`,
+      [runId, eventType, limit],
+    );
+    return {
+      events: rows.map((row) => auditEventSchema.parse(fromRow(row))).reverse(),
+      total: (rows[0] as { total?: number } | undefined)?.total ?? 0,
+    };
+  }
+
+  /** One statement per page: the counts are subqueries over indexed run_id columns, not a query per row. */
+  async listRuns(workspaceId: string, query: RunListQuery): Promise<RunListResponse> {
+    const after = query.cursor === undefined ? null : decodeRunCursor(query.cursor);
+    const limit = query.limit ?? RUN_LIST_DEFAULT_LIMIT;
+    const [{ rows }, pending] = await Promise.all([
+      this.pool.query(
+        `SELECT r.id, r.workspace_id, r.created_by_user_id, r.orchestration_mode, r.status, r.cancel_requested_at,
+                r.created_at, r.updated_at, r.started_at, r.completed_at,
+                CASE WHEN char_length(r.user_prompt) <= $6 THEN r.user_prompt ELSE left(r.user_prompt, $6 - 1) || '…' END AS user_prompt,
+                (SELECT count(*)::int FROM tasks t WHERE t.run_id = r.id) AS task_count,
+                (SELECT count(*)::int FROM approvals a WHERE a.run_id = r.id AND a.status = 'pending') AS pending_approval_count,
+                (SELECT count(*)::int FROM security_findings f WHERE f.run_id = r.id) AS finding_count
+           FROM runs r
+          WHERE r.workspace_id = $1
+            AND ($2::run_status IS NULL OR r.status = $2::run_status)
+            AND ($3::timestamptz IS NULL OR (r.created_at, r.id) < ($3::timestamptz, $4::uuid))
+          ORDER BY r.created_at DESC, r.id DESC
+          LIMIT $5`,
+        [workspaceId, query.status ?? null, after?.createdAt ?? null, after?.id ?? null, limit + 1, RUN_SUMMARY_PROMPT_LENGTH],
+      ),
+      this.pool.query<{ count: number }>(
+        `SELECT count(*)::int AS count FROM approvals a JOIN runs r ON r.id = a.run_id
+          WHERE r.workspace_id = $1 AND a.status = 'pending'`,
+        [workspaceId],
+      ),
+    ]);
+    const runs = rows.slice(0, limit).map((row) => runSummarySchema.parse(fromRow(row)));
+    const last = runs.at(-1);
+    return {
+      runs,
+      nextCursor: rows.length > limit && last !== undefined ? encodeRunCursor(last) : null,
+      pendingApprovalCount: pending.rows[0]?.count ?? 0,
+    };
   }
 
   /** What GET /api/runs/:runId/snapshot returns, read from one consistent view. */

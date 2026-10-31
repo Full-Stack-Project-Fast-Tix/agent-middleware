@@ -37,7 +37,15 @@ async function start(runWorkspace: string, role: WorkspaceRole = "developer") {
         return { id: APPROVAL } as never;
       },
     },
-    snapshot: async (runId) => (runId === RUN ? ({ run: { id: RUN, workspaceId: runWorkspace } } as RunSnapshot) : null),
+    snapshot: async (runId) => (runId === RUN ? ({ run: { id: RUN, workspaceId: runWorkspace }, approvals: [] } as unknown as RunSnapshot) : null),
+    runAudit: async (_runId, eventType) => {
+      calls.push(`runAudit:${eventType}`);
+      return { events: [], total: 0 };
+    },
+    listRuns: async (_workspaceId, query) => {
+      calls.push(`listRuns:${query.limit ?? "default"}:${query.status ?? "any"}`);
+      return { runs: [], nextCursor: null, pendingApprovalCount: 3 };
+    },
     approval: async (approvalId) => (approvalId === APPROVAL ? ({ id: APPROVAL, runId: RUN } as Approval) : null),
     currentUserId: () => "00000000-0000-4000-8000-0000000000ee",
     workspaceRole: async (workspaceId) => (workspaceId === MINE ? role : null),
@@ -93,6 +101,47 @@ describe("run routes", () => {
       await inject("POST", `/api/approvals/${APPROVAL}/resolve`, { decision: "approve" }),
     ];
     expect(responses.map((response) => response.statusCode)).toEqual([403, 403, 403]);
+    expect(calls).toEqual([]);
+  });
+
+  it("lists a workspace's runs for any role, and hides another workspace's", async () => {
+    const calls = await start(MINE, "auditor");
+    const listed = await inject("GET", `/api/workspaces/${MINE}/runs?limit=20&status=waiting_approval`);
+    expect(listed.statusCode).toBe(200);
+    expect(listed.json()).toEqual({ runs: [], nextCursor: null, pendingApprovalCount: 3 });
+    expect(calls).toEqual(["listRuns:20:waiting_approval"]);
+
+    const hidden = await inject("GET", `/api/workspaces/${THEIRS}/runs`);
+    expect(hidden.statusCode).toBe(404);
+    expect(hidden.json().error).toBe("Workspace not found");
+    expect(calls).toHaveLength(1);
+  });
+
+  it("serves a run's timeline to any role, and hides another workspace's", async () => {
+    const calls = await start(MINE, "auditor");
+    const timeline = await inject("GET", `/api/runs/${RUN}/timeline`);
+    expect(timeline.statusCode).toBe(200);
+    expect(timeline.json().timeline).toEqual({
+      entries: [],
+      omittedEntries: 0,
+      fileChanges: { items: [], truncated: false, entriesWithoutFileList: 0, allowedCommands: 0 },
+    });
+    expect(calls).toEqual(["runAudit:security.decision", "runAudit:delegation.requested"]);
+    await app.close();
+
+    const hiddenCalls = await start(THEIRS);
+    const hidden = await inject("GET", `/api/runs/${RUN}/timeline`);
+    expect(hidden.statusCode).toBe(404);
+    expect(hidden.json().error).toBe("Run not found");
+    expect(hiddenCalls).toEqual([]);
+    expect((await inject("GET", "/api/runs/not-an-id/timeline")).statusCode).toBe(400);
+  });
+
+  it("refuses an unbounded page or an unknown status", async () => {
+    const calls = await start(MINE);
+    expect((await inject("GET", `/api/workspaces/${MINE}/runs?limit=201`)).statusCode).toBe(400);
+    expect((await inject("GET", `/api/workspaces/${MINE}/runs?limit=0`)).statusCode).toBe(400);
+    expect((await inject("GET", `/api/workspaces/${MINE}/runs?status=done`)).statusCode).toBe(400);
     expect(calls).toEqual([]);
   });
 

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import type { Agent, RunEvent, RunSnapshot } from "@launchpad/shared";
+import type { Agent, AuditEvent, AuditEventType, RunEvent } from "@launchpad/shared";
 import { migrate } from "../../src/db/migrate.js";
 import { PostgresAgentDirectory } from "../../src/db/postgres-agent-directory.js";
 import { PostgresRunStore } from "../../src/db/postgres-run-store.js";
@@ -9,7 +9,7 @@ import { insertRow, toRow } from "../../src/db/rows.js";
 import { HttpError } from "../../src/errors.js";
 import { InMemoryRunStore } from "../../src/orchestrator/in-memory-run-store.js";
 import { Orchestrator } from "../../src/orchestrator/orchestrator.js";
-import type { RunStore } from "../../src/orchestrator/ports.js";
+import type { RunReads, RunStore } from "../../src/orchestrator/ports.js";
 import { RunEventHub } from "../../src/run-events.js";
 import {
   CAPABILITIES,
@@ -73,7 +73,7 @@ afterAll(async () => {
   await pool.end();
 });
 
-type Store = RunStore & { snapshot(runId: string): RunSnapshot | null | Promise<RunSnapshot | null> };
+type Store = RunStore & RunReads;
 
 const targets: Array<{ name: string; skip: boolean; open: (hub: RunEventHub, now?: () => string) => Store }> = [
   { name: "InMemoryRunStore", skip: false, open: (hub, now) => new InMemoryRunStore(hub, now) },
@@ -95,6 +95,89 @@ function record(hub: RunEventHub, runId: string): RunEvent[] {
 
 for (const target of targets) {
   describe.skipIf(target.skip)(target.name, () => {
+    it("reads a run's newest audit events of one type, oldest first, with the total", async () => {
+      const store = target.open(new RunEventHub());
+      const run = makeRun();
+      await store.createRun(run);
+      const audit = (eventType: AuditEventType, createdAt: string): AuditEvent => ({
+        id: randomUUID(),
+        workspaceId: WORKSPACE_ID,
+        actorType: "system",
+        actorId: null,
+        eventType,
+        runId: run.id,
+        taskId: null,
+        executionId: null,
+        metadata: { reason: createdAt },
+        createdAt,
+      });
+      const times = ["2026-10-09T10:00:00.000Z", "2026-10-09T10:01:00.000Z", "2026-10-09T10:02:00.000Z"];
+      for (const time of times) await store.appendAudit(audit("security.decision", time));
+      await store.appendAudit(audit("delegation.requested", "2026-10-09T10:03:00.000Z"));
+
+      const { events, total } = await store.runAudit(run.id, "security.decision", 2);
+      expect(total).toBe(3);
+      expect(events.map((event) => event.createdAt)).toEqual(times.slice(1));
+      expect(await store.runAudit(randomUUID(), "security.decision", 2)).toEqual({ events: [], total: 0 });
+    });
+
+    it("lists a workspace's runs newest first, in bounded pages, with their counts", async () => {
+      const store = target.open(new RunEventHub());
+      const workspaceId = randomUUID();
+      const agent = makeAgent("developer", { id: randomUUID(), workspaceId, profileId: randomUUID() });
+      if (pool !== undefined && target.name === "PostgresRunStore") await seedWorkspace(pool, workspaceId, [{ role: "developer", agent }]);
+      const at = (minute: number) => `2026-10-09T10:${String(minute).padStart(2, "0")}:00.000Z`;
+      // Two runs share a timestamp: the id must keep paging exact.
+      const [oldest, tiedA, tiedB, newest] = [at(1), at(2), at(2), at(3)].map((createdAt) =>
+        makeRun({ workspaceId, createdAt, updatedAt: createdAt, userPrompt: "x".repeat(600) }),
+      );
+      for (const run of [oldest!, tiedB!, newest!, tiedA!]) await store.createRun(run);
+      const task = makeTask(oldest!.id);
+      await store.createTask(task, []);
+      await store.createTask(makeTask(oldest!.id), []);
+      const execution = makeExecution(task, agent.id, { capabilities: CAPABILITIES.developer });
+      await store.createExecution(execution);
+      await store.addFinding(makeFinding(execution));
+      await store.requestApproval(makeApproval(execution));
+      const answered = makeApproval(execution);
+      await store.requestApproval(answered);
+      await store.resolveApproval(answered.id, "denied", null);
+      await store.updateRun(oldest!.id, { status: "waiting_approval" });
+
+      const seen: string[] = [];
+      let cursor: string | undefined;
+      let pages = 0;
+      do {
+        const page = await store.listRuns(workspaceId, { limit: 3, ...(cursor === undefined ? {} : { cursor }) });
+        expect(page.runs.length).toBeLessThanOrEqual(3);
+        expect(page.pendingApprovalCount).toBe(1);
+        seen.push(...page.runs.map((run) => run.id));
+        cursor = page.nextCursor ?? undefined;
+        pages += 1;
+      } while (cursor !== undefined);
+      expect(pages).toBe(2);
+      const tied = [tiedA!.id, tiedB!.id].sort().reverse();
+      expect(seen).toEqual([newest!.id, ...tied, oldest!.id]);
+
+      const held = await store.listRuns(workspaceId, { status: "waiting_approval" });
+      expect(held.nextCursor).toBeNull();
+      expect(held.runs).toHaveLength(1);
+      expect(held.runs[0]).toMatchObject({
+        id: oldest!.id,
+        status: "waiting_approval",
+        taskCount: 2,
+        pendingApprovalCount: 1,
+        findingCount: 1,
+      });
+      expect(held.runs[0]!.userPrompt).toHaveLength(280);
+      expect(held.runs[0]).not.toHaveProperty("finalOutput");
+      expect(held.runs[0]).not.toHaveProperty("evaluation");
+
+      const other = await store.listRuns(randomUUID(), {});
+      expect(other).toEqual({ runs: [], nextCursor: null, pendingApprovalCount: 0 });
+      await expect(store.listRuns(workspaceId, { cursor: "not-a-cursor" })).rejects.toMatchObject({ statusCode: 400 });
+    });
+
     it("stores every entity as given, lists in creation order and publishes one event per write", async () => {
       const hub = new RunEventHub();
       const store = target.open(hub);
