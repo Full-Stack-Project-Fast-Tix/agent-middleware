@@ -278,6 +278,14 @@ export class Orchestrator {
    * for a Run that already completed or failed.
    */
   async cancel(runId: string, userId: string | null = null): Promise<Run> {
+    const state = this.active.get(runId);
+    // Under the Run's lock, concurrent cancels stamp cancelRequestedAt only once,
+    // and an approval is either announced before this write (and closed below)
+    // or refused after it, never announced in between.
+    return state === undefined ? this.requestCancel(runId, userId, null) : this.locked(state, () => this.requestCancel(runId, userId, state));
+  }
+
+  private async requestCancel(runId: string, userId: string | null, state: RunState | null): Promise<Run> {
     const run = await this.store.getRun(runId);
     if (run === null) throw new HttpError(404, "Run not found");
     if (run.status === "cancelled") return run;
@@ -289,8 +297,7 @@ export class Orchestrator {
         this.auditEvent(run.workspaceId, runId, "run.cancel_requested", userId === null ? { type: "system" } : { type: "user", id: userId }),
       );
     }
-    const state = this.active.get(runId);
-    if (state === undefined) {
+    if (state === null) {
       // Nothing in this process is working on it (for example after a restart).
       await this.finishCancelled(runId);
       return requested;
@@ -298,7 +305,7 @@ export class Orchestrator {
     if (!state.cancelRequested) {
       state.cancelRequested = true;
       state.abort.abort();
-      await this.locked(state, () => this.cancelPendingApprovals(runId));
+      await this.cancelPendingApprovals(runId);
     }
     return requested;
   }
@@ -329,13 +336,16 @@ export class Orchestrator {
         state.phase = "running";
       }
       await this.schedule(state, run);
-      await this.finish(run);
+      // A cancel either gets in first, and the Run ends cancelled, or finds it finished.
+      await this.locked(state, async () => {
+        this.throwIfCancelled(state);
+        await this.finish(run);
+      });
     } catch (error) {
       // Stop anything still running before closing the Run's books.
       state.abort.abort();
       await Promise.allSettled(state.inflight.values());
-      if (state.cancelRequested) await this.finishCancelled(run.id);
-      else await this.failRun(run.id, errorMessage(error));
+      await this.locked(state, () => (state.cancelRequested ? this.finishCancelled(run.id) : this.failRun(run.id, errorMessage(error))));
     }
   }
 
@@ -437,9 +447,11 @@ export class Orchestrator {
     let failureSeen = false;
     /** Prepared just before the first launch; a Run with nothing to run never copies. */
     let workingDirectory: string | null = null;
+    let finished = 0;
 
     for (;;) {
       this.throwIfCancelled(state);
+      const finishedBeforeReading = finished;
       let tasks = await this.store.listTasks(run.id);
       const dependencies = await this.store.listDependencies(run.id);
       for (const id of tasksToSkip(tasks, dependencies)) {
@@ -491,11 +503,16 @@ export class Orchestrator {
           .finally(() => {
             state.inflight.delete(taskId);
             writing.delete(taskId);
+            finished += 1;
           });
         state.inflight.set(taskId, work);
       }
 
-      if (state.inflight.size === 0) break;
+      if (state.inflight.size === 0) {
+        // Work that ended during the reads above can unblock or retry a task: look again.
+        if (finished !== finishedBeforeReading) continue;
+        break;
+      }
       await Promise.race(state.inflight.values());
     }
 

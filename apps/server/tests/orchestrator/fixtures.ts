@@ -197,9 +197,11 @@ export function startHarness(options: {
   /** Wrap the scripted middleware, e.g. to add a rule. */
   wrapMiddleware?: (inner: ScriptedMiddleware) => SecurityMiddleware;
   limits?: Partial<OrchestratorLimits>;
+  /** A store with timing of its own, to reach interleavings the in-memory one never does. */
+  store?: (hub: RunEventHub) => InMemoryRunStore;
 } = {}): Harness {
   const hub = new RunEventHub();
-  const store = new InMemoryRunStore(hub);
+  const store = options.store?.(hub) ?? new InMemoryRunStore(hub);
   const directory = new FakeDirectory();
   const planner = new StaticPlanner(options.plan ?? SIGNUP_PLAN);
   const runtime = new ScriptedRuntime(options.script);
