@@ -5,11 +5,11 @@ import { paths } from "../router";
 import { Button, ButtonLink, DecisionGlyph, ErrorState, Foreign, Loading, StatusBadge } from "../ui";
 import { agentName, formatClock } from "./format";
 import { runsApi } from "./runs-api";
-import { focusTaskId, isRunActive, pendingApprovals } from "./run-view";
+import { focusTaskId, isRunActive, isWrittenByPlan, pendingApprovals } from "./run-view";
 import { GateTimeline, ProposedFiles } from "./RunTimeline";
 import { TaskDrilldown } from "./TaskDrilldown";
 import { TaskGraph } from "./TaskGraph";
-import type { Names } from "./timeline-view";
+import { heldProposals, type Names } from "./timeline-view";
 import { useRun } from "./useRun";
 import { announceApprovalsChanged } from "./useRunList";
 import { useRunTimeline } from "./useRunTimeline";
@@ -60,8 +60,17 @@ export function RunDetail({ runId }: { runId: string }) {
 
   const names = useMemo<Names>(() => ({
     task: (taskId) => view?.tasks.find((task) => task.id === taskId)?.title ?? "another task",
+    writtenByPlan: (taskId) => {
+      const task = view?.tasks.find((candidate) => candidate.id === taskId);
+      return task !== undefined && isWrittenByPlan(task);
+    },
     agent: (agentId) => agentName(agents, agentId),
   }), [agents, view?.tasks]);
+
+  const proposals = useMemo(
+    () => heldProposals(timeline.timeline?.entries ?? [], names),
+    [names, timeline.timeline?.entries],
+  );
 
   if (view === null) {
     return (
@@ -158,12 +167,40 @@ export function RunDetail({ runId }: { runId: string }) {
           <DecisionGlyph decision="require_approval" size={20} />
           <strong>{waiting.length === 1 ? "1 action is held for your approval" : `${waiting.length} actions are held for your approval`}</strong>
           <ul>
-            {waiting.map((approval) => (
-              <li key={approval.id}>
-                <span>{approval.summary}</span>
-                <Button onClick={() => review(approval)}>Review</Button>
-              </li>
-            ))}
+            {waiting.map((approval) => {
+              const proposal = proposals.get(approval.id);
+              return (
+                <li key={approval.id}>
+                  <div className="held-what">
+                    <span>{approval.summary}</span>
+                    {proposal !== undefined && <Foreign preformatted maxHeight={68}>{proposal}</Foreign>}
+                  </div>
+                  <div className="held-actions">
+                    {proposal !== undefined && (
+                      <>
+                        <Button
+                          variant="primary"
+                          aria-label={`Approve: ${approval.summary}`}
+                          busy={resolvingApprovalId === approval.id}
+                          onClick={() => void resolve(approval.id, "approve")}
+                        >
+                          Approve
+                        </Button>
+                        <Button
+                          variant="danger"
+                          aria-label={`Deny: ${approval.summary}`}
+                          disabled={resolvingApprovalId === approval.id}
+                          onClick={() => void resolve(approval.id, "deny")}
+                        >
+                          Deny
+                        </Button>
+                      </>
+                    )}
+                    <Button onClick={() => review(approval)}>Review</Button>
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         </section>
       )}
@@ -184,7 +221,7 @@ export function RunDetail({ runId }: { runId: string }) {
             resolvingApprovalId={resolvingApprovalId}
             onResolve={(approvalId, decision) => void resolve(approvalId, decision)}
           />
-          {timeline.timeline !== null && <ProposedFiles timeline={timeline.timeline} />}
+          {timeline.timeline !== null && <ProposedFiles timeline={timeline.timeline} runEnded={!active} />}
           {run.finalOutput !== null && run.status === "completed" && (
             <section className="page-section" aria-label="Agent's report">
               <Foreign label="Agent's report" note="Not verified by AgentGuard">

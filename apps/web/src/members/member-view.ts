@@ -13,9 +13,9 @@ export const ROLE_WORDS: Record<WorkspaceRole, string> = {
 };
 
 export const ROLE_DUTIES: Record<WorkspaceRole, string> = {
-  developer: "Reads everything in the workspace, starts and cancels runs, and answers approvals.",
-  security_admin: "Does what a developer does, and manages this list.",
-  auditor: "Reads everything in the workspace and changes nothing.",
+  developer: "Can see this workspace's runs and members, start and cancel runs, and answer approvals.",
+  security_admin: "Can do what a developer can, and change this list.",
+  auditor: "Can see this workspace's runs and members. Cannot start or cancel runs, answer approvals, or change this list.",
 };
 
 export function isOnlyAdmin(members: readonly WorkspaceMemberSummary[], member: WorkspaceMemberSummary): boolean {

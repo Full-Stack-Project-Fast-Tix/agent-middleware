@@ -146,9 +146,14 @@ single-agent path above, which is unchanged. These parts exist:
   [`codex-execution-runtime.ts`](../apps/server/src/orchestrator/codex-execution-runtime.ts)):
   one container per execution, on the Run's own working copy. Every approval
   request goes to the middleware, and it fails closed.
-- **Runs UI** ([`apps/web/src/runs`](../apps/web/src/runs)): New Run, and a
-  live Run Detail with the task graph, task drill-down and approvals, driven by
-  the event stream.
+- **Web console** ([`apps/web/src`](../apps/web/src), conventions in
+  [`apps/web/DESIGN.md`](../apps/web/DESIGN.md)): a shared shell with real URLs
+  (`/`, `/runs`, `/runs/new`, `/runs/:id`, `/playground`, `/safety`, `/members`;
+  old `#/runs/...` links redirect). The Dashboard and Runs list read the list-runs
+  API. Run Detail has the task graph, the gate timeline and proposed file changes
+  from saved rows, the task drill-down and approvals, with live updates from the
+  event stream. The sign-in token is kept only in memory, so reloading a tab in
+  password mode asks for sign-in again and returns to the same URL.
 - **Integration harness**
   ([`apps/server/tests/integration`](../apps/server/tests/integration)): drives
   Runs through the public API and checks the invariants every Run must
@@ -227,7 +232,11 @@ Not built yet, by owner:
 - **P3:** tenant isolation beyond workspace roles (every workspace's Runs share one
   host). Members has a web page; creating users and workspaces stays on the command
   line.
-- **P4:** the app shell, Dashboard and the full Run Detail composition.
+- **P1/P3:** command text and applied file changes on the gate timeline. Saved
+  data does not hold them, so the timeline says so (contract decision 14 gives the
+  schema each would need, and whether command text may be stored is P1's decision).
+- **P4:** views for Agents, Policies, Audit and Benchmarks. The console links only
+  to views that exist.
 
 Orchestration test and load results are in
 [orchestration-evaluation.md](orchestration-evaluation.md).

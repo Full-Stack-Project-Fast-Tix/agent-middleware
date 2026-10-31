@@ -77,6 +77,11 @@ function upsert<T extends { id: string }>(list: readonly T[], item: T): T[] {
 }
 
 const ACTIVE: ReadonlySet<RunStatus> = new Set(["queued", "planning", "running", "waiting_approval"]);
+/** A delegated task's title and objective came from the planning agent, not a person. */
+export function isWrittenByPlan(task: Pick<Task, "parentTaskId">): boolean {
+  return task.parentTaskId !== null;
+}
+
 export const isRunActive = (status: RunStatus): boolean => ACTIVE.has(status);
 
 export const executionsOf = (view: RunView, taskId: string): AgentExecution[] =>

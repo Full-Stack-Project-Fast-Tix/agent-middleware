@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import type { Agent, OrchestrationMode } from "@launchpad/shared";
-import { ApiError } from "../api";
 import { navigate, paths } from "../router";
-import { Button, PageHeader } from "../ui";
-import { runsApi, type WorkspaceSummary } from "./runs-api";
+import { Button, ErrorState, PageHeader } from "../ui";
+import { useCurrentWorkspace } from "../useCurrentWorkspace";
+import { runsApi } from "./runs-api";
 
 const EXAMPLES = [
   "Add input validation to the checkout endpoint and return 400 on bad input.",
@@ -12,33 +12,14 @@ const EXAMPLES = [
 
 /** Start a Run: describe the work, choose one agent or let the supervisor plan it. */
 export function NewRun() {
-  const [workspaces, setWorkspaces] = useState<WorkspaceSummary[] | null>(null);
-  const [workspaceId, setWorkspaceId] = useState("");
+  const { workspaces, current, error: workspacesError, reload } = useCurrentWorkspace();
+  const workspaceId = current?.id ?? "";
   const [agents, setAgents] = useState<Agent[]>([]);
   const [mode, setMode] = useState<OrchestrationMode>("auto");
   const [agentId, setAgentId] = useState("");
   const [prompt, setPrompt] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    runsApi
-      .workspaces()
-      .then((list) => {
-        setWorkspaces(list);
-        setWorkspaceId((current) => current || list[0]?.id || "");
-      })
-      .catch((reason) => {
-        setWorkspaces([]);
-        setError(
-          reason instanceof ApiError && reason.status === 404
-            ? "This server does not offer multi-agent runs yet. For local development, start it with RUNS_DEMO=1."
-            : reason instanceof Error
-              ? reason.message
-              : String(reason),
-        );
-      });
-  }, []);
 
   useEffect(() => {
     setAgents([]);
@@ -75,28 +56,23 @@ export function NewRun() {
         description="Describe the work. A single agent can do it, or a supervisor can split it between specialists."
       />
 
+      {workspacesError !== null && <ErrorState title="Your workspaces did not load" message={workspacesError} onRetry={reload} />}
       {error && (
         <div className="error-banner" role="alert">
           <span>{error}</span>
-          <button onClick={() => setError(null)} aria-label="Dismiss">×</button>
+          <Button variant="ghost" onClick={() => setError(null)}>Dismiss</Button>
         </div>
       )}
 
       <form className="new-run-form" onSubmit={submit}>
-        {workspaces !== null && workspaces.length > 1 && (
-          <label>
-            Workspace
-            <select aria-label="Workspace" value={workspaceId} onChange={(event) => setWorkspaceId(event.target.value)}>
-              {workspaces.map((workspace) => (
-                <option key={workspace.id} value={workspace.id}>{workspace.name}</option>
-              ))}
-            </select>
-          </label>
-        )}
-        {workspaces?.length === 1 && (
+        {current !== null && (
           <p className="new-run-workspace">
-            Workspace <strong>{workspaces[0]!.name}</strong>
+            Workspace <strong>{current.name}</strong>
+            {workspaces !== null && workspaces.length > 1 && " Switch workspace at the top of the page."}
           </p>
+        )}
+        {workspaces !== null && current === null && workspacesError === null && (
+          <p className="new-run-workspace">You are not in a workspace yet. Ask your platform operator to add you to one.</p>
         )}
 
         <fieldset className="mode-choice">

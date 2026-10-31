@@ -33,7 +33,7 @@ as untrusted evidence. The interface makes that visible at a glance.
   final report, commands, paths, diffs and handoff text): `<Foreign>`, in Spline Sans
   Mono on the only warm surface in the interface, with a hatched left edge.
 
-Never let foreign text look like a system statement, and never hand-roll the surface.
+Never let foreign text look like a system statement, and never hand-roll the surface. A delegated task's title and objective come from the planning agent, so they count as foreign wherever they sit next to a decision. Task names in the graph stay readable, with a line saying the plan wrote them.
 A finished agent turn is the agent's report, not proof. Result panels are labelled
 "Agent's report" with the trusted note "Not verified by AgentGuard".
 
@@ -149,7 +149,7 @@ From `src/ui`:
 | `StatusBadge` | `status`, `live` | Run, Task, Execution or Approval status. Pass `live` while updates are flowing. For an approval, pass `approvalBadgeStatus(status)`, so pending reads Held. |
 | `SeverityBadge` | `severity` | A finding's severity. |
 | `Foreign` | `label`, `note`, `preformatted`, `maxHeight` | Foreign material. `label` and `note` are trusted; only the children are foreign. Render through text or `MessageContent`, never raw HTML. |
-| `ForeignInline` | children | A foreign path or command inside a trusted sentence. |
+| `ForeignInline` | children | A foreign path, command or plan-written task name inside a trusted sentence. Run pages use `TaskName` from `runs/format.tsx`, which applies it only to a delegated task's title. |
 | `DataTable` | `caption` | Frame for an ordinary table. Use `num` on times and counts, and `cell-prompt` on long text that should truncate. Wide tables scroll inside themselves. |
 | `Loading` | `label` | |
 | `EmptyState` | `title`, `action`, children | Say what to do next and offer the action. |

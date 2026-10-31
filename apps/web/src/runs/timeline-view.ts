@@ -8,12 +8,16 @@ import type { RunTimeline, RunTimelineEntry, SecurityDecisionOutcome, TimelinePr
 
 export interface Names {
   task: (taskId: string) => string;
+  /** A planner wrote this task's title, so it is shown as foreign material. */
+  writtenByPlan: (taskId: string) => boolean;
   agent: (agentId: string) => string;
 }
 
 export interface GateEntryView {
   /** Trusted line above the proposal. */
   caption: string;
+  /** A handoff's tasks and size, for the caption. Task titles are not trusted text. */
+  handoff: { fromTaskId: string; toTaskId: string; characters: number } | null;
   /** What the agent proposed. Render as foreign material. */
   proposal: string | null;
   /** Trusted statement of what was not saved. */
@@ -61,7 +65,7 @@ function describeProposal(proposed: TimelineProposal, names: Names): Pick<GateEn
       };
     case "context_handoff":
       return {
-        caption: `Context handoff from ${names.task(proposed.fromTaskId)} to ${names.task(proposed.toTaskId)}, ${proposed.characters.toLocaleString()} characters`,
+        caption: "Context handoff",
         proposal: null,
       };
   }
@@ -78,6 +82,15 @@ const APPROVAL_NOTES: Readonly<Record<string, { word: string; note: string }>> =
   timed_out: { word: "timed out", note: "Nobody answered in time." },
 };
 
+/** A held action whose answer is in but whose final decision is not saved yet. */
+const ANSWER_RECORDED: Readonly<Record<string, { label: string; note: string }>> = {
+  approved: { label: "Approved", note: "The answer was recorded and the action is continuing." },
+  denied: { label: "Denied", note: "The answer was recorded. The action will not run." },
+  timed_out: { label: "Timed out", note: "Nobody answered in time. The action will not run." },
+  cancelled: { label: "Cancelled", note: "The request was cancelled. The action will not run." },
+};
+const AWAITING_REQUEST = { label: "Waiting", note: "The approval request has not been saved yet." };
+
 /** Who answered, unless the decision's reason already says it. */
 function approvalNote(entry: RunTimelineEntry): string | null {
   if (entry.decision === "require_approval" || !entry.approval) return null;
@@ -91,7 +104,7 @@ function stopNote(entry: RunTimelineEntry): string | null {
   return null;
 }
 
-export function describeEntry(entry: RunTimelineEntry, names: Names): GateEntryView {
+export function describeEntry(entry: RunTimelineEntry, names: Names, runEnded = true): GateEntryView {
   const action = entry.actionType === null ? null : ACTION_CAPTIONS[entry.actionType];
   const shown = entry.proposed === null
     ? { caption: action?.caption ?? OBSERVED, proposal: null }
@@ -101,10 +114,14 @@ export function describeEntry(entry: RunTimelineEntry, names: Names): GateEntryV
     : shown.caption;
   const missing = entry.proposed === null ? (action?.missing ?? "The action's details were not saved.") : null;
   const notes = [approvalNote(entry), stopNote(entry)].filter((note): note is string => note !== null);
+  const handoff = entry.proposed?.type === "context_handoff"
+    ? { fromTaskId: entry.proposed.fromTaskId, toTaskId: entry.proposed.toTaskId, characters: entry.proposed.characters }
+    : null;
 
   if (isHeld(entry)) {
     return {
       caption,
+      handoff,
       proposal: shown.proposal,
       missing,
       decision: "require_approval",
@@ -113,9 +130,23 @@ export function describeEntry(entry: RunTimelineEntry, names: Names): GateEntryV
       heldApprovalId: entry.approval!.id,
     };
   }
+  if (entry.decision === "require_approval" && !runEnded) {
+    const recorded = (entry.approval && ANSWER_RECORDED[entry.approval.status]) || AWAITING_REQUEST;
+    return {
+      caption,
+      handoff,
+      proposal: shown.proposal,
+      missing,
+      decision: null,
+      decisionLabel: recorded.label,
+      notes: [recorded.note, ...notes],
+      heldApprovalId: null,
+    };
+  }
   if (entry.decision === "require_approval") {
     return {
       caption,
+      handoff,
       proposal: shown.proposal,
       missing,
       decision: null,
@@ -124,7 +155,20 @@ export function describeEntry(entry: RunTimelineEntry, names: Names): GateEntryV
       heldApprovalId: null,
     };
   }
-  return { caption, proposal: shown.proposal, missing, decision: entry.decision, decisionLabel: undefined, notes, heldApprovalId: null };
+  return { caption, handoff, proposal: shown.proposal, missing, decision: entry.decision, decisionLabel: undefined, notes, heldApprovalId: null };
+}
+
+/**
+ * What each held action proposes, by approval id. An action is only answerable
+ * away from its gate row when this says what is being answered.
+ */
+export function heldProposals(entries: readonly RunTimelineEntry[], names: Names): ReadonlyMap<string, string> {
+  const held = new Map<string, string>();
+  for (const entry of entries) {
+    const view = describeEntry(entry, names);
+    if (view.heldApprovalId !== null && view.proposal !== null) held.set(view.heldApprovalId, view.proposal);
+  }
+  return held;
 }
 
 export interface FileDecisionView {
@@ -137,6 +181,7 @@ export interface FileDecisionView {
 export function describeFileDecision(
   item: RunTimeline["fileChanges"]["items"][number],
   entries: readonly RunTimelineEntry[],
+  runEnded = true,
 ): FileDecisionView {
   switch (item.decision) {
     case "allow":
@@ -148,7 +193,8 @@ export function describeFileDecision(
     case "require_approval": {
       const entry = entries.find((candidate) => candidate.id === item.entryId);
       if (entry !== undefined && isHeld(entry)) return { decision: "require_approval", label: "Held" };
-      return { decision: null, label: "Did not run" };
+      if (runEnded) return { decision: null, label: "Did not run" };
+      return { decision: null, label: ((entry?.approval && ANSWER_RECORDED[entry.approval.status]) || AWAITING_REQUEST).label };
     }
   }
 }

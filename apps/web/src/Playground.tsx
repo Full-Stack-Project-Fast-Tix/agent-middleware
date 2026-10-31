@@ -384,6 +384,7 @@ export function Playground({ state }: { state: PlaygroundState }) {
           </>
         ) : (
           <div className="no-agent">
+            <h1 className="sr-only">Playground</h1>
             <EmptyState title="Create an agent to get started" action={<Button variant="primary" page onClick={openCreate}>Create your first agent</Button>}>
               An agent gets its own workspace. Give Codex a job, then continue the conversation here.
             </EmptyState>

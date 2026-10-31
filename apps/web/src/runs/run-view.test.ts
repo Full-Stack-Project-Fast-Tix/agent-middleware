@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Approval, Run, RunEvent, RunSnapshot, Task } from "@launchpad/shared";
-import { applyRunEvent, focusTaskId, isRunActive, viewFromSnapshot } from "./run-view";
+import { applyRunEvent, focusTaskId, isRunActive, isWrittenByPlan, viewFromSnapshot } from "./run-view";
 
 const RUN_ID = "00000000-0000-4000-8000-000000000001";
 const NOW = "2026-10-09T10:00:00.000Z";
@@ -105,6 +105,13 @@ describe("focusTaskId", () => {
     expect(focusTaskId(viewFromSnapshot(snapshot({ tasks })))).toBe("a");
     expect(focusTaskId(viewFromSnapshot(snapshot({ tasks: [task("a"), task("c")] })))).toBe("c");
     expect(focusTaskId(viewFromSnapshot(snapshot()))).toBeNull();
+  });
+});
+
+describe("isWrittenByPlan", () => {
+  it("treats a delegated task's title as the plan's words, and a root task's as not", () => {
+    expect(isWrittenByPlan({ parentTaskId: "plan" })).toBe(true);
+    expect(isWrittenByPlan({ parentTaskId: null })).toBe(false);
   });
 });
 

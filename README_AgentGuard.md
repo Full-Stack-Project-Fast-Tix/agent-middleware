@@ -4,7 +4,7 @@
 
 AgentGuard is a platform for delegating software-engineering tasks to autonomous coding agents while keeping **security enforcement, human approvals, and execution visibility outside the agents themselves**.
 
-> **Project status:** Active capstone development. The repository now has a multi-agent Run/Task/AgentExecution path, password-authenticated workspaces backed by PostgreSQL, server-side middleware wiring, container-backed Codex execution, and a Runs UI. The broader governance and operations-console vision below is only partly implemented. This remains a proof of concept, not production-grade tenant isolation.
+> **Project status:** Active capstone development. The repository now has a multi-agent Run/Task/AgentExecution path, password-authenticated workspaces backed by PostgreSQL, server-side middleware wiring, container-backed Codex execution, and a web console with a Dashboard, Runs, Run Detail and workspace members. The broader governance and operations-console vision below is only partly implemented. This remains a proof of concept, not production-grade tenant isolation.
 
 ## Overview
 

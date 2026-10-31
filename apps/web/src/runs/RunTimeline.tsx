@@ -1,6 +1,6 @@
 import type { RunTimeline as RunTimelineData } from "@launchpad/shared";
 import { Button, DataTable, DecisionMark, EmptyState, ErrorState, ForeignInline, GateLine, GateRow, Loading, SeverityBadge } from "../ui";
-import { formatClock, humanize } from "./format";
+import { formatClock, humanize, TaskName } from "./format";
 import { describeEntry, describeFileDecision, fileListLimits, type Names } from "./timeline-view";
 
 /**
@@ -40,7 +40,7 @@ export function GateTimeline({ timeline, error, onRetry, fresh, active, names, s
           )}
           <GateLine>
             {timeline.entries.map((entry) => {
-              const row = describeEntry(entry, names);
+              const row = describeEntry(entry, names, !active);
               const taskId = entry.taskId;
               const taskTitle = taskId === null ? null : names.task(taskId);
               // A handoff's caption already names its tasks.
@@ -48,7 +48,20 @@ export function GateTimeline({ timeline, error, onRetry, fresh, active, names, s
               return (
                 <GateRow
                   key={entry.id}
-                  caption={showTask ? <span className="gate-caption"><span>{row.caption}</span><span>{taskTitle}</span></span> : row.caption}
+                  caption={
+                    row.handoff !== null ? (
+                      <>
+                        {row.caption} from <TaskName title={names.task(row.handoff.fromTaskId)} writtenByPlan={names.writtenByPlan(row.handoff.fromTaskId)} />
+                        {" "}to <TaskName title={names.task(row.handoff.toTaskId)} writtenByPlan={names.writtenByPlan(row.handoff.toTaskId)} />
+                        , {row.handoff.characters.toLocaleString()} characters
+                      </>
+                    ) : showTask ? (
+                      <span className="gate-caption">
+                        <span>{row.caption}</span>
+                        <span><TaskName title={taskTitle} writtenByPlan={names.writtenByPlan(taskId!)} /></span>
+                      </span>
+                    ) : row.caption
+                  }
                   proposal={row.proposal ?? undefined}
                   proposalMissing={row.missing ?? undefined}
                   decision={row.decision}
@@ -96,7 +109,7 @@ export function GateTimeline({ timeline, error, onRetry, fresh, active, names, s
 }
 
 /** Files proposed at the gate. These are proposals: nothing here proves a change landed. */
-export function ProposedFiles({ timeline }: { timeline: RunTimelineData }) {
+export function ProposedFiles({ timeline, runEnded }: { timeline: RunTimelineData; runEnded: boolean }) {
   const { fileChanges, entries } = timeline;
   const limits = fileListLimits(fileChanges);
   return (
@@ -114,7 +127,7 @@ export function ProposedFiles({ timeline }: { timeline: RunTimelineData }) {
           </thead>
           <tbody>
             {fileChanges.items.map((item) => {
-              const decision = describeFileDecision(item, entries);
+              const decision = describeFileDecision(item, entries, runEnded);
               return (
                 <tr key={item.entryId + item.path}>
                   <td className="cell-file">

@@ -1,6 +1,12 @@
 import type { Agent } from "@launchpad/shared";
+import { ForeignInline } from "../ui";
 
 export { SeverityBadge, StatusBadge } from "../ui";
+
+/** A task's title. A planner wrote a delegated task's title, so it must not read as a system statement. */
+export function TaskName({ title, writtenByPlan }: { title: string; writtenByPlan: boolean }) {
+  return writtenByPlan ? <ForeignInline>{title}</ForeignInline> : <>{title}</>;
+}
 
 export function formatClock(value: string | null): string {
   if (value === null) return "—";

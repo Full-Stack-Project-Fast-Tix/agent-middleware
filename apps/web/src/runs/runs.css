@@ -165,6 +165,18 @@
   color: var(--held);
 }
 
+/* On a phone, Review matters more than when the run started. */
+@media (max-width: 640px) {
+  .waiting-on-you th:nth-child(3),
+  .waiting-on-you td:nth-child(3) {
+    display: none;
+  }
+
+  .waiting-on-you .data-table .cell-prompt {
+    max-width: 16ch;
+  }
+}
+
 .list-stale {
   padding: 8px 12px;
   background: var(--held-tint);
@@ -295,11 +307,30 @@
 }
 
 .held-strip li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px 24px;
+}
+
+.held-what {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 8px 24px;
+}
+
+.held-actions {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px 16px;
+  gap: 8px;
+}
+
+@media (max-width: 900px) {
+  .held-strip li,
+  .held-what {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 /* Task graph */
@@ -518,6 +549,11 @@
   font-size: var(--text-18);
   font-weight: 600;
   overflow-wrap: anywhere;
+}
+
+.task-drilldown h2 .foreign-inline {
+  font-size: var(--text-15);
+  font-weight: 500;
 }
 
 .task-drilldown h3 {
