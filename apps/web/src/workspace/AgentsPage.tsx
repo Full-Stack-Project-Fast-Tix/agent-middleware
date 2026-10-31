@@ -79,6 +79,7 @@ function Agents({ workspace }: { workspace: WorkspaceSummary }) {
   return (
     <>
       <ChangeError message={change.error} />
+      <p className="members-readonly">The capability column shows each agent after platform and workspace limits apply. A specialist's “complete” report is its own claim; review and test evidence remain separate.</p>
       <section className="page-section">
         <DataTable caption="Agents">
           <thead>

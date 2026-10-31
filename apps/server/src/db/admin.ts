@@ -107,6 +107,49 @@ export async function addUser(pool: pg.Pool, input: { email: string; name: strin
   return id;
 }
 
+/** Creates a workspace account and membership in one, audited admin transaction. */
+export async function createMemberAccount(
+  pool: pg.Pool,
+  input: { workspaceId: string; actorUserId: string; email: string; name: string; password: string; role: WorkspaceRole },
+): Promise<WorkspaceMemberSummary> {
+  if (input.password.length < 12) throw new HttpError(400, "Use a password of at least 12 characters");
+  const email = input.email.trim().toLowerCase();
+  const currentRole = await roleOf(pool, input.workspaceId, input.actorUserId);
+  if (currentRole === null) throw new HttpError(404, "Workspace not found");
+  if (currentRole !== "security_admin") throw new HttpError(403, `The ${currentRole} role cannot change members`);
+  const passwordHash = await hashPassword(input.password);
+  try {
+    return await changeMembers(pool, input.workspaceId, input.actorUserId, async (db, actor) => {
+      const existing = await db.query("SELECT 1 FROM users WHERE lower(email) = lower($1)", [email]);
+      if (existing.rowCount) throw new HttpError(409, "An account with that email already exists. Add the existing account instead.");
+      const userId = randomUUID();
+      const stamp = stamps();
+      await insertRow(db, "users", {
+        id: userId,
+        email,
+        name: input.name.trim(),
+        authSubject: `local:${email}`,
+        passwordHash,
+        ...stamp,
+      });
+      await audit(db, actor, "user.created", input.workspaceId, { userId });
+      await insertRow(db, "workspace_members", {
+        workspaceId: input.workspaceId,
+        userId,
+        role: input.role,
+        joinedAt: new Date().toISOString(),
+      });
+      await audit(db, actor, "member.added", input.workspaceId, { userId, role: input.role });
+      return (await selectMember(db, input.workspaceId, userId))!;
+    });
+  } catch (error) {
+    if ((error as { code?: string }).code === "23505") {
+      throw new HttpError(409, "An account with that email already exists. Add the existing account instead.");
+    }
+    throw error;
+  }
+}
+
 /** Gives a user a role in a workspace, or changes the role they have. */
 export async function setMember(pool: pg.Pool, input: { workspaceId: string; email: string; role: WorkspaceRole }): Promise<void> {
   await inTransaction(pool, async (db) => {
@@ -200,7 +243,7 @@ export async function addMember(
     const { rows } = await db.query<{ id: string }>("SELECT id FROM users WHERE lower(email) = lower($1)", [input.email]);
     const userId = rows[0]?.id;
     if (userId === undefined) {
-      throw new HttpError(404, "No account uses that email. An operator can create one with db:admin add-user.");
+      throw new HttpError(404, "No account uses that email. Create the account from this workspace's Members page first.");
     }
     if ((await roleOf(db, input.workspaceId, userId)) !== null) throw new HttpError(409, "That person is already a member");
     await insertRow(db, "workspace_members", {
@@ -260,37 +303,52 @@ export async function addWorkspace(
 ): Promise<string> {
   return inTransaction(pool, async (db) => {
     const ownerId = await userIdByEmail(db, input.ownerEmail);
-    const workspaceId = randomUUID();
-    await db.query(
-      `INSERT INTO security_policies (id, workspace_id, name, scope, ceil_network, ceil_max_delegation_depth, rules,
-         rules_schema_version, locked, version, created_at, updated_at)
-       VALUES ($1, NULL, $2, 'platform', false, 1, '{}', 1, true, 1, $3, $3)
-       ON CONFLICT DO NOTHING`,
-      [randomUUID(), PLATFORM_BASELINE, new Date().toISOString()],
-    );
-    await insertRow(db, "workspaces", { id: workspaceId, name: input.name, sourcePath: input.sourcePath, createdByUserId: ownerId, ...stamps() });
-    await insertRow(db, "workspace_members", { workspaceId, userId: ownerId, role: "security_admin", joinedAt: new Date().toISOString() });
-    await audit(db, OPERATOR, "workspace.created", workspaceId, { ownerUserId: ownerId });
-    await audit(db, OPERATOR, "member.added", workspaceId, { userId: ownerId, role: "security_admin" });
-    for (const [role, { description, capabilities }] of Object.entries(STANDARD_AGENTS)) {
-      const name = role[0]!.toUpperCase() + role.slice(1);
-      const profileId = randomUUID();
-      await insertRow(db, "agent_profiles", { id: profileId, workspaceId, name, description, capabilities, version: 1, ...stamps() });
-      await insertRow(db, "agents", {
-        id: randomUUID(),
-        workspaceId,
-        name,
-        description,
-        instructions: "",
-        profileId,
-        enabled: true,
-        createdByUserId: ownerId,
-        version: 1,
-        ...stamps(),
-      });
-    }
-    return workspaceId;
+    return (await createWorkspaceRows(db, { name: input.name, sourcePath: input.sourcePath, ownerId, actor: OPERATOR })).id;
   });
+}
+
+/** A security admin may create an empty workspace; repository paths stay operator-controlled. */
+export async function createWorkspaceForAdmin(
+  pool: pg.Pool,
+  input: { authorizationWorkspaceId: string; actorUserId: string; name: string },
+): Promise<{ id: string; name: string }> {
+  return changeMembers(pool, input.authorizationWorkspaceId, input.actorUserId, async (db, actor) => {
+    const result = await createWorkspaceRows(db, {
+      name: input.name.trim(),
+      sourcePath: null,
+      ownerId: input.actorUserId,
+      actor,
+    });
+    return result;
+  });
+}
+
+async function createWorkspaceRows(
+  db: pg.PoolClient,
+  input: { name: string; sourcePath: string | null; ownerId: string; actor: Actor },
+): Promise<{ id: string; name: string }> {
+  const workspaceId = randomUUID();
+  await db.query(
+    `INSERT INTO security_policies (id, workspace_id, name, scope, ceil_network, ceil_max_delegation_depth, rules,
+       rules_schema_version, locked, version, created_at, updated_at)
+     VALUES ($1, NULL, $2, 'platform', false, 1, '{}', 1, true, 1, $3, $3)
+     ON CONFLICT DO NOTHING`,
+    [randomUUID(), PLATFORM_BASELINE, new Date().toISOString()],
+  );
+  await insertRow(db, "workspaces", { id: workspaceId, name: input.name, sourcePath: input.sourcePath, createdByUserId: input.ownerId, ...stamps() });
+  await insertRow(db, "workspace_members", { workspaceId, userId: input.ownerId, role: "security_admin", joinedAt: new Date().toISOString() });
+  await audit(db, input.actor, "workspace.created", workspaceId, { ownerUserId: input.ownerId });
+  await audit(db, input.actor, "member.added", workspaceId, { userId: input.ownerId, role: "security_admin" });
+  for (const [role, { description, capabilities }] of Object.entries(STANDARD_AGENTS)) {
+    const name = role[0]!.toUpperCase() + role.slice(1);
+    const profileId = randomUUID();
+    await insertRow(db, "agent_profiles", { id: profileId, workspaceId, name, description, capabilities, version: 1, ...stamps() });
+    await insertRow(db, "agents", {
+      id: randomUUID(), workspaceId, name, description, instructions: "", profileId,
+      enabled: true, createdByUserId: input.ownerId, version: 1, ...stamps(),
+    });
+  }
+  return { id: workspaceId, name: input.name };
 }
 
 /** A workspace for the role-aware demo, with one person in each role. Returns the workspace's id. */

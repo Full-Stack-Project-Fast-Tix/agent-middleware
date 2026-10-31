@@ -9,6 +9,7 @@ export function BenchmarksPage() {
   return (
     <div className="page">
       <PageHeader title="Benchmarks" description="Saved evaluation reports: how the guards did against attack and benign scenarios." />
+      <p className="members-readonly">Reports are saved artifacts, not measurements started by this page. Legacy single-agent results do not establish multi-agent Run/Task effectiveness; small samples and simulated load runs must be labeled in the report.</p>
       {data === null ? (
         error !== null ? <ErrorState message={error} onRetry={() => void refresh()} /> : <Loading label="Loading reports" />
       ) : data.length === 0 ? (

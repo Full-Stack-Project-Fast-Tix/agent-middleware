@@ -222,7 +222,15 @@ chmod 600 .env.production
 export DATABASE_URL=postgres://launchpad:your-password@127.0.0.1:5433/launchpad
 printf '%s' 'a-long-password' | npm run db:admin -w @launchpad/server -- add-user you@example.com "Your Name"
 npm run db:admin -w @launchpad/server -- add-workspace checkout /srv/checkout you@example.com
+npm run db:admin -w @launchpad/server -- list-users
+npm run db:admin -w @launchpad/server -- list-workspaces
 ```
+
+Use `-` as the source path to create an empty workspace. First-account
+bootstrap and project-path registration remain operator-only. After signing in,
+a workspace security admin can create an account attached to that workspace,
+manage its roles, or create another empty workspace in the Members view. Deliver
+new account passwords to their owners through a secure channel.
 
 For a demo, `seed-demo <source-path>` makes one workspace with one person per role,
 with the password from stdin.

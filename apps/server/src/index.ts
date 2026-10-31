@@ -7,6 +7,7 @@ import { createDemoRuns, seedDemo, type DemoRuns, type DemoStore } from "./dev/d
 import { loadConfig, writeCodexConfig } from "./config.js";
 import { openDatabase } from "./db/pool.js";
 import { PostgresIdentity } from "./db/postgres-identity.js";
+import { PostgresSignInThrottle } from "./db/postgres-sign-in-throttle.js";
 import { PostgresRunStore } from "./db/postgres-run-store.js";
 import { startApprovalSweep } from "./orchestrator/orchestrator.js";
 import { createPostgresRuns } from "./postgres-runs.js";
@@ -76,7 +77,7 @@ const app = await createApp(config, service, {
     lastEventSeq: async (runId) => (await runs?.store.snapshot(runId))?.lastEventSeq ?? 0,
   },
   ...(runs === null ? {} : { runs: runs.routes }),
-  ...(identity === null ? {} : { identity, memberDatabase: database! }),
+  ...(identity === null ? {} : { identity, memberDatabase: database!, signInThrottle: new PostgresSignInThrottle(database!) }),
   ...(database === null ? {} : { checkDatabase: () => database.query("SELECT 1") }),
 });
 if (identity !== null && runs === null) {

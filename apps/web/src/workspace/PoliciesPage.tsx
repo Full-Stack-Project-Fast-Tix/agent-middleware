@@ -121,6 +121,7 @@ function Policies({ workspace }: { workspace: WorkspaceSummary }) {
   return (
     <>
       {!isAdmin && <p className="members-readonly">Only a security admin can change policies and profiles.</p>}
+      <p className="members-readonly">This editor manages capability ceilings and profiles. Fine-grained policy rules are not supported yet, and the locked platform baseline cannot be changed here.</p>
       <ChangeError message={change.error} />
 
       <section className="page-section">

@@ -233,10 +233,14 @@ snapshots and the bounded timeline, but not raw traces. An approval needs the pe
 who started the Run, or a `security_admin` when its reason is `policy_required`
 (contract decision 19). What always asks a person is decision 20, and editing agents,
 profiles and policies is decision 21. `npm run db:admin -w
-@launchpad/server` adds users, workspaces (with the four standard agents and
-the platform baseline policy) and members. A `security_admin` can also manage
-their workspace's members over the API (contract decision 15). Failed sign-ins
-are limited per account and per source address, in this process's memory. The
+@launchpad/server` bootstraps the first users and registers host project paths;
+it also lists users/workspaces and can create empty workspaces. A
+`security_admin` can create accounts attached to their workspace, manage its
+members, and create additional empty workspaces (contract decision 15). Failed sign-ins
+are limited by shared PostgreSQL counters: five attempts per account and 30 per
+source address within 15 minutes. Authentication limits are consistent across
+restarts and replicas; Run SSE/event delivery remains process-local, so the rest
+of the app is still a single-instance deployment. The
 default `token` mode is unchanged, and `npm run dev:demo` still runs the simulated
 demo. For the two acting roles, an attempt's bounded, redacted raw trace is read through
 `GET /api/runs/:runId/executions/:executionId/trace`, under the same workspace
@@ -251,12 +255,16 @@ stay, and reading such a trace answers 410 rather than a plain 404.
 Not built yet, by owner:
 - **P1:** reflection memory in multi-agent runs. The tables exist and are unused,
   so a guard's catch does not carry into later Runs here as it does in token mode.
-  A live, container-backed multi-agent benchmark has not been run. Policy `rules`
-  stay unsupported until P1 reviews a schema, so nothing yet produces
-  `policy_required`.
+  A PostgreSQL-backed live Run/Task benchmark harness now exists at
+  `benchmark/run-multi-agent-live.ts`; it has not yet been run against a live
+  model/runtime. Policy `rules` stay unsupported until P1 reviews a schema, so
+  nothing yet produces `policy_required`.
 - **P3:** tenant isolation beyond workspace roles (every workspace's Runs share one
-  host). Creating users and workspaces stays on the command line (decision 15), and
-  migrating token-mode JSON records was decided against (decision 23). The
+  host). First-account bootstrap and host project paths stay operator-only
+  (decision 15); workspace admins can create accounts in their workspace and
+  empty workspaces. Password-mode sign-in throttling uses shared Postgres counters.
+  Migrating token-mode JSON records
+  was decided against (decision 23). The
   integration harness still runs on `InMemoryRunStore`; the fuzz suite and the
   store suite are what exercise Postgres.
 - **P3/P4:** applied file changes on the gate timeline. Saved data does not hold

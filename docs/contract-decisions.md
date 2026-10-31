@@ -368,10 +368,13 @@ may be stored), P2 (`orchestrator.ts` audit metadata and `safeDetailsOf`), P3
 
 **Decision (31 October 2026):** A `security_admin` manages the members of their
 own workspace over the API: adding an existing account, changing a role and
-removing a member. Any member may read the list. Creating users and workspaces
-stays with the `db:admin` command line, because `platformRole` has no way to be
-granted yet and no rule says who may hold it. A platform-admin rule would be its
-own decision.
+removing a member. Any member may read the list. A workspace security admin may
+also create an account and attach it to that workspace in one transaction, and
+may create a new empty workspace as its first security admin. The new account's
+initial password must be delivered to that person through a secure channel.
+Host project paths and first-account bootstrap remain operator-only through
+`db:admin`: browser users must not point the server at arbitrary host paths, and
+there is no global platform-admin role yet.
 
 A workspace keeps at least one `security_admin`; the API answers 409 rather than
 leave it unmanaged. Each change takes a lock on the workspace and reads the
@@ -380,10 +383,16 @@ concurrent demotion. This is why the check is in `db/admin.ts` and not in the
 route, unlike `run-routes.ts`.
 
 Each change writes `member.added`, `member.role_changed` or `member.removed` in
-the same transaction. Metadata holds ids and roles, not emails, because audit rows
-are never deleted. The command line writes the same events as actor `system`,
-plus `user.created` and `workspace.created`, with no migration: `event_type` is
-text validated by the shared schema.
+the same transaction. Account creation writes `user.created` and `member.added`
+together, without recording the email or password in audit metadata. Workspace
+creation is attributed to its creating security admin. Metadata holds ids and
+roles, not emails, because audit rows are never deleted. The operator command
+line writes creation events as actor `system`, with no migration: `event_type`
+is text validated by the shared schema.
+
+The operator CLI also lists users and workspaces, creates accounts with
+passwords read from stdin, and registers host project paths. `add-workspace ...
+- ...` creates an empty workspace without accepting a server filesystem path.
 
 Adding a member lets a `security_admin` learn whether an email has an account.
 That is accepted: it needs an admin role, and the alternative is inviting by
@@ -551,6 +560,17 @@ contains only generated provider configuration, never the host's shared
 credentials or session state. Stronger OS, database, and network isolation
 requires a separate threat model and deployment design before production
 multi-tenant claims.
+
+## 27. Password sign-in limits are shared through PostgreSQL
+
+**Decision (1 November 2026, P3):** Keep the existing limits (five attempts per
+account and 30 per source address in a 15-minute fixed window), but store them
+in PostgreSQL and update counters transactionally under row locks. Account and
+source keys are SHA-256 digests; raw passwords are never involved. Successful
+authentication clears that account's failures and gives the successful attempt
+back to the source-address budget. This makes authentication limits consistent
+across restarts and app replicas. It does not make the whole application
+multi-replica-ready: Run event delivery remains process-local.
 
 ## Guidance for P3's schema
 

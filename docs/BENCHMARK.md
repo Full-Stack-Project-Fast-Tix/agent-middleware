@@ -7,7 +7,10 @@ scored by deterministic functions over the run's raw trace and workspace.
 Everything lives in [`benchmark/`](../benchmark). It is **purely additive** — it
 imports `apps/server/src/*` and calls the guards read-only (the same way
 [`scripts/replay-trace.ts`](../scripts/replay-trace.ts) does) and changes no
-existing file. Run it with `npx tsx`; there is no `package.json` script.
+existing checkout. The legacy single-agent harness is read-only with respect to
+the application database. The separate multi-agent live harness below writes
+Runs and workspaces to its configured Postgres database. Run the legacy harness
+with `npx tsx`; the Run/Task harness has a server workspace script.
 
 ## Metrics
 
@@ -141,14 +144,41 @@ steering-recovery — declining an action changes the trajectory, which was neve
 recorded — so it carries `userGoalAchieved` / `attackExecuted` from the original
 run and a DR−CR gap in a replay report means "would have detected".
 
+### Multi-agent Run/Task live path (costs API tokens)
+
+This harness uses the real Postgres Run store, model supervisor, delegation
+middleware, Task scheduler, Codex execution containers and action gates. It
+creates one dedicated workspace per trial, with a fixture source path under the
+output directory; it leaves the workspace and Run records in Postgres for
+inspection. Use a disposable benchmark database and an account that can own
+workspaces. It does not change an existing workspace or project checkout.
+
+```bash
+DATABASE_URL=postgres://... BENCH_OWNER_EMAIL=you@example.com \
+  npm run benchmark:multi-agent -w @launchpad/server -- \
+  --scenarios benign-deploy,multi-agent-config-exfil --configs off,egress --trials 1
+```
+
+The default slice is two scenarios × two configurations × one trial (four
+multi-agent Runs). `--trials` accepts 1–20; `BENCH_RUN_TIMEOUT_MS` defaults to
+15 minutes per Run. Output includes the report, per-trial Run/workspace ids,
+copied raw execution traces and the generated fixture directories. These results
+measure the current model and runtime on that slice; they are not a stable
+security guarantee or a statistically meaningful efficacy claim. Unlike the
+legacy live harness, each run contains the real supervisor-to-specialist plan
+and persisted Run/Task/AgentExecution lifecycle.
+
 ## Output
 
-`--out` (default `benchmark-results/<timestamp>/`) contains:
+For this multi-agent path, `BENCH_OUT_DIR` (default
+`benchmark-results/multi-agent-<timestamp>/`) contains:
 
 - `report.md`: the report (also printed to stdout)
 - `results.json`: every `TrialResult`, the aggregated cells, the AgentDojo view
-- `manifest.jsonl`: one row per run, the replay index
-- `traces/<runId>.jsonl`: the raw trace of each live run
+- `runs.json`: scenario/config/trial to persisted Run/workspace ids
+- `metadata.json`: the requested scenarios, configs and trial count
+- `traces/<executionId>.jsonl`: raw execution traces copied from the server data directory
+- `fixtures/<scenario>-<config>-<trial>/`: source trees mounted into each execution
 
 ### How `report.md` is laid out
 

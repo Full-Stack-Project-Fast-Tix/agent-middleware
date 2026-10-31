@@ -1,9 +1,12 @@
 import {
   apiPaths,
+  createdWorkspaceResponseSchema,
   meResponseSchema,
   workspaceMemberResponseSchema,
   workspaceMembersResponseSchema,
   type AddWorkspaceMemberRequest,
+  type CreateMemberAccountRequest,
+  type CreateWorkspaceRequest,
   type User,
   type WorkspaceMemberSummary,
   type WorkspaceMembersResponse,
@@ -24,6 +27,16 @@ export const membersApi = {
     workspaceMemberResponseSchema.parse(
       await request(apiPaths.workspaceMembers(workspaceId), { method: "POST", body: JSON.stringify(body) }),
     ).member,
+
+  createAccount: async (workspaceId: string, body: CreateMemberAccountRequest): Promise<WorkspaceMemberSummary> =>
+    workspaceMemberResponseSchema.parse(
+      await request(apiPaths.workspaceAccounts(workspaceId), { method: "POST", body: JSON.stringify(body) }),
+    ).member,
+
+  createWorkspace: async (body: CreateWorkspaceRequest) =>
+    createdWorkspaceResponseSchema.parse(
+      await request(apiPaths.workspaceCreate(), { method: "POST", body: JSON.stringify(body) }),
+    ).workspace,
 
   changeRole: async (workspaceId: string, userId: string, role: WorkspaceRole): Promise<WorkspaceMemberSummary> =>
     workspaceMemberResponseSchema.parse(

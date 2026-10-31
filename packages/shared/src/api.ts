@@ -137,6 +137,7 @@ export const apiPaths = {
   session: () => "/api/auth/session",
   me: () => "/api/auth/me",
   workspaces: () => "/api/workspaces",
+  workspaceCreate: () => "/api/workspaces",
   workspaceAgents: (workspaceId: string) => `/api/workspaces/${encodeURIComponent(workspaceId)}/agents`,
   workspaceAudit: (workspaceId: string) => `/api/workspaces/${encodeURIComponent(workspaceId)}/audit`,
   runs: (workspaceId: string) => `/api/workspaces/${encodeURIComponent(workspaceId)}/runs`,
@@ -146,6 +147,7 @@ export const apiPaths = {
   cancelRun: (runId: string) => `/api/runs/${encodeURIComponent(runId)}/cancel`,
   resolveApproval: (approvalId: string) => `/api/approvals/${encodeURIComponent(approvalId)}/resolve`,
   workspaceMembers: (workspaceId: string) => `/api/workspaces/${encodeURIComponent(workspaceId)}/members`,
+  workspaceAccounts: (workspaceId: string) => `/api/workspaces/${encodeURIComponent(workspaceId)}/accounts`,
   workspaceMember: (workspaceId: string, userId: string) =>
     `/api/workspaces/${encodeURIComponent(workspaceId)}/members/${encodeURIComponent(userId)}`,
   executionTrace: (runId: string, executionId: string) =>
@@ -398,6 +400,23 @@ export const addWorkspaceMemberRequestSchema = z.object({
 });
 export type AddWorkspaceMemberRequest = z.infer<typeof addWorkspaceMemberRequestSchema>;
 
+export const createMemberAccountRequestSchema = z.object({
+  email: z.email(),
+  name: requiredTextSchema.max(120),
+  password: z.string().min(12).max(256),
+  role: workspaceRoleSchema,
+});
+export type CreateMemberAccountRequest = z.infer<typeof createMemberAccountRequestSchema>;
+
+export const createWorkspaceRequestSchema = z.object({
+  name: requiredTextSchema.max(120),
+  authorizationWorkspaceId: idSchema,
+});
+export type CreateWorkspaceRequest = z.infer<typeof createWorkspaceRequestSchema>;
+
+export const createdWorkspaceResponseSchema = z.object({ workspace: workspaceSummarySchema });
+export type CreatedWorkspaceResponse = z.infer<typeof createdWorkspaceResponseSchema>;
+
 /**
  * Workspace members, in password mode only.
  *
@@ -407,11 +426,12 @@ export type AddWorkspaceMemberRequest = z.infer<typeof addWorkspaceMemberRequest
  *   DELETE /api/workspaces/:workspaceId/members/:userId         -> 204
  *
  * Any member may read the list. Only `security_admin` may change it (403
- * otherwise). A workspace the caller is not in answers 404. Adding needs an
- * existing account (404); someone already in the workspace answers 409, and so
- * does demoting or removing the workspace's last `security_admin`. Creating
- * users and workspaces stays with the db:admin command line. See contract
- * decision 15.
+ * otherwise). A workspace the caller is not in answers 404. Adding an existing
+ * account is separate from creating a new account; a workspace security admin
+ * may create an account with an initial password and add it atomically. A
+ * security admin may also create an empty workspace, using a workspace they
+ * administer to authorize the request. Host project paths remain operator-only.
+ * See contract decision 15.
  */
 export const workspaceMemberSummarySchema = workspaceMemberSchema
   .pick({ userId: true, role: true, joinedAt: true })

@@ -87,7 +87,7 @@ function shortCmd(cmd: string, max = 110): string {
 }
 
 export interface ReportInput {
-  mode: "live" | "replay";
+  mode: "live" | "multi-agent-live" | "replay";
   guardConfigs: string[];
   results: TrialResult[];
   scenariosById: Map<string, Scenario>;
@@ -104,7 +104,7 @@ export function writeReport(input: ReportInput): string {
   const byScenario = sortCells(aggregate(results, scenariosById, "scenario"), guardConfigs);
 
   const lines: string[] = [];
-  lines.push(`# Leash benchmark — ${input.mode} run`);
+  lines.push(`# Leash benchmark — ${input.mode === "multi-agent-live" ? "multi-agent Run/Task live" : input.mode} run`);
   lines.push("");
   const unit = input.mode === "replay" ? "re-scored runs" : "trials";
   const trialsPerCell = maxTrialsPerCell(results);

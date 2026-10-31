@@ -41,11 +41,11 @@ export function MembersUnavailable() {
 }
 
 /**
- * Who can open the current workspace. A security admin can also change the list.
- * Accounts themselves are created on the command line, not here.
+ * Who can open the current workspace. Security admins can manage members,
+ * create accounts in this workspace, and create empty workspaces.
  */
 export function Members({ viewerId }: { viewerId: string | null }) {
-  const { workspaces, current, error: workspacesError, reload: reloadWorkspaces } = useCurrentWorkspace();
+  const { workspaces, current, error: workspacesError, reload: reloadWorkspaces, select } = useCurrentWorkspace();
   // "You left" has to outlive the page for the workspace that was left.
   const [carriedNotice, setCarriedNotice] = useState<string | null>(null);
   const clearCarriedNotice = useCallback(() => setCarriedNotice(null), []);
@@ -85,11 +85,12 @@ export function Members({ viewerId }: { viewerId: string | null }) {
       initialNotice={carriedNotice}
       onNoticeShown={clearCarriedNotice}
       onLeft={left}
+      selectWorkspace={select}
     />
   );
 }
 
-function WorkspaceMembers({ workspaceId, workspaceName, viewerId, reloadWorkspaces, initialNotice, onNoticeShown, onLeft }: {
+function WorkspaceMembers({ workspaceId, workspaceName, viewerId, reloadWorkspaces, initialNotice, onNoticeShown, onLeft, selectWorkspace }: {
   workspaceId: string;
   workspaceName: string;
   viewerId: string | null;
@@ -97,6 +98,7 @@ function WorkspaceMembers({ workspaceId, workspaceName, viewerId, reloadWorkspac
   initialNotice: string | null;
   onNoticeShown: () => void;
   onLeft: (message: string) => void;
+  selectWorkspace: (id: string) => void;
 }) {
   const [list, setList] = useState<WorkspaceMembersResponse | null>(null);
   const [listError, setListError] = useState<string | null>(null);
@@ -107,6 +109,11 @@ function WorkspaceMembers({ workspaceId, workspaceName, viewerId, reloadWorkspac
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<WorkspaceRole>("developer");
   const [adding, setAdding] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [creatingAccount, setCreatingAccount] = useState(false);
+  const [workspaceNameInput, setWorkspaceNameInput] = useState("");
+  const [creatingWorkspace, setCreatingWorkspace] = useState(false);
 
   const latestLoad = useRef(0);
   const mounted = useRef(true);
@@ -219,6 +226,46 @@ function WorkspaceMembers({ workspaceId, workspaceName, viewerId, reloadWorkspac
     emailInput.current?.focus();
   };
 
+  const createAccount = async (event: FormEvent) => {
+    event.preventDefault();
+    setActionError(null);
+    setNotice(null);
+    setCreatingAccount(true);
+    try {
+      const member = await membersApi.createAccount(workspaceId, {
+        email: email.trim(), name: newName.trim(), password: newPassword, role,
+      });
+      setNotice(`Created ${member.name} as ${ROLE_WORDS[member.role]}. Give them their initial password through a secure channel.`);
+      setEmail("");
+      setNewName("");
+      setNewPassword("");
+      setRole("developer");
+    } catch (reason) {
+      setActionError(reason instanceof Error ? reason.message : "The account could not be created.");
+    } finally {
+      setCreatingAccount(false);
+    }
+    if (!mounted.current) return;
+    await load();
+    emailInput.current?.focus();
+  };
+
+  const createWorkspace = async (event: FormEvent) => {
+    event.preventDefault();
+    setActionError(null);
+    setCreatingWorkspace(true);
+    try {
+      const workspace = await membersApi.createWorkspace({ name: workspaceNameInput.trim(), authorizationWorkspaceId: workspaceId });
+      setWorkspaceNameInput("");
+      await reloadWorkspaces();
+      selectWorkspace(workspace.id);
+    } catch (reason) {
+      setActionError(reason instanceof Error ? reason.message : "The workspace could not be created.");
+    } finally {
+      setCreatingWorkspace(false);
+    }
+  };
+
   const askToChangeRole = (member: WorkspaceMemberSummary, next: WorkspaceRole) => {
     if (next === member.role) return;
     const message = roleChangeWarning(member, next, viewerId);
@@ -322,9 +369,22 @@ function WorkspaceMembers({ workspaceId, workspaceName, viewerId, reloadWorkspac
                 <Button type="submit" variant="primary" busy={adding} disabled={!email.trim()}>Add member</Button>
               </form>
               <p className="meta">
-                They need an account first. Accounts are created on the command line, so ask your platform operator
-                for anyone who does not have one yet.
+                Add an existing account here, or create an account below and set its initial password. The new person must receive that password through a secure channel.
               </p>
+              <h2>Create an account</h2>
+              <form className="members-add" onSubmit={(event) => void createAccount(event)}>
+                <label>Name<input value={newName} onChange={(event) => setNewName(event.target.value)} maxLength={120} required /></label>
+                <label>Email<input ref={emailInput} type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="off" required /></label>
+                <label>Initial password<input type="password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} minLength={12} maxLength={256} autoComplete="new-password" required /></label>
+                <Select label="Role" value={role} onChange={setRole} options={ROLE_OPTIONS} />
+                <Button type="submit" variant="primary" busy={creatingAccount} disabled={!email.trim() || !newName.trim() || newPassword.length < 12}>Create account</Button>
+              </form>
+              <h2>Create an empty workspace</h2>
+              <form className="members-add" onSubmit={(event) => void createWorkspace(event)}>
+                <label>Workspace name<input value={workspaceNameInput} onChange={(event) => setWorkspaceNameInput(event.target.value)} maxLength={120} required /></label>
+                <Button type="submit" variant="primary" busy={creatingWorkspace} disabled={!workspaceNameInput.trim()}>Create workspace</Button>
+              </form>
+              <p className="meta">New workspaces start empty with the standard agents. A platform operator must register a host project path before Runs can copy a codebase.</p>
             </section>
           )}
 

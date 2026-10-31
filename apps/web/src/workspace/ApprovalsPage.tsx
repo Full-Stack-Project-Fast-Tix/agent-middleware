@@ -55,6 +55,7 @@ function Approvals({ workspace }: { workspace: WorkspaceSummary }) {
 
   return (
     <>
+      <p className="members-readonly">An approval covers this proposed action only. It does not approve the rest of the Run or confirm that the action is safe.</p>
       <div className="config-filters">
         <Select label="Status" inlineLabel value={status} onChange={setStatus} options={STATUS_OPTIONS} />
       </div>

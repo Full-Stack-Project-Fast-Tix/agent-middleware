@@ -44,7 +44,7 @@ proof of concept and does not claim production-grade tenant isolation.
 
 ### Platform and product already present
 
-- Password sign-in, in-process sign-in throttling, PostgreSQL persistence,
+- Password sign-in, PostgreSQL-backed sign-in throttling, PostgreSQL persistence,
   workspace roles, member management APIs, Run APIs, SSE updates and backup
   tooling are implemented.
 - The web console has the shared shell, Dashboard, Runs list and detail, task
@@ -64,56 +64,65 @@ proof of concept and does not claim production-grade tenant isolation.
   security design (decision 24).
 - Raw traces may contain sensitive values missed by pattern redaction and are
   incomplete when rolled. They are debugging artifacts, not the audit record.
-- The concrete middleware has a focused multi-agent integration scenario, and
-  the existing live security benchmark measures the legacy single-agent runtime.
-  There is no live-model, container-backed multi-agent efficacy/false-intervention
-  benchmark yet. It is evaluation work, not a missing enforcement boundary for
-  the current milestone.
+- The concrete middleware has a focused multi-agent integration scenario. The
+  new live benchmark harness exercises PostgreSQL Runs, planning, delegation,
+  Tasks and gated containers, but no live run has been captured yet. It is
+  evaluation work, not a missing enforcement boundary for this milestone.
 
 ## Work remaining by owner
 
 ### P1
 
-No independent P1 implementation is blocking the current milestone. P1 should:
+P1's Run/Task benchmark path is implemented; P1 should now run it on a dedicated
+database with live provider credentials and review its results before making
+multi-agent efficacy claims. The remaining P1 work is:
 
 - rerun the file-change approval and network-denial probes whenever the pinned
   Codex image changes;
 - review any future rule schema, nested delegation, provider-only egress, or
   production tenant-isolation proposal before it is enabled;
 - maintain the secret-copy marker parity test as sensitive markers change.
-- extend the live security benchmark to the Run/Task path before making measured
-  claims about multi-agent attack containment or false-intervention rates.
+- decide separately whether and when multi-agent reflection memory is worth
+  implementing; it remains unused and is not needed to run the benchmark.
 
 ### P2
 
-No independent P2 correctness fix remains from the false-completion incident.
-P2 should:
+The disposition contract remains in place. P2 reviewed `run-retention.ts`: it
+selects only terminal Runs older than the cutoff, removes traces before the
+workspace so a failed cleanup can retry, and preserves rows. The review fixed
+two helper edge cases: zero retention now means keep forever even when called
+directly, and filesystem permission errors are reported instead of treated as
+a missing directory. Remaining P2 work:
 
 - preserve the disposition contract and failure semantics as runtimes evolve;
-- review P3's artifact cleanup against the 30-day lifecycle rules;
 - join P1 if nested delegation is proposed later.
 
 ### P3
 
-- Terminal artifact cleanup is implemented (`run-retention.ts`); P2 reviews it
-  against the lifecycle rules.
+- Terminal artifact cleanup is implemented and P2-reviewed (`run-retention.ts`).
 - Run `scripts/deploy-multi-agent.sh` on a real ECS host. Its systemd steps have
   not been exercised yet; verify its fail-closed sandbox check and network
   behavior on the target host.
-- Decide whether sign-in throttling must move from process memory to a shared
-  store before deploying multiple replicas.
-- Continue admin workflows for creating users and workspaces; these currently
-  use `db:admin`.
+- Password-mode throttling now uses shared PostgreSQL fixed-window counters.
+  The rest of the app still assumes one instance because Run event delivery is
+  process-local; do not add replicas until that is addressed.
+- First-account bootstrap and host project path registration remain
+  operator-only. Workspace security admins can create accounts attached to their
+  workspace, manage roles, and create empty workspaces in Members. The CLI lists
+  users/workspaces and still accepts account passwords on stdin; project paths
+  never come from browser input. Deliver UI-created passwords through a secure
+  channel.
 - Lead any future stronger tenant-isolation or provider-only egress design with
   P1; current POC boundaries are settled in decisions 25–26.
 
 ### P4
 
-- The Agents, Policies, Approvals, Security and Benchmarks views exist; review them
-  and refine as needed.
-- Keep Benchmarks clear that saved reports are committed evidence, not live
-  workspace measurements or a live-model efficacy claim. Multi-agent load
-  numbers use simulated agents.
+- Reviewed Agents, Policies, Approvals, Security and Benchmarks wording: resolved
+  capabilities, unsupported fine-grained rules, proposal-only approvals, finding
+  limits, and report provenance are now stated in the relevant views.
+- Keep Benchmarks clear that saved reports are artifacts, not live workspace
+  measurements or a live-model efficacy claim. Multi-agent load numbers use
+  simulated agents; the new live Run/Task path is a separate command.
 - An expired trace answers 410, which the trace view shows as its error.
 - Keep UI wording clear that `complete` is the specialist's report, while tests
   and review are separate evidence.
@@ -122,7 +131,7 @@ P2 should:
 
 | Work | Dependency |
 | --- | --- |
-| P3 artifact cleanup | Implemented. P2 reviews lifecycle behavior. |
+| P3 artifact cleanup | Implemented and reviewed by P2; no dependency remains. |
 | Nested delegation | Settled: disabled beyond the supervisor's one planning layer for this POC (decision 24). Revisit only with a separately reviewed design. |
 | Provider-only egress | Settled: not claimed or implemented; agents remain network-denied. A host-enforced route needs live deployment design and validation (decision 25). |
 | Production tenant isolation | Settled: current separation is logical only. The per-execution Codex home is implemented; stronger isolation requires a separate design (decision 26). |

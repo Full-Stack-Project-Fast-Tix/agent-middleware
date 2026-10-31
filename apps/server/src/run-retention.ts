@@ -17,8 +17,16 @@ export async function removeExpiredRunFiles(
   pool: Pick<pg.Pool, "query">,
   options: { dataDirectory: string; retentionDays: number; now?: () => number },
 ): Promise<number> {
+  if (options.retentionDays <= 0) return 0;
   const root = path.join(options.dataDirectory, "runs");
-  const names = (await readdir(root).catch(() => [] as string[])).filter((name) => RUN_ID.test(name));
+  let entries: string[];
+  try {
+    entries = await readdir(root);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return 0;
+    throw error;
+  }
+  const names = entries.filter((name) => RUN_ID.test(name));
   if (names.length === 0) return 0;
   const cutoff = new Date((options.now?.() ?? Date.now()) - options.retentionDays * DAY_MS).toISOString();
   const { rows } = await pool.query<{ id: string }>(

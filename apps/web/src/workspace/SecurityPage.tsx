@@ -84,6 +84,7 @@ export function SecurityPage() {
     <WorkspacePage title="Security" description="What the checks found across this workspace's runs, and the full record of what happened.">
       {(workspace) => (
         <>
+          <p className="members-readonly">Findings show what the checks detected; an empty list is not proof that a Run was safe. Open a Run for its task history and available trace evidence.</p>
           <Findings workspace={workspace} />
           <AuditHistory workspace={workspace} />
         </>

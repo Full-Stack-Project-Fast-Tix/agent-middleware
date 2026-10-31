@@ -11,13 +11,13 @@ import { isIP } from "node:net";
 // The cost of an account limit is that anyone can lock a known email out for one
 // window. That is the usual trade, and the window keeps it short.
 //
-// ponytail: counters live in this process and reset on restart. Move them to
-// shared storage (Postgres or Redis) before running more than one server.
+// Single-process implementation for tests and small token-mode use. Password
+// mode uses PostgresSignInThrottle so counters are shared across replicas.
 
-const WINDOW_MS = 15 * 60_000;
-const MAX_ACCOUNT_FAILURES = 5;
+export const SIGN_IN_WINDOW_MS = 15 * 60_000;
+export const MAX_ACCOUNT_FAILURES = 5;
 // Higher, because one office or NAT can share an address.
-const MAX_SOURCE_FAILURES = 30;
+export const MAX_SOURCE_FAILURES = 30;
 const MAX_TRACKED_KEYS = 10_000;
 
 interface Counter {
@@ -57,7 +57,7 @@ class WindowCounters {
     if (this.counters.size >= this.maxKeys) {
       this.counters.delete(this.counters.keys().next().value!);
     }
-    this.counters.set(key, { count: 1, resetAt: now + WINDOW_MS });
+      this.counters.set(key, { count: 1, resetAt: now + SIGN_IN_WINDOW_MS });
   }
 
   /** Hands back one counted attempt, keeping the rest of the window. */

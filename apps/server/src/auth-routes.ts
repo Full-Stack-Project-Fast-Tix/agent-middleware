@@ -5,6 +5,12 @@ import type { Session } from "./db/postgres-identity.js";
 import { HttpError } from "./errors.js";
 import { SignInThrottle } from "./sign-in-throttle.js";
 
+export interface SignInThrottleStore {
+  admit(email: string, ip: string): number | null | Promise<number | null>;
+  succeeded(email: string, ip: string): void | Promise<void>;
+  abandoned(email: string, ip: string): void | Promise<void>;
+}
+
 // Sessions for signed-in users, as specified in packages/shared/src/api.ts.
 // With sessions on, they replace the operator's shared APP_AUTH_TOKEN: every
 // /api/ request needs a live session token as its bearer, except the health
@@ -38,7 +44,11 @@ export function signedInUser(request: FastifyRequest): User {
   return request.user;
 }
 
-export function registerSessionAuth(app: FastifyInstance, identity: Identity, throttle = new SignInThrottle()): void {
+export function registerSessionAuth(
+  app: FastifyInstance,
+  identity: Identity,
+  throttle: SignInThrottleStore = new SignInThrottle(),
+): void {
   app.decorateRequest("user", null);
 
   app.addHook("onRequest", async (request, reply) => {
@@ -51,7 +61,7 @@ export function registerSessionAuth(app: FastifyInstance, identity: Identity, th
   app.post("/api/auth/session", { config: { redact: false } }, async (request, reply) => {
     const { email, password } = signInRequestSchema.parse(request.body);
     // request.ip is the connecting peer: this app does not trust X-Forwarded-For.
-    const retryAfter = throttle.admit(email, request.ip);
+    const retryAfter = await throttle.admit(email, request.ip);
     if (retryAfter !== null) {
       request.log.warn({ ip: request.ip }, "Sign-in attempts throttled");
       return reply
@@ -59,12 +69,12 @@ export function registerSessionAuth(app: FastifyInstance, identity: Identity, th
         .header("retry-after", String(retryAfter))
         .send({ error: "Too many sign-in attempts. Try again later.", code: "rate_limited" });
     }
-    const session = await identity.signIn(email, password).catch((error: unknown) => {
-      throttle.abandoned(email, request.ip);
+    const session = await identity.signIn(email, password).catch(async (error: unknown) => {
+      await throttle.abandoned(email, request.ip);
       throw error;
     });
     if (session === null) throw new HttpError(401, "The email or password is not right.");
-    throttle.succeeded(email, request.ip);
+    await throttle.succeeded(email, request.ip);
     return reply.code(201).send(session);
   });
 

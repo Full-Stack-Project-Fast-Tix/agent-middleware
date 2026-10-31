@@ -818,7 +818,7 @@ false negative puts a live credential on a projector.
 ### Platform limitations
 
 Shared demo token by default (`APP_AUTH_MODE=password` adds user accounts and
-workspace roles); process-local sign-in throttling; logical workspace separation
+workspace roles); Postgres-backed sign-in throttling; logical workspace separation
 but no hardened tenant isolation; no CSRF protection; no per-Agent container
 boundary in ECS mode; ordinary local containers rather than hardened
 multi-tenant sandboxes; unguarded single-agent turns may have outbound network
