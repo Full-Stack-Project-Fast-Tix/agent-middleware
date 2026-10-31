@@ -1,7 +1,14 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import type { AdminOverview, Agent } from "./types";
+import { Button, DataTable, DecisionMark, ForeignInline, Loading, PageHeader } from "./ui";
 
 type Tab = "overview" | "interventions" | "patterns";
+
+const TABS: ReadonlyArray<readonly [Tab, string]> = [
+  ["overview", "Overview"],
+  ["interventions", "Interventions"],
+  ["patterns", "Learned patterns"],
+];
 
 const labels: Record<string, string> = {
   data_exfiltration: "Data exfiltration",
@@ -17,8 +24,13 @@ const labels: Record<string, string> = {
 };
 
 function label(value: string): string {
-  return labels[value] ?? value.replaceAll("_", " ");
+  const known = labels[value];
+  if (known !== undefined) return known;
+  const words = value.replaceAll("_", " ");
+  return words.charAt(0).toUpperCase() + words.slice(1);
 }
+
+const PATTERN_NOTE = "These only warn and steer. They cannot approve or block an action.";
 
 export function Admin({ overview, agents, agentId, onSelectAgent, onReturnToChat, onViewRun }: {
   overview: AdminOverview | null;
@@ -31,7 +43,7 @@ export function Admin({ overview, agents, agentId, onSelectAgent, onReturnToChat
 }) {
   const [tab, setTab] = useState<Tab>("overview");
   if (overview === null) {
-    return <section className="admin-page"><p className="muted-copy">Loading operational evidence…</p></section>;
+    return <div className="page"><Loading label="Loading safety records" /></div>;
   }
 
   const agent = agentId === null ? null : agents.find((item) => item.id === agentId) ?? null;
@@ -40,18 +52,22 @@ export function Admin({ overview, agents, agentId, onSelectAgent, onReturnToChat
   }
 
   return (
-    <section className="admin-page">
-      <header className="admin-header">
-        <div>
-          <span className="eyebrow">Operator view</span>
-          <h1>Admin</h1>
-          <p>Read-only visibility across recorded runs, interventions, and learned safety memory.</p>
-        </div>
-      </header>
-      <div className="admin-tabs" role="tablist" aria-label="Admin views">
-        {(["overview", "interventions", "patterns"] as Tab[]).map((item) => (
-          <button key={item} className={tab === item ? "selected" : ""} onClick={() => setTab(item)}>
-            {item === "patterns" ? "Learned patterns" : label(item)}
+    <div className="page">
+      <PageHeader
+        title="Safety"
+        description="What the guards recorded across single-agent runs: interventions, approvals and learned safety memory. This page only reads."
+      />
+      <div className="tab-row" role="tablist" aria-label="Safety views">
+        {TABS.map(([item, name]) => (
+          <button
+            key={item}
+            type="button"
+            role="tab"
+            className="tab"
+            aria-selected={tab === item}
+            onClick={() => setTab(item)}
+          >
+            {name}
           </button>
         ))}
       </div>
@@ -59,8 +75,28 @@ export function Admin({ overview, agents, agentId, onSelectAgent, onReturnToChat
       {tab === "overview" && <Overview overview={overview} agents={agents} onSelectAgent={onSelectAgent} />}
       {tab === "interventions" && <Interventions overview={overview} onViewRun={onViewRun} />}
       {tab === "patterns" && <Patterns overview={overview} />}
-    </section>
+    </div>
   );
+}
+
+/** Counts as a plain two-column table: the name, then the number. */
+function FactTable({ caption, facts }: { caption: string; facts: ReadonlyArray<readonly [string, number]> }) {
+  return (
+    <DataTable caption={caption}>
+      <tbody>
+        {facts.map(([name, value]) => (
+          <tr key={name}>
+            <th scope="row">{name}</th>
+            <td className="num fact-value">{value}</td>
+          </tr>
+        ))}
+      </tbody>
+    </DataTable>
+  );
+}
+
+function CategoryTable({ caption, categories }: { caption: string; categories: ReadonlyArray<{ category: string; count: number }> }) {
+  return <FactTable caption={caption} facts={categories.map(({ category, count }) => [label(category), count] as const)} />;
 }
 
 function Overview({ overview, agents, onSelectAgent }: {
@@ -69,37 +105,43 @@ function Overview({ overview, agents, onSelectAgent }: {
   onSelectAgent: (agentId: string) => void;
 }) {
   const metrics = [
-    ["Runs", overview.totals.runs], ["Intervened runs", overview.totals.intervenedRuns],
-    ["Blocked actions", overview.totals.blockedActions], ["Redirects", overview.totals.redirects],
-    ["Approval requests", overview.totals.approvalRequests], ["Approvals", overview.totals.approvals],
+    ["Runs", overview.totals.runs], ["Runs with an intervention", overview.totals.intervenedRuns],
+    ["Blocked actions", overview.totals.blockedActions], ["Steered", overview.totals.redirects],
+    ["Approval requests", overview.totals.approvalRequests], ["Approved", overview.totals.approvals],
     ["Denied or timed out", overview.totals.denials + overview.totals.timeouts],
     ["Needs attention", overview.totals.needsAttention],
-  ];
+  ] as const;
   return <>
-    <dl className="admin-metrics">
-      {metrics.map(([name, value]) => <div key={String(name)}><dt>{name}</dt><dd>{value}</dd></div>)}
-    </dl>
-    <section className="admin-section">
-      <h2>Intervention categories</h2>
-      {overview.categories.length === 0 ? <p className="muted-copy">No categorized interventions have been recorded.</p> : (
-        <ul className="category-list">{overview.categories.map(({ category, count }) => (
-          <li key={category}><span>{label(category)}</span><strong>{count}</strong></li>
-        ))}</ul>
-      )}
-    </section>
-    <section className="admin-section admin-agent-summary">
-      <div className="section-heading">
-        <div><h2>Agent safety</h2><p className="muted-copy">Open an agent to see only its interventions, approvals, and learned memory.</p></div>
-      </div>
-      {agents.length === 0 ? <p className="muted-copy">No agents have been created.</p> : (
-        <div className="agent-safety-list">{agents.map((agent) => {
-          const interventionCount = overview.interventions.filter((event) => event.agentId === agent.id).length;
-          const patternCount = overview.learnedPatterns.filter((pattern) => pattern.agentId === agent.id).length;
-          return <button className="agent-safety-row" key={agent.id} onClick={() => onSelectAgent(agent.id)}>
-            <span><strong>{agent.name}</strong><small>{agent.description || "Coding Agent"}</small></span>
-            <span className="agent-safety-counts"><small>{interventionCount} interventions · {patternCount} patterns</small><b>View safety →</b></span>
-          </button>;
-        })}</div>
+    <div className="safety-columns">
+      <section className="page-section">
+        <h2>Totals</h2>
+        <FactTable caption="Safety totals" facts={metrics} />
+      </section>
+      <section className="page-section">
+        <h2>Intervention categories</h2>
+        {overview.categories.length === 0
+          ? <p className="meta">No categorized interventions have been recorded.</p>
+          : <CategoryTable caption="Interventions by category" categories={overview.categories} />}
+      </section>
+    </div>
+    <section className="page-section">
+      <h2>Agent safety</h2>
+      <p className="meta">Open an agent to see only its interventions, approvals and learned memory.</p>
+      {agents.length === 0 ? <p className="meta">No agents have been created.</p> : (
+        <DataTable caption="Safety records by agent">
+          <thead><tr><th>Agent</th><th className="wide-only">Description</th><th>Interventions</th><th>Patterns</th><th><span className="sr-only">Open</span></th></tr></thead>
+          <tbody>
+            {agents.map((agent) => (
+              <tr key={agent.id}>
+                <td>{agent.name}</td>
+                <td className="cell-prompt wide-only">{agent.description || "Coding agent"}</td>
+                <td className="num">{overview.interventions.filter((event) => event.agentId === agent.id).length}</td>
+                <td className="num">{overview.learnedPatterns.filter((pattern) => pattern.agentId === agent.id).length}</td>
+                <td><Button onClick={() => onSelectAgent(agent.id)} aria-label={`View safety for ${agent.name}`}>View safety</Button></td>
+              </tr>
+            ))}
+          </tbody>
+        </DataTable>
       )}
     </section>
   </>;
@@ -111,13 +153,16 @@ function AgentSafety({ overview, agent, onBack, onViewRun }: {
   onBack: () => void;
   onViewRun: (agentId: string, runId: string) => void;
 }) {
-  return <section className="admin-page">
-    <button className="back-link" onClick={onBack}>← Back to {agent.name}</button>
-    <header className="admin-header">
-      <div><span className="eyebrow">Agent safety</span><h1>{agent.name}</h1><p>Operational takeaways for this agent only. Fleet-wide trends remain in Fleet safety.</p></div>
-    </header>
-    <AgentSafetyDetails overview={overview} agent={agent} onViewRun={onViewRun} />
-  </section>;
+  return (
+    <div className="page">
+      <PageHeader
+        title={agent.name}
+        description="This agent only. The Safety page shows every agent."
+        actions={<Button onClick={onBack}>Back to {agent.name}</Button>}
+      />
+      <AgentSafetyDetails overview={overview} agent={agent} onViewRun={onViewRun} />
+    </div>
+  );
 }
 
 /** Live, agent-scoped safety evidence. Reused in the chat-side safety panel. */
@@ -144,62 +189,104 @@ export function AgentSafetyDetails({ overview, agent, onViewRun }: {
       denied: human.filter((event) => event.outcome === "denied" || event.outcome === "timed_out").length,
     };
   }, [agent.id, overview]);
-  const metrics = [["Interventions", data.interventions.length], ["Blocked", data.blocked], ["Redirected", data.redirected], ["Approved actions", data.approvals], ["Denied or timed out", data.denied], ["Learned patterns", data.patterns.length]];
+  const metrics = [
+    ["Interventions", data.interventions.length], ["Blocked", data.blocked], ["Steered", data.redirected],
+    ["Approved actions", data.approvals], ["Denied or timed out", data.denied], ["Learned patterns", data.patterns.length],
+  ] as const;
 
-  return <>
-    <dl className="admin-metrics agent-metrics">{metrics.map(([name, value]) => <div key={String(name)}><dt>{name}</dt><dd>{value}</dd></div>)}</dl>
-    <section className="admin-section">
+  return <div className="safety-details">
+    <section className="page-section">
+      <h2>Totals</h2>
+      <FactTable caption={`Safety totals for ${agent.name}`} facts={metrics} />
+    </section>
+    <section className="page-section">
       <h2>What this agent needed help with</h2>
-      {data.categories.length === 0 ? <p className="muted-copy">No categorized interventions have been recorded for this agent.</p> : <ul className="category-list">{data.categories.map(({ category, count }) => <li key={category}><span>{label(category)}</span><strong>{count}</strong></li>)}</ul>}
+      {data.categories.length === 0
+        ? <p className="meta">No categorized interventions have been recorded for this agent.</p>
+        : <CategoryTable caption={`Interventions by category for ${agent.name}`} categories={data.categories} />}
     </section>
-    <section className="admin-section">
+    <section className="page-section">
       <h2>Intervention history</h2>
-      {data.interventions.length === 0 ? <p className="muted-copy">No interventions have been recorded for this agent.</p> : <InterventionList interventions={data.interventions} onViewRun={onViewRun} />}
+      {data.interventions.length === 0
+        ? <p className="meta">No interventions have been recorded for this agent.</p>
+        : <InterventionList interventions={data.interventions} onViewRun={onViewRun} />}
     </section>
-    <section className="admin-section">
+    <section className="page-section">
       <h2>Learned safety memory</h2>
-      <p className="muted-copy">These are warn-and-steer signals only; they cannot approve or block an action.</p>
-      {data.patterns.length === 0 ? <p className="muted-copy">No learned patterns have been recorded for this agent.</p> : <PatternList patterns={data.patterns} />}
+      <p className="meta">{PATTERN_NOTE}</p>
+      {data.patterns.length === 0
+        ? <p className="meta">No learned patterns have been recorded for this agent.</p>
+        : <PatternList patterns={data.patterns} />}
     </section>
-  </>;
+  </div>;
 }
 
 function Interventions({ overview, onViewRun }: { overview: AdminOverview; onViewRun: (agentId: string, runId: string) => void }) {
-  return <section className="admin-section">
+  return <section className="page-section">
     <h2>Interventions</h2>
-    {overview.interventions.length === 0 ? <p className="muted-copy">No interventions have been recorded.</p> : (
-      <InterventionList interventions={overview.interventions} onViewRun={onViewRun} />
-    )}
+    {overview.interventions.length === 0
+      ? <p className="meta">No interventions have been recorded.</p>
+      : <InterventionList interventions={overview.interventions} onViewRun={onViewRun} />}
   </section>;
 }
 
+function outcomeMark(outcome: AdminOverview["interventions"][number]["outcome"]): ReactNode {
+  switch (outcome) {
+    case "blocked": return <DecisionMark decision="block" />;
+    case "redirected": return <DecisionMark decision="steer" />;
+    case "approved": return <DecisionMark decision="allow" label="Approved" />;
+    case "denied": return <DecisionMark decision="block" label="Denied" />;
+    case "timed_out": return <DecisionMark decision="block" label="Timed out" />;
+    case "runtime_failure": return <DecisionMark decision="block" label="Runtime failure" />;
+    case "warning": return <span className="badge badge-held">Warning</span>;
+  }
+}
+
 function InterventionList({ interventions, onViewRun }: { interventions: AdminOverview["interventions"]; onViewRun: (agentId: string, runId: string) => void }) {
-  return <div className="intervention-list">{interventions.map((event) => (
-        <article className="intervention" key={event.id}>
-          <div><strong>{event.agentName}</strong><span>{new Date(event.at).toLocaleString()}</span></div>
-          <p>{event.summary}</p>
-          <footer><span className="event-tag">{label(event.layer)}</span><span className="event-tag">{label(event.outcome)}</span>{event.category && <span className="event-tag">{label(event.category)}</span>}<button onClick={() => onViewRun(event.agentId, event.runId)}>View run</button></footer>
-        </article>
-      ))}</div>;
+  return <ol className="safety-list">{interventions.map((event) => (
+    <li className="safety-event" key={event.id}>
+      <div className="safety-event-mark">{outcomeMark(event.outcome)}</div>
+      <div className="safety-event-body">
+        <p>{event.summary}</p>
+        <div className="cluster meta">
+          <span>{event.agentName}</span>
+          <time dateTime={event.at}>{new Date(event.at).toLocaleString()}</time>
+          <span>{label(event.layer)} layer</span>
+          {event.category && <span>{label(event.category)}</span>}
+        </div>
+      </div>
+      <Button onClick={() => onViewRun(event.agentId, event.runId)}>View run</Button>
+    </li>
+  ))}</ol>;
 }
 
 function Patterns({ overview }: { overview: AdminOverview }) {
-  return <section className="admin-section">
+  return <section className="page-section">
     <h2>Learned patterns</h2>
-    <p className="muted-copy">These are warn-and-steer signals only; they cannot approve or block an action.</p>
-    {overview.learnedPatterns.length === 0 ? <p className="muted-copy">No learned patterns have been recorded.</p> : (
-      <PatternList patterns={overview.learnedPatterns} />
-    )}
+    <p className="meta">{PATTERN_NOTE}</p>
+    {overview.learnedPatterns.length === 0
+      ? <p className="meta">No learned patterns have been recorded.</p>
+      : <PatternList patterns={overview.learnedPatterns} />}
   </section>;
 }
 
 function PatternList({ patterns }: { patterns: AdminOverview["learnedPatterns"] }) {
-  return <div className="pattern-list">{patterns.map((pattern, index) => (
-        <article className="pattern" key={`${pattern.agentId}:${pattern.value}:${index}`}>
-          <div><strong>{pattern.value}</strong><span>{pattern.agentName} · {pattern.subjectType}{pattern.derivedFamily ? " · derived family" : ""}</span></div>
-          <p>Precondition: {pattern.precondition}{pattern.channel ? ` · Channel: ${pattern.channel}` : ""}</p>
-          <p className="muted-copy">{pattern.effect}</p>
-          <footer><span>{pattern.sightings} sightings{pattern.conversations !== null ? ` · ${pattern.conversations} conversations` : ""}</span>{pattern.recurring && <span className="event-tag">Recurring</span>}{pattern.needsAttention && <span className="event-tag">Needs attention</span>}</footer>
-        </article>
-      ))}</div>;
+  return <ul className="safety-list">{patterns.map((pattern, index) => (
+    <li className="safety-pattern" key={`${pattern.agentId}:${pattern.value}:${index}`}>
+      <div className="cluster">
+        <ForeignInline>{pattern.value}</ForeignInline>
+        {pattern.recurring && <span className="badge">Recurring</span>}
+        {pattern.needsAttention && <span className="badge badge-held">Needs attention</span>}
+      </div>
+      <p>{pattern.effect}</p>
+      <div className="cluster meta">
+        <span>{pattern.agentName}</span>
+        <span>Watches a {pattern.subjectType}{pattern.derivedFamily ? ", derived family" : ""}</span>
+        <span>Precondition: {pattern.precondition}</span>
+        {pattern.channel && <span>Channel: {pattern.channel}</span>}
+        <span>{pattern.sightings} sighting{pattern.sightings === 1 ? "" : "s"}</span>
+        {pattern.conversations !== null && <span>{pattern.conversations} conversation{pattern.conversations === 1 ? "" : "s"}</span>}
+      </div>
+    </li>
+  ))}</ul>;
 }
