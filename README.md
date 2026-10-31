@@ -643,7 +643,7 @@ want the result without paying for the first two runs.
 | `GUARDRAIL_SEMANTIC_MODEL` | Configured Agent model | Optional model override for semantic review. |
 | `GUARDRAIL_SEMANTIC_TIMEOUT_MS` | `15000` | Timeout for one semantic assessment. Required action reviews delegate to HITL when available and otherwise fail closed; reasoning-only reviews fail open with a warning. |
 | `HITL_ENABLED` | `false` | Enable one-shot human confirmation for high-consequence commands, semantic uncertainty, and unavailable required semantic reviews. Uses the same `workspace-write` + `untrusted` Runtime boundary; routine approvals remain automatic. |
-| `HITL_TIMEOUT_MS` | `120000` | Maximum time a Runtime approval may wait for a person. Timeout denies that action and lets the turn continue. |
+| `HITL_TIMEOUT_MS` | `120000` | Maximum time an approval may wait for a person, in single-agent turns and multi-agent Runs. Timeout denies that action and lets the turn continue. |
 | `LOCAL_POC_DATA_ROOT` | platform-specific | Local metadata / workspace / session directory for `npm run poc`. |
 
 The default sensitive markers: `.env`, `id_rsa`, `id_ed25519`, `.pem`, `.ssh/`,

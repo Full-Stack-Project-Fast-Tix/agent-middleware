@@ -111,6 +111,31 @@ export async function createApp(
         : false,
   });
 
+  // Before any route: the awaited static-files register below fixes the handler of every route added so far.
+  app.setErrorHandler((error, request, reply) => {
+    const appError = error instanceof Error ? error : new Error(String(error));
+    const validationError = error instanceof z.ZodError;
+    const frameworkStatus =
+      typeof (error as { statusCode?: unknown }).statusCode === "number"
+        ? (error as { statusCode: number }).statusCode
+        : null;
+    const statusCode =
+      error instanceof HttpError
+        ? error.statusCode
+        : validationError
+          ? 400
+          : frameworkStatus && frameworkStatus >= 400 && frameworkStatus <= 599
+            ? frameworkStatus
+            : 500;
+    if (statusCode >= 500) {
+      request.log.error(appError);
+    }
+    return reply.code(statusCode).send({
+      error: appError.message,
+      ...(validationError ? { details: error.issues } : {}),
+    });
+  });
+
   // Signed-in sessions replace the shared token when the server has identity.
   if (extensions.identity) registerSessionAuth(app, extensions.identity, extensions.signInThrottle);
   app.addHook("onRequest", async (request, reply) => {
@@ -355,30 +380,6 @@ export async function createApp(
       return reply.sendFile("index.html");
     });
   }
-
-  app.setErrorHandler((error, request, reply) => {
-    const appError = error instanceof Error ? error : new Error(String(error));
-    const validationError = error instanceof z.ZodError;
-    const frameworkStatus =
-      typeof (error as { statusCode?: unknown }).statusCode === "number"
-        ? (error as { statusCode: number }).statusCode
-        : null;
-    const statusCode =
-      error instanceof HttpError
-        ? error.statusCode
-        : validationError
-          ? 400
-          : frameworkStatus && frameworkStatus >= 400 && frameworkStatus <= 599
-            ? frameworkStatus
-            : 500;
-    if (statusCode >= 500) {
-      request.log.error(appError);
-    }
-    return reply.code(statusCode).send({
-      error: appError.message,
-      ...(validationError ? { details: error.issues } : {}),
-    });
-  });
 
   return app;
 }

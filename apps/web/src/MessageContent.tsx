@@ -53,6 +53,41 @@ function renderBlocks(content: string): ReactNode[] {
       continue;
     }
 
+    if (isTableStart(line, lines[index + 1])) {
+      const header = tableCells(line);
+      const rows: string[][] = [];
+      index += 2;
+      while (index < lines.length && (lines[index] ?? "").trim().startsWith("|")) {
+        rows.push(tableCells(lines[index] ?? ""));
+        index += 1;
+      }
+      blocks.push(
+        <div className="message-table" key={`table:${index}`}>
+          <table>
+            <thead>
+              <tr>{header.map((cell, cellIndex) => <th key={cellIndex}>{renderInline(cell)}</th>)}</tr>
+            </thead>
+            <tbody>
+              {rows.map((row, rowIndex) => (
+                <tr key={rowIndex}>{row.map((cell, cellIndex) => <td key={cellIndex}>{renderInline(cell)}</td>)}</tr>
+              ))}
+            </tbody>
+          </table>
+        </div>,
+      );
+      continue;
+    }
+
+    if (isQuote(line)) {
+      const quoted: string[] = [];
+      while (index < lines.length && isQuote(lines[index] ?? "")) {
+        quoted.push((lines[index] ?? "").replace(/^\s*>\s?/, ""));
+        index += 1;
+      }
+      blocks.push(<blockquote key={`quote:${index}`}>{renderInline(quoted.join(" "))}</blockquote>);
+      continue;
+    }
+
     if (isBullet(line)) {
       const items: Array<{ text: string; depth: number }> = [];
       while (index < lines.length && isBullet(lines[index] ?? "")) {
@@ -102,7 +137,25 @@ function renderBlocks(content: string): ReactNode[] {
 }
 
 function startsBlock(line: string): boolean {
-  return line.trim() === "" || /^\s*```/.test(line) || /^#{1,4}\s+/.test(line) || isBullet(line) || isNumbered(line);
+  return line.trim() === "" || /^\s*```/.test(line) || /^#{1,4}\s+/.test(line) || isBullet(line) || isNumbered(line) || isQuote(line);
+}
+
+function isQuote(line: string): boolean {
+  return /^\s*>/.test(line);
+}
+
+/** A Markdown table needs a header row followed by its `| --- |` divider, so a lone pipe stays text. */
+function isTableStart(line: string, next: string | undefined): boolean {
+  return line.trim().startsWith("|") && next !== undefined && /^\s*\|[\s:|-]*-[\s:|-]*$/.test(next);
+}
+
+function tableCells(line: string): string[] {
+  return line
+    .trim()
+    .replace(/^\|/, "")
+    .replace(/(?<!\\)\|$/, "")
+    .split(/(?<!\\)\|/)
+    .map((cell) => cell.trim().replaceAll("\\|", "|"));
 }
 
 function isBullet(line: string): boolean {

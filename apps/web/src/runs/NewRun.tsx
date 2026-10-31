@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { Agent, OrchestrationMode } from "@launchpad/shared";
 import { navigate, paths } from "../router";
-import { Button, ErrorState, PageHeader, Select } from "../ui";
+import { Button, ButtonLink, EmptyState, ErrorState, PageHeader, Select } from "../ui";
 import { useCurrentWorkspace } from "../useCurrentWorkspace";
 import { runsApi } from "./runs-api";
 
@@ -48,6 +48,17 @@ export function NewRun() {
       setBusy(false);
     }
   };
+
+  if (current?.role === "auditor") {
+    return (
+      <div className="page page-narrow">
+        <PageHeader title="Start a run" />
+        <EmptyState title="Auditors cannot start runs" action={<ButtonLink to={paths.runs}>Go to runs</ButtonLink>}>
+          You are an Auditor in {current.name}, so you can read its runs. A developer or security admin can start one.
+        </EmptyState>
+      </div>
+    );
+  }
 
   return (
     <div className="page page-narrow">

@@ -298,6 +298,30 @@
   background: none;
 }
 
+.message-body-rich blockquote {
+  margin: 0;
+  padding-left: 12px;
+  border-left: 2px solid var(--line-strong);
+}
+
+.message-table {
+  overflow-x: auto;
+}
+
+.message-table table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.message-table th,
+.message-table td {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--line-strong);
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: normal;
+}
+
 /* Empty conversation */
 
 .welcome {

@@ -17,6 +17,11 @@ export interface CurrentWorkspace {
 
 const Context = createContext<CurrentWorkspace | null>(null);
 
+/** Only hides what the server would refuse. Until the role is known, it still offers the action. */
+export function useMayStartRuns(): boolean {
+  return useCurrentWorkspace().current?.role !== "auditor";
+}
+
 function readSaved(): string | null {
   try {
     return window.localStorage.getItem(CURRENT_KEY);

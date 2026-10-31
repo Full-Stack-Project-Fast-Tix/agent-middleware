@@ -462,8 +462,11 @@ confirm, so changing it means changing `mayAnswerApproval` and this entry.
 **Decision (31 October 2026):** Two things produce a `require_approval` in
 multi-agent runs:
 
-1. A command that `isHighConsequenceCommand` matches, such as `git push` or a
-   deploy, gives `high_consequence`. The single-agent path already did this.
+1. A command that `isHighConsequenceCommand` matches, such as a deploy, gives
+   `high_consequence`. The single-agent path already did this. `git push` and
+   other network commands match too, but the platform baseline denies network, so
+   they are refused rather than asked: Codex's sandbox would deny the network even
+   after a yes, so there is nothing a person could usefully approve.
 2. The semantic monitor being unsure or unavailable gives `semantic_uncertainty`
    or `semantic_unavailable`, as before.
 

@@ -27,6 +27,22 @@ describe("HTTP boundary", () => {
     await app.close();
   });
 
+  it("keeps the API's error answers in production, where the web files are served too", async () => {
+    const app = await createApp(
+      loadConfig({ NODE_ENV: "production", HOST: "127.0.0.1" }),
+      { ...service, getAgent: () => { throw new HttpError(404, "Agent not found"); } } as unknown as AgentService,
+    );
+
+    const invalid = await app.inject({ method: "POST", url: "/api/agents", payload: {} });
+    expect(invalid.statusCode).toBe(400);
+    expect(invalid.json().details).toBeDefined();
+
+    const missing = await app.inject({ method: "GET", url: "/api/agents/00000000-0000-4000-8000-000000000001" });
+    expect(missing.statusCode).toBe(404);
+    expect(missing.json()).toEqual({ error: "Agent not found" });
+    await app.close();
+  });
+
   it("preserves Fastify client error status codes", async () => {
     const app = await createApp(loadConfig({ NODE_ENV: "test" }), service);
     const malformed = await app.inject({

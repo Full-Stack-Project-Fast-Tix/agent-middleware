@@ -2,6 +2,7 @@ import { Link, paths } from "../router";
 import { ButtonLink, DataTable, DecisionGlyph, EmptyState, ErrorState, Loading, PageHeader } from "../ui";
 import { formatWhen } from "./format";
 import { RunsTable, WorkspaceRequired } from "./RunsPage";
+import { useMayStartRuns } from "../useCurrentWorkspace";
 import { useRunList } from "./useRunList";
 
 const PAGE = 20;
@@ -40,6 +41,7 @@ function WaitingOnYou({ workspaceId }: { workspaceId: string }) {
 
 function RecentRuns({ workspaceId }: { workspaceId: string }) {
   const { list, error, refresh } = useRunList(workspaceId, { limit: PAGE });
+  const mayStart = useMayStartRuns();
   if (list === null) {
     return error !== null
       ? <ErrorState title="The runs did not load" message={error} onRetry={() => void refresh()} />
@@ -49,9 +51,9 @@ function RecentRuns({ workspaceId }: { workspaceId: string }) {
     return (
       <EmptyState
         title="No runs in this workspace yet"
-        action={<ButtonLink to={paths.newRun} variant="primary">Start a run</ButtonLink>}
+        action={mayStart && <ButtonLink to={paths.newRun} variant="primary">Start a run</ButtonLink>}
       >
-        Start a run to follow its tasks and answer what it asks for.
+        {mayStart ? "Start a run to follow its tasks and answer what it asks for." : "Runs your team starts appear here."}
       </EmptyState>
     );
   }
@@ -66,12 +68,13 @@ function RecentRuns({ workspaceId }: { workspaceId: string }) {
 }
 
 export function Dashboard() {
+  const mayStart = useMayStartRuns();
   return (
     <div className="page">
       <PageHeader
         title="Dashboard"
         description="What needs a decision now, and what ran recently in this workspace."
-        actions={<ButtonLink to={paths.newRun} variant="primary" page>Start a run</ButtonLink>}
+        actions={mayStart && <ButtonLink to={paths.newRun} variant="primary" page>Start a run</ButtonLink>}
       />
       <WorkspaceRequired>
         {(workspaceId) => (

@@ -274,6 +274,8 @@ class StatefulExecutionGuard implements ExecutionGuard {
       this.pending.set(parsed.actionId, parsed);
       return this.decision("require_approval", warnings, {
         approvalReason: "high_consequence",
+        // Not the first warning: an aligned semantic note would read as the reason it is held.
+        reason: "This command can reach outside the run's working copy, so a person decides.",
         ...(deferredSteer === null ? {} : { steer: deferredSteer }),
       });
     }
@@ -320,7 +322,7 @@ class StatefulExecutionGuard implements ExecutionGuard {
     this.pending.delete(actionId);
     if (outcome === "approved") return this.decision("allow", []);
     const severity: FindingSeverity = outcome === "timed_out" ? "high" : "medium";
-    const finding = policyFinding(`approval-${outcome}`, `The action was ${outcome}; it must not be retried in this execution.`, severity, true);
+    const finding = policyFinding(`approval-${outcome}`, `The action was ${outcome.replace("_", " ")}; it must not be retried in this execution.`, severity, true);
     return this.decision("block", [finding], {
       stop: "action",
       steer: "Do not retry the declined action. Continue with a safe alternative that serves the original task.",

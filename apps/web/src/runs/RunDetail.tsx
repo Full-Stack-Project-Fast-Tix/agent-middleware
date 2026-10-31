@@ -91,6 +91,7 @@ export function RunDetail({ runId }: { runId: string }) {
   const waiting = pendingApprovals(view);
   // Only hides what the server would refuse. Until the role is known, it still offers the buttons.
   const role = workspaces?.find((workspace) => workspace.id === view.run.workspaceId)?.role;
+  const mayAct = role !== "auditor";
   const canAnswer = (approval: Approval) =>
     role === undefined || viewerId === null ||
     mayAnswerApproval({ role, userId: viewerId, runCreatedByUserId: view.run.createdByUserId, reason: approval.reason });
@@ -148,19 +149,19 @@ export function RunDetail({ runId }: { runId: string }) {
           </div>
         </div>
         <div className="run-head-actions">
-          {active && !confirmingCancel && (
+          {mayAct && active && !confirmingCancel && (
             <Button variant="danger" onClick={() => setConfirmingCancel(true)} disabled={run.cancelRequestedAt !== null}>
               Cancel run
             </Button>
           )}
-          {active && confirmingCancel && (
+          {mayAct && active && confirmingCancel && (
             <span className="cancel-confirm" role="group" aria-label="Confirm cancelling this run">
               <span>Stop running work and cancel what is held?</span>
               <Button onClick={() => setConfirmingCancel(false)}>Keep running</Button>
               <Button variant="danger" onClick={() => void cancel()}>Cancel run</Button>
             </span>
           )}
-          <ButtonLink to={paths.newRun}>New run</ButtonLink>
+          {mayAct && <ButtonLink to={paths.newRun}>New run</ButtonLink>}
         </div>
       </header>
 

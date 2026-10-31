@@ -2,7 +2,7 @@ import { useState, type ReactNode } from "react";
 import { RUN_STATUSES, type RunStatus, type RunSummary } from "@launchpad/shared";
 import { Link, navigate, paths, type Route } from "../router";
 import { Button, ButtonLink, DataTable, EmptyState, ErrorState, Loading, PageHeader, Select, StatusBadge } from "../ui";
-import { useCurrentWorkspace } from "../useCurrentWorkspace";
+import { useCurrentWorkspace, useMayStartRuns } from "../useCurrentWorkspace";
 import { formatWhen } from "./format";
 import { NewRun } from "./NewRun";
 import { RunDetail } from "./RunDetail";
@@ -79,6 +79,7 @@ function RunsList({ workspaceId, status, onClearFilter }: {
   onClearFilter: () => void;
 }) {
   const { list, error, loadingMore, loadMore, refresh } = useRunList(workspaceId, { limit: 50, status: status ?? undefined });
+  const mayStart = useMayStartRuns();
 
   if (list === null) {
     return error !== null
@@ -96,9 +97,9 @@ function RunsList({ workspaceId, status, onClearFilter }: {
     ) : (
       <EmptyState
         title="No runs in this workspace yet"
-        action={<ButtonLink to={paths.newRun} variant="primary">Start a run</ButtonLink>}
+        action={mayStart && <ButtonLink to={paths.newRun} variant="primary">Start a run</ButtonLink>}
       >
-        Start a run to follow its tasks and answer what it asks for.
+        {mayStart ? "Start a run to follow its tasks and answer what it asks for." : "Runs your team starts appear here."}
       </EmptyState>
     );
   }
@@ -114,6 +115,7 @@ function RunsList({ workspaceId, status, onClearFilter }: {
 }
 
 function RunsIndex() {
+  const mayStart = useMayStartRuns();
   const [status, setStatus] = useState<RunStatus | null>(() => statusFromSearch(window.location.search));
   const choose = (next: RunStatus | null) => {
     setStatus(next);
@@ -125,7 +127,7 @@ function RunsIndex() {
       <PageHeader
         title="Runs"
         description="Every run in this workspace, newest first."
-        actions={<ButtonLink to={paths.newRun} variant="primary" page>Start a run</ButtonLink>}
+        actions={mayStart && <ButtonLink to={paths.newRun} variant="primary" page>Start a run</ButtonLink>}
       />
       <div>
         <Select
