@@ -26,10 +26,13 @@ function navItems(route: Route, authMethod: "token" | "password"): NavItem[] {
   return [
     { to: paths.dashboard, label: "Dashboard", current: route.page === "dashboard" },
     { to: paths.runs, label: "Runs", current: route.page === "runs" || route.page === "new-run" || route.page === "run" },
-    { to: paths.playground, label: "Playground", current: route.page === "playground" },
-    { to: paths.safety, label: "Safety", current: route.page === "safety" },
-    // The member routes exist only in password mode.
-    ...(authMethod === "password" ? [{ to: paths.members, label: "Members", current: route.page === "members" }] : []),
+    // The single-agent routes exist only in token mode, and the member routes only in password mode.
+    ...(authMethod === "token"
+      ? [
+          { to: paths.playground, label: "Playground", current: route.page === "playground" },
+          { to: paths.safety, label: "Safety", current: route.page === "safety" },
+        ]
+      : [{ to: paths.members, label: "Members", current: route.page === "members" }]),
   ];
 }
 
@@ -51,6 +54,7 @@ function CurrentPage({ route, playground, authMethod, viewer }: {
   authMethod: "token" | "password";
   viewer: User | null;
 }) {
+  if (authMethod === "password" && (route.page === "playground" || route.page === "safety")) return <NotFound />;
   switch (route.page) {
     case "dashboard":
       return <Dashboard />;
@@ -145,7 +149,7 @@ function AppSession({ notice, onSignedOut }: { notice: string | null; onSignedOu
     };
   }, [bootstrap]);
 
-  const onSafetyPage = route.page === "safety" && authRequired === false;
+  const onSafetyPage = route.page === "safety" && authRequired === false && authMethod === "token";
   useEffect(() => {
     if (onSafetyPage) openAdmin();
   }, [onSafetyPage, openAdmin]);
@@ -168,8 +172,12 @@ function AppSession({ notice, onSignedOut }: { notice: string | null; onSignedOu
   }, [signedIn]);
 
   const unlock = async ({ email, secret }: { email: string; secret: string }) => {
-    setAuthToken(authMethod === "password" ? (await api.signIn(email, secret)).token : secret);
-    await bootstrap();
+    if (authMethod === "password") {
+      setAuthToken((await api.signIn(email, secret)).token);
+    } else {
+      setAuthToken(secret);
+      await bootstrap();
+    }
     setAuthRequired(false);
   };
 

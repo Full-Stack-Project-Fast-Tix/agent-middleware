@@ -161,141 +161,146 @@ export async function createApp(
       : { required: config.authToken.length > 0, method: "token" },
   );
 
-  app.get("/api/system", async () => service.systemInfo());
+  // The single-agent routes have no workspace to check a role against, so they
+  // exist only with the shared token. With signed-in users they would let any
+  // account, even an auditor or one in no workspace, run prompts and write files.
+  if (extensions.identity === undefined) {
+    app.get("/api/system", async () => service.systemInfo());
 
-  app.get("/api/admin/overview", async () => service.adminOverview());
+    app.get("/api/admin/overview", async () => service.adminOverview());
 
-  app.get("/api/agents", async () => ({ agents: service.listAgents() }));
+    app.get("/api/agents", async () => ({ agents: service.listAgents() }));
 
-  app.post("/api/agents", async (request, reply) => {
-    const body = createAgentBody.parse(request.body);
-    const agent = await service.createAgent(body);
-    return reply.code(201).send({ agent });
-  });
+    app.post("/api/agents", async (request, reply) => {
+      const body = createAgentBody.parse(request.body);
+      const agent = await service.createAgent(body);
+      return reply.code(201).send({ agent });
+    });
 
-  app.get("/api/agents/:id", async (request) => {
-    const { id } = agentIdParams.parse(request.params);
-    return { agent: service.getAgent(id) };
-  });
+    app.get("/api/agents/:id", async (request) => {
+      const { id } = agentIdParams.parse(request.params);
+      return { agent: service.getAgent(id) };
+    });
 
-  app.patch("/api/agents/:id", async (request) => {
-    const { id } = agentIdParams.parse(request.params);
-    const body = updateAgentBody.parse(request.body);
-    return { agent: await service.updateAgent(id, body) };
-  });
+    app.patch("/api/agents/:id", async (request) => {
+      const { id } = agentIdParams.parse(request.params);
+      const body = updateAgentBody.parse(request.body);
+      return { agent: await service.updateAgent(id, body) };
+    });
 
-  app.delete("/api/agents/:id", async (request) => {
-    const { id } = agentIdParams.parse(request.params);
-    return service.deleteAgent(id);
-  });
+    app.delete("/api/agents/:id", async (request) => {
+      const { id } = agentIdParams.parse(request.params);
+      return service.deleteAgent(id);
+    });
 
-  app.post("/api/agents/:id/start", async (request) => {
-    const { id } = agentIdParams.parse(request.params);
-    return { agent: await service.startAgent(id) };
-  });
+    app.post("/api/agents/:id/start", async (request) => {
+      const { id } = agentIdParams.parse(request.params);
+      return { agent: await service.startAgent(id) };
+    });
 
-  app.post("/api/agents/:id/stop", async (request) => {
-    const { id } = agentIdParams.parse(request.params);
-    return { agent: await service.stopAgent(id) };
-  });
+    app.post("/api/agents/:id/stop", async (request) => {
+      const { id } = agentIdParams.parse(request.params);
+      return { agent: await service.stopAgent(id) };
+    });
 
-  app.get("/api/agents/:id/messages", async (request) => {
-    const { id } = agentIdParams.parse(request.params);
-    return { messages: service.getMessages(id) };
-  });
+    app.get("/api/agents/:id/messages", async (request) => {
+      const { id } = agentIdParams.parse(request.params);
+      return { messages: service.getMessages(id) };
+    });
 
-  app.get("/api/agents/:id/runs", async (request) => {
-    const { id } = agentIdParams.parse(request.params);
-    return { runs: service.getRuns(id) };
-  });
+    app.get("/api/agents/:id/runs", async (request) => {
+      const { id } = agentIdParams.parse(request.params);
+      return { runs: service.getRuns(id) };
+    });
 
-  app.post("/api/agents/:id/messages", async (request, reply) => {
-    const { id } = agentIdParams.parse(request.params);
-    const body = messageBody.parse(request.body);
-    const result = await service.sendMessage(id, body.content);
-    return reply.code(202).send(result);
-  });
+    app.post("/api/agents/:id/messages", async (request, reply) => {
+      const { id } = agentIdParams.parse(request.params);
+      const body = messageBody.parse(request.body);
+      const result = await service.sendMessage(id, body.content);
+      return reply.code(202).send(result);
+    });
 
-  // ---------------------------------------------------------------------
-  // Workspace files
-  // ---------------------------------------------------------------------
-  //
-  // Everything this project guards against begins with a file somebody placed
-  // in a workspace. Until these routes existed the only way to put one there,
-  // or to look at one, was a terminal — which meant the most important input to
-  // the system lived outside the product entirely.
-  //
-  // Path containment is enforced in workspace-files.ts against the Agent's own
-  // workspace root, and a rejected path is a 400 rather than a 500 because it
-  // is bad input, not a broken server.
+    // ---------------------------------------------------------------------
+    // Workspace files
+    // ---------------------------------------------------------------------
+    //
+    // Everything this project guards against begins with a file somebody placed
+    // in a workspace. Until these routes existed the only way to put one there,
+    // or to look at one, was a terminal — which meant the most important input to
+    // the system lived outside the product entirely.
+    //
+    // Path containment is enforced in workspace-files.ts against the Agent's own
+    // workspace root, and a rejected path is a 400 rather than a 500 because it
+    // is bad input, not a broken server.
 
-  app.get("/api/agents/:id/workspace", async (request) => {
-    const { id } = agentIdParams.parse(request.params);
-    const agent = service.getAgent(id);
-    return { files: await listWorkspaceFiles(agent.workspacePath) };
-  });
+    app.get("/api/agents/:id/workspace", async (request) => {
+      const { id } = agentIdParams.parse(request.params);
+      const agent = service.getAgent(id);
+      return { files: await listWorkspaceFiles(agent.workspacePath) };
+    });
 
-  app.get("/api/agents/:id/workspace/file", async (request) => {
-    const { id } = agentIdParams.parse(request.params);
-    const { path: relative } = workspacePathQuery.parse(request.query);
-    const agent = service.getAgent(id);
+    app.get("/api/agents/:id/workspace/file", async (request) => {
+      const { id } = agentIdParams.parse(request.params);
+      const { path: relative } = workspacePathQuery.parse(request.query);
+      const agent = service.getAgent(id);
 
-    try {
-      return { file: await readWorkspaceFile(agent.workspacePath, relative) };
-    } catch (error) {
-      if (error instanceof WorkspacePathError) throw new HttpError(400, error.message);
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-        throw new HttpError(404, "No such file in this workspace");
+      try {
+        return { file: await readWorkspaceFile(agent.workspacePath, relative) };
+      } catch (error) {
+        if (error instanceof WorkspacePathError) throw new HttpError(400, error.message);
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+          throw new HttpError(404, "No such file in this workspace");
+        }
+        throw error;
       }
-      throw error;
-    }
-  });
+    });
 
-  app.put("/api/agents/:id/workspace/file", async (request) => {
-    const { id } = agentIdParams.parse(request.params);
-    const body = workspaceFileBody.parse(request.body);
-    const agent = service.getAgent(id);
+    app.put("/api/agents/:id/workspace/file", async (request) => {
+      const { id } = agentIdParams.parse(request.params);
+      const body = workspaceFileBody.parse(request.body);
+      const agent = service.getAgent(id);
 
-    try {
-      return { file: await writeWorkspaceFile(agent.workspacePath, body.path, body.content) };
-    } catch (error) {
-      if (error instanceof WorkspacePathError) throw new HttpError(400, error.message);
-      throw error;
-    }
-  });
+      try {
+        return { file: await writeWorkspaceFile(agent.workspacePath, body.path, body.content) };
+      } catch (error) {
+        if (error instanceof WorkspacePathError) throw new HttpError(400, error.message);
+        throw error;
+      }
+    });
 
-  app.get("/api/runs/:id", async (request) => {
-    const { id } = runIdParams.parse(request.params);
-    return { run: service.getRun(id) };
-  });
+    app.get("/api/runs/:id", async (request) => {
+      const { id } = runIdParams.parse(request.params);
+      return { run: service.getRun(id) };
+    });
 
-  app.post("/api/runs/:id/approval", async (request) => {
-    const { id } = runIdParams.parse(request.params);
-    const body = approvalBody.parse(request.body);
-    return { run: await service.resolveApproval(id, body.approvalId, body.decision) };
-  });
+    app.post("/api/runs/:id/approval", async (request) => {
+      const { id } = runIdParams.parse(request.params);
+      const body = approvalBody.parse(request.body);
+      return { run: await service.resolveApproval(id, body.approvalId, body.decision) };
+    });
 
-  /**
-   * The raw trace of a run, as JSON Lines: one protocol message per line, in
-   * the order they crossed the wire. Served as text rather than JSON because
-   * the whole point is that it is a log, not a document.
-   */
-  app.get("/api/runs/:id/trace", async (request, reply) => {
-    const { id } = runIdParams.parse(request.params);
-    service.getRun(id); // 404s if the run does not exist
+    /**
+     * The raw trace of a run, as JSON Lines: one protocol message per line, in
+     * the order they crossed the wire. Served as text rather than JSON because
+     * the whole point is that it is a log, not a document.
+     */
+    app.get("/api/runs/:id/trace", async (request, reply) => {
+      const { id } = runIdParams.parse(request.params);
+      service.getRun(id); // 404s if the run does not exist
 
-    // The path is derived from the run id rather than read from the run
-    // record, so a trace can be read while the run is still going. The file is
-    // appended as events arrive, so polling this shows steps appearing live.
-    const path = traceFilePath(config.dataDirectory, id);
-    const contents = await readFile(path, "utf8").catch(() => null);
+      // The path is derived from the run id rather than read from the run
+      // record, so a trace can be read while the run is still going. The file is
+      // appended as events arrive, so polling this shows steps appearing live.
+      const path = traceFilePath(config.dataDirectory, id);
+      const contents = await readFile(path, "utf8").catch(() => null);
 
-    if (contents === null) {
-      return reply.code(404).send({ error: "No trace for this run yet" });
-    }
+      if (contents === null) {
+        return reply.code(404).send({ error: "No trace for this run yet" });
+      }
 
-    return reply.type("application/x-ndjson").send(contents);
-  });
+      return reply.type("application/x-ndjson").send(contents);
+    });
+  }
 
   if (extensions.runEvents) {
     registerRunEventStream(app, extensions.runEvents);

@@ -16,7 +16,7 @@ const service = {
 const identity = {
   signIn: async () => null,
   signOut: async () => undefined,
-  userForToken: async (token: string) => (token === "good" ? { id: "user" } : null),
+  userForToken: async (token: string) => (token === "good" ? { id: "visible-only-with-a-credential" } : null),
 } as unknown as Identity;
 
 const apps: Array<Awaited<ReturnType<typeof createApp>>> = [];
@@ -39,7 +39,7 @@ describe("API access", () => {
     expect(allowed.statusCode).toBe(200);
   });
 
-  it.each(encodedPaths)("refuses %s without a session", async (url) => {
+  it.each(["/api/auth/me", "/%61pi/auth/me", "/%61%70%69/auth/me", "/ap%69/auth/me", "/api/%61uth/me"])("refuses %s without a session", async (url) => {
     const app = await createApp(loadConfig({ NODE_ENV: "test" }), service, { identity });
     apps.push(app);
 
