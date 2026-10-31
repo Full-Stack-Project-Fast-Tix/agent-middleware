@@ -23,7 +23,6 @@ import type {
   FileChangeAction,
   OrchestrationMode,
   ProposedAction,
-  RunSnapshot,
   SecurityDecision,
 } from "@launchpad/shared";
 import { STANDARD_AGENTS } from "../db/admin.js";
@@ -32,7 +31,7 @@ import { InMemoryRunStore } from "../orchestrator/in-memory-run-store.js";
 import { Orchestrator } from "../orchestrator/orchestrator.js";
 import type { SupervisorPlan } from "../orchestrator/plan.js";
 import type { PlanRequest, Planner } from "../orchestrator/planner.js";
-import type { AgentDirectory, ExecutionOutcome, ExecutionRequest, ExecutionRuntime, RunStore } from "../orchestrator/ports.js";
+import type { AgentDirectory, ExecutionOutcome, ExecutionRequest, ExecutionRuntime, RunReads, RunStore } from "../orchestrator/ports.js";
 import type { RunEventHub } from "../run-events.js";
 import type { RunRoutesOptions } from "../run-routes.js";
 import type { ExecutionGuard, ResolvedPolicy, SecurityMiddleware } from "../security-middleware.js";
@@ -264,8 +263,8 @@ function pause(ms: number, signal?: AbortSignal): Promise<void> {
   });
 }
 
-/** The RunStore port plus the whole-Run read the snapshot route serves. */
-export type DemoStore = RunStore & { snapshot(runId: string): RunSnapshot | null | Promise<RunSnapshot | null> };
+/** The RunStore port plus the reads the run routes serve. */
+export type DemoStore = RunStore & RunReads;
 
 export interface DemoRuns<S extends DemoStore = InMemoryRunStore> {
   orchestrator: Orchestrator;
@@ -299,6 +298,7 @@ export function createDemoRuns(hub: RunEventHub, options: { pauseScale?: number;
     routes: {
       orchestrator,
       snapshot: async (runId) => store.snapshot(runId),
+      listRuns: (workspaceId, query) => store.listRuns(workspaceId, query),
       approval: (approvalId) => store.getApproval(approvalId),
       currentUserId: () => DEMO_USER_ID,
       workspaceRole: async (workspaceId) => (workspaceId === DEMO_WORKSPACE.id ? "developer" : null),

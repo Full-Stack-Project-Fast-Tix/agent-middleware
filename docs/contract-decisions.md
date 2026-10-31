@@ -288,6 +288,31 @@ without serving the current recovery behavior. Failing/cancelling interrupted
 runs prevents a new middleware process from continuing them with an empty taint
 state.
 
+## 13. Listing a workspace's runs
+
+**Decision (31 October 2026):** Add
+`GET /api/workspaces/:workspaceId/runs`, for any role in the workspace. A
+workspace the caller cannot see answers 404, as its neighbours do.
+
+- **Query:** optional `cursor`, `limit` (default 50, maximum 200) and `status`.
+- **Response:** `{ runs: RunSummary[], nextCursor, pendingApprovalCount }`,
+  newest first. Paging uses the position `(created_at, id)`, so runs that share
+  a timestamp are neither repeated nor skipped.
+- **`RunSummary`:** run identity, status and timestamps, a `userPrompt` cut to
+  280 characters, and `taskCount`, `pendingApprovalCount` and `findingCount`.
+  It leaves out `finalOutput`, `error` and `evaluation`.
+- **`pendingApprovalCount` at the top level:** counts the whole workspace,
+  whatever the page or filter, so the app shell can read it with `limit=1`
+  instead of needing another route.
+- **`status=waiting_approval`:** finds runs waiting on a person even when they
+  are too old for the first page.
+
+**Why:** The recent-runs list was browser `localStorage`, so it showed one
+browser's history rather than the workspace's. Postgres computes the counts in
+one statement per page, using existing indexes, so no migration is needed.
+
+**Review:** P3 (query and store), P2 (`RunReads` beside the `RunStore` port).
+
 ## Guidance for P3's schema
 
 These points are implementation guidance, not part of the contract:

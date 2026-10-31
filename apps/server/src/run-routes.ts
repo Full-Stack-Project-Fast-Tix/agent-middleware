@@ -3,8 +3,11 @@ import { z } from "zod";
 import {
   createRunRequestSchema,
   resolveApprovalRequestSchema,
+  runListQuerySchema,
   type Agent,
   type Approval,
+  type RunListQuery,
+  type RunListResponse,
   type RunSnapshot,
   type WorkspaceRole,
   type WorkspaceSummary,
@@ -17,6 +20,7 @@ import type { Orchestrator } from "./orchestrator/orchestrator.js";
 //
 //   GET  /api/workspaces                                            -> { workspaces }
 //   GET  /api/workspaces/:workspaceId/agents                        -> { agents }
+//   GET  /api/workspaces/:workspaceId/runs   RunListQuery           -> RunListResponse
 //   POST /api/workspaces/:workspaceId/runs   CreateRunRequest       -> 201 { run }
 //   GET  /api/runs/:runId/snapshot                                  -> { snapshot }
 //   POST /api/runs/:runId/cancel                                    -> 202 { run }
@@ -31,6 +35,8 @@ export interface RunRoutesOptions {
   orchestrator: Pick<Orchestrator, "createRun" | "cancel" | "resolveApproval">;
   /** The snapshot and its lastEventSeq, read together (contract decision 9). */
   snapshot(runId: string): Promise<RunSnapshot | null>;
+  /** One page of the workspace's runs, newest first. */
+  listRuns(workspaceId: string, query: RunListQuery): Promise<RunListResponse>;
   /** To find which run, and so which workspace, an approval belongs to. */
   approval(approvalId: string): Promise<Approval | null>;
   /** Who is making the request. */
@@ -75,6 +81,12 @@ export function registerRunRoutes(app: FastifyInstance, options: RunRoutesOption
     const { workspaceId } = workspaceParams.parse(request.params);
     await roleIn(request, workspaceId, "Workspace not found");
     return { agents: await options.listAgents(workspaceId) };
+  });
+
+  app.get("/api/workspaces/:workspaceId/runs", async (request) => {
+    const { workspaceId } = workspaceParams.parse(request.params);
+    await roleIn(request, workspaceId, "Workspace not found");
+    return options.listRuns(workspaceId, runListQuerySchema.parse(request.query));
   });
 
   app.post("/api/workspaces/:workspaceId/runs", async (request, reply) => {

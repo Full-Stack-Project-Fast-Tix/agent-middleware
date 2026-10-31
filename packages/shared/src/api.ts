@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { idSchema, jsonObjectSchema, requiredTextSchema } from "./common.js";
 import { agentCapabilitiesSchema, agentSchema, capabilityCeilingSchema } from "./agents.js";
-import { approvalDecisionSchema, orchestrationModeSchema, workspaceRoleSchema } from "./enums.js";
+import { approvalDecisionSchema, orchestrationModeSchema, runStatusSchema, workspaceRoleSchema } from "./enums.js";
 import { runSnapshotSchema } from "./events.js";
 import { userSchema, workspaceSchema } from "./identity.js";
 import { runSchema } from "./runs.js";
@@ -88,6 +88,7 @@ export type MeResponse = z.infer<typeof meResponseSchema>;
  *
  *   GET  /api/workspaces                                        -> { workspaces }
  *   GET  /api/workspaces/:workspaceId/agents                    -> { agents }
+ *   GET  /api/workspaces/:workspaceId/runs   RunListQuery       -> RunListResponse
  *   POST /api/workspaces/:workspaceId/runs   CreateRunRequest   -> 201 { run }
  *   GET  /api/runs/:runId/snapshot                              -> { snapshot }
  *   GET  /api/runs/:runId/events             Server-Sent Events (RunEvent)
@@ -125,6 +126,48 @@ export type WorkspacesResponse = z.infer<typeof workspacesResponseSchema>;
 
 export const agentsResponseSchema = z.object({ agents: z.array(agentSchema) });
 export type AgentsResponse = z.infer<typeof agentsResponseSchema>;
+
+/** A Run as the workspace listing shows it: no results, errors or benchmark labels. */
+export const runSummarySchema = runSchema
+  .pick({
+    id: true,
+    workspaceId: true,
+    createdByUserId: true,
+    orchestrationMode: true,
+    status: true,
+    cancelRequestedAt: true,
+    createdAt: true,
+    updatedAt: true,
+    startedAt: true,
+    completedAt: true,
+  })
+  .extend({
+    /** At most RUN_SUMMARY_PROMPT_LENGTH characters; the snapshot has the whole prompt. */
+    userPrompt: runSchema.shape.userPrompt,
+    taskCount: z.number().int().nonnegative(),
+    pendingApprovalCount: z.number().int().nonnegative(),
+    findingCount: z.number().int().nonnegative(),
+  });
+export type RunSummary = z.infer<typeof runSummarySchema>;
+
+export const RUN_SUMMARY_PROMPT_LENGTH = 280;
+/** Used when a listing names no `limit`. pageQuerySchema caps it at 200. */
+export const RUN_LIST_DEFAULT_LIMIT = 50;
+
+export const runListQuerySchema = pageQuerySchema.extend({
+  /** Only runs in this status. `waiting_approval` finds every run waiting on a person, however old. */
+  status: runStatusSchema.optional(),
+});
+export type RunListQuery = z.infer<typeof runListQuerySchema>;
+
+/** Newest first. An unknown cursor is a 400. */
+export const runListResponseSchema = z.object({
+  runs: z.array(runSummarySchema),
+  nextCursor: z.string().nullable(),
+  /** Pending approvals across the whole workspace, whatever the page or status filter. */
+  pendingApprovalCount: z.number().int().nonnegative(),
+});
+export type RunListResponse = z.infer<typeof runListResponseSchema>;
 
 export const runResponseSchema = z.object({ run: runSchema });
 export type RunResponse = z.infer<typeof runResponseSchema>;

@@ -38,6 +38,10 @@ async function start(runWorkspace: string, role: WorkspaceRole = "developer") {
       },
     },
     snapshot: async (runId) => (runId === RUN ? ({ run: { id: RUN, workspaceId: runWorkspace } } as RunSnapshot) : null),
+    listRuns: async (_workspaceId, query) => {
+      calls.push(`listRuns:${query.limit ?? "default"}:${query.status ?? "any"}`);
+      return { runs: [], nextCursor: null, pendingApprovalCount: 3 };
+    },
     approval: async (approvalId) => (approvalId === APPROVAL ? ({ id: APPROVAL, runId: RUN } as Approval) : null),
     currentUserId: () => "00000000-0000-4000-8000-0000000000ee",
     workspaceRole: async (workspaceId) => (workspaceId === MINE ? role : null),
@@ -93,6 +97,27 @@ describe("run routes", () => {
       await inject("POST", `/api/approvals/${APPROVAL}/resolve`, { decision: "approve" }),
     ];
     expect(responses.map((response) => response.statusCode)).toEqual([403, 403, 403]);
+    expect(calls).toEqual([]);
+  });
+
+  it("lists a workspace's runs for any role, and hides another workspace's", async () => {
+    const calls = await start(MINE, "auditor");
+    const listed = await inject("GET", `/api/workspaces/${MINE}/runs?limit=20&status=waiting_approval`);
+    expect(listed.statusCode).toBe(200);
+    expect(listed.json()).toEqual({ runs: [], nextCursor: null, pendingApprovalCount: 3 });
+    expect(calls).toEqual(["listRuns:20:waiting_approval"]);
+
+    const hidden = await inject("GET", `/api/workspaces/${THEIRS}/runs`);
+    expect(hidden.statusCode).toBe(404);
+    expect(hidden.json().error).toBe("Workspace not found");
+    expect(calls).toHaveLength(1);
+  });
+
+  it("refuses an unbounded page or an unknown status", async () => {
+    const calls = await start(MINE);
+    expect((await inject("GET", `/api/workspaces/${MINE}/runs?limit=201`)).statusCode).toBe(400);
+    expect((await inject("GET", `/api/workspaces/${MINE}/runs?limit=0`)).statusCode).toBe(400);
+    expect((await inject("GET", `/api/workspaces/${MINE}/runs?status=done`)).statusCode).toBe(400);
     expect(calls).toEqual([]);
   });
 
