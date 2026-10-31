@@ -1,8 +1,9 @@
 import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import type { User } from "@launchpad/shared";
-import { api, ApiError, setAuthToken } from "./api";
+import { api, setAuthToken } from "./api";
 import { AccountMenu } from "./AccountMenu";
 import { Admin } from "./Admin";
+import { AuthScreen, ConnectingScreen } from "./AuthScreen";
 import { Members, MembersUnavailable } from "./members/Members";
 import { membersApi } from "./members/members-api";
 import { Playground } from "./Playground";
@@ -20,10 +21,6 @@ import { WorkspaceSwitcher } from "./WorkspaceSwitcher";
 const DesignPreview = import.meta.env.DEV
   ? lazy(() => import("./ui/DesignPreview").then((module) => ({ default: module.DesignPreview })))
   : null;
-
-function Spinner() {
-  return <span className="spinner" aria-label="Loading" />;
-}
 
 function navItems(route: Route, authMethod: "token" | "password"): NavItem[] {
   return [
@@ -128,12 +125,9 @@ function AppSession({ notice, onSignedOut }: { notice: string | null; onSignedOu
   const route = useRoute();
   const playground = usePlayground();
   const { bootstrap, openAdmin } = playground;
-  const [error, setError] = useState<string | null>(notice);
-  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [authRequired, setAuthRequired] = useState<boolean | null>(null);
-  const [authInput, setAuthInput] = useState("");
   const [authMethod, setAuthMethod] = useState<"token" | "password">("token");
-  const [emailInput, setEmailInput] = useState("");
   const [viewer, setViewer] = useState<User | null>(null);
 
   useEffect(() => {
@@ -174,81 +168,14 @@ function AppSession({ notice, onSignedOut }: { notice: string | null; onSignedOu
     };
   }, [signedIn]);
 
-  const unlock = async (event: React.FormEvent) => {
-    event.preventDefault();
-    setBusy(true);
-    setError(null);
-    try {
-      setAuthToken(authMethod === "password" ? (await api.signIn(emailInput, authInput)).token : authInput);
-      await bootstrap();
-      setAuthRequired(false);
-      setAuthInput("");
-    } catch (reason) {
-      if (reason instanceof ApiError && reason.status === 401) {
-        setError(authMethod === "password" ? "The email or password is not right." : "The access token is not valid.");
-      } else {
-        setError(reason instanceof Error ? reason.message : String(reason));
-      }
-    } finally {
-      setBusy(false);
-    }
+  const unlock = async ({ email, secret }: { email: string; secret: string }) => {
+    setAuthToken(authMethod === "password" ? (await api.signIn(email, secret)).token : secret);
+    await bootstrap();
+    setAuthRequired(false);
   };
 
-  if (authRequired === null) {
-    return (
-      <main className="auth-screen">
-        <section className="auth-card" aria-live="polite">
-          <div className="auth-wordmark">Agent<span aria-hidden="true" />Guard</div>
-          <h1>Connecting to the control plane</h1>
-          {error ? <div className="error-banner" role="alert">{error}</div> : <Spinner />}
-        </section>
-      </main>
-    );
-  }
-
-  if (authRequired) {
-    return (
-      <main className="auth-screen">
-        <form className="auth-card" onSubmit={unlock}>
-          <div className="auth-wordmark">Agent<span aria-hidden="true" />Guard</div>
-          <h1>{authMethod === "password" ? "Sign in" : "Enter the access token"}</h1>
-          <p>
-            {authMethod === "password"
-              ? "Use the account your platform operator set up for you."
-              : "This shared demo token is configured by the platform operator."}
-          </p>
-          {error && <div className="error-banner" role="alert">{error}</div>}
-          {authMethod === "password" && (
-            <label>
-              Email
-              <input
-                autoFocus
-                type="email"
-                value={emailInput}
-                onChange={(event) => setEmailInput(event.target.value)}
-                autoComplete="username"
-                required
-              />
-            </label>
-          )}
-          <label>
-            {authMethod === "password" ? "Password" : "Access token"}
-            <input
-              autoFocus={authMethod !== "password"}
-              type="password"
-              value={authInput}
-              onChange={(event) => setAuthInput(event.target.value)}
-              autoComplete="current-password"
-              required
-            />
-          </label>
-          <button className="button button-primary button-page" disabled={busy || !authInput.trim()}>
-            {busy ? <Spinner /> : authMethod === "password" ? "Sign in" : "Open AgentGuard"}
-          </button>
-        </form>
-      </main>
-    );
-  }
+  if (authRequired === null) return <ConnectingScreen error={error} />;
+  if (authRequired) return <AuthScreen method={authMethod} notice={notice} onUnlock={unlock} />;
 
   return (
     <CurrentWorkspaceProvider>

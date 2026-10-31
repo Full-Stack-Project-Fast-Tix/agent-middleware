@@ -194,6 +194,9 @@ scroll inside themselves. Keyboard reachable with visible focus, AA contrast, an
 
 ## Migration status
 
-`src/styles.css` and `src/runs/runs.css` were swept mechanically onto the tokens, so
-older pages match in colour, type and shape but not yet in structure. When a page is
-rebuilt on the primitives, delete its old rules from those files.
+The Playground, Safety and sign-in pages are rebuilt on the primitives, with their rules
+in `src/playground.css`, `src/safety.css` and `src/auth.css`. `src/styles.css` holds only
+what pages share: labels, tabs (`.tab-row`, `.tab`), forms (`.form-stack`, `.form-grid`,
+`.form-actions`) and `.error-banner`, plus a few rules marked for the run pages. Those run
+pages are in `src/runs/runs.css`, swept mechanically onto the tokens. When one is rebuilt,
+delete its old rules.

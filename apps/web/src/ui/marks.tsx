@@ -153,6 +153,10 @@ const STATUS_STYLES: Readonly<Record<string, StatusStyle>> = {
   failed: failed("Failed"),
   cancelled: stopped("Cancelled"),
   skipped: stopped("Skipped"),
+  // Agent statuses in the Playground.
+  busy: working("Busy"),
+  stopped: stopped("Stopped"),
+  error: failed("Error"),
   // Approval statuses. A pending approval is what the app calls Held.
   approved: { word: "Approved", tone: "passed", glyph: () => <Tick />, glyphTone: "allow" },
   denied: failed("Denied"),

@@ -1,0 +1,125 @@
+/* Sign-in. The wordmark sits across the gate line: Agent on the graphite side,
+   Guard on the trusted side, and the mark on the line between them. */
+
+.auth-screen {
+  --auth-side: 28px;
+  --auth-top: clamp(56px, 22vh, 220px);
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: grid;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  background: var(--surface);
+}
+
+.auth-word {
+  font-size: var(--text-32);
+  font-weight: 600;
+  font-stretch: 112%;
+  letter-spacing: -0.01em;
+  line-height: 40px;
+}
+
+.auth-agent-side {
+  grid-row: 1 / -1;
+  position: relative;
+  padding: var(--auth-top) var(--auth-side) 32px 32px;
+  background: var(--graphite);
+  color: var(--surface);
+  text-align: right;
+}
+
+.auth-pitch {
+  position: absolute;
+  left: 32px;
+  right: 32px;
+  bottom: 32px;
+  display: grid;
+  gap: 4px;
+  max-width: 44ch;
+  color: var(--topbar-quiet);
+  text-align: left;
+}
+
+.auth-guard-side {
+  position: relative;
+  padding: var(--auth-top) var(--auth-side) 0;
+}
+
+.auth-mark {
+  --mark-fill: var(--surface);
+  position: absolute;
+  top: calc(var(--auth-top) + 8px);
+  left: -12px;
+  display: flex;
+}
+
+.auth-mark-refused {
+  animation: gate-draw 180ms ease-out both;
+}
+
+.auth-body {
+  display: grid;
+  align-content: start;
+  gap: 16px;
+  max-width: calc(380px + 2 * var(--auth-side));
+  padding: 32px var(--auth-side) 48px;
+}
+
+.auth-form {
+  display: grid;
+  gap: 16px;
+}
+
+.auth-heading {
+  display: grid;
+  gap: 4px;
+}
+
+.auth-form .button {
+  width: 100%;
+}
+
+@media (max-width: 760px) {
+  .auth-screen {
+    --auth-side: 20px;
+    --auth-top: 24px;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .auth-word {
+    font-size: var(--text-24);
+    line-height: 32px;
+  }
+
+  .auth-agent-side {
+    grid-row: 1;
+    padding-bottom: 24px;
+    padding-left: 16px;
+  }
+
+  .auth-pitch {
+    display: none;
+  }
+
+  .auth-guard-side {
+    padding-bottom: 24px;
+    border-bottom: 1px solid var(--rule);
+  }
+
+  .auth-mark {
+    top: calc(var(--auth-top) + 4px);
+  }
+
+  .auth-body {
+    grid-column: 1 / -1;
+    max-width: none;
+    padding: 24px 16px 40px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .auth-mark-refused {
+    animation: none;
+  }
+}

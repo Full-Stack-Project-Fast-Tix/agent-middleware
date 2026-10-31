@@ -37,7 +37,7 @@ function renderBlocks(content: string): ReactNode[] {
       }
       if (index < lines.length) index += 1;
       blocks.push(
-        <pre className="message-code-block" key={`code:${index}`}>
+        <pre className="message-code" key={`code:${index}`}>
           <code>{code.join("\n")}</code>
         </pre>,
       );
