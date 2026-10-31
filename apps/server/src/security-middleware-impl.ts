@@ -484,15 +484,16 @@ function policyFinding(code: string, message: string, severity: FindingSeverity,
  * tool's writing or executing flags must not pass as a read.
  */
 const NOT_A_READ =
-  /^\s*(?:find\b.*\s-(?:exec|execdir|ok|okdir|delete|fprint|fprint0|fprintf|fls)\b|rg\b.*\s--(?:pre|pre-glob)\b|file\b.*\s(?:-C|--compile)\b)/is;
+  /^\s*(?:find\b.*\s-(?:exec|execdir|ok|okdir|delete|fprint|fprint0|fprintf|fls)\b|rg\b.*\s--(?:pre|pre-glob|hostname-bin)\b|file\b.*\s(?:-C|--compile)\b)/is;
 
 function isKnownSafeRead(command: string): boolean {
   // This accepts only a single plain command. Shell syntax, substitutions,
   // redirections and command chaining require the shell capability.
   if (/[;&|<>`$()\\\n\r]/.test(command)) return false;
   if (NOT_A_READ.test(command)) return false;
-  // sed and awk are programming languages: only printing a line range is a read.
-  if (/^\s*sed\b/i.test(command)) return /^\s*sed\s+-n\s+'?\d+(?:,\d+)?p'?\s+[^\s-][^\n]*$/.test(command);
+  // sed and awk are programming languages: only printing a line range of one file
+  // is a read. GNU sed also takes options after the file, so nothing may follow it.
+  if (/^\s*sed\b/i.test(command)) return /^\s*sed\s+-n\s+'?\d+(?:,\d+)?p'?\s+(?:'[^']*'|[^\s'-]\S*)\s*$/.test(command);
   return /^\s*(?:ls|pwd|cat|head|tail|rg|grep|find|stat|file|wc)(?:\s+[^\n]*)?\s*$/i.test(command);
 }
 

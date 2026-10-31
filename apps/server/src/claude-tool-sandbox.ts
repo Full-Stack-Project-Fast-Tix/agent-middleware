@@ -375,7 +375,7 @@ class DockerToolSandbox implements ToolSandbox {
       ["exec", "-i", "--workdir", "/workspace", this.name, "timeout", "--kill-after=5", `${seconds}s`, "bash", "--noprofile", "--norc", "-c", SHELL_SESSION_SCRIPT],
       command,
       output,
-      { timeoutMs: options.timeoutMs + HOST_TIMEOUT_MARGIN_MS, signal: options.signal },
+      { timeoutMs: options.timeoutMs + HOST_TIMEOUT_MARGIN_MS, signal: options.signal, includeStderr: true },
     );
     return {
       output: output.toString(),
@@ -428,7 +428,8 @@ class DockerToolSandbox implements ToolSandbox {
       ["exec", "-i", "--workdir", "/", this.name, "node", "-e", WORKSPACE_FILE_SCRIPT],
       JSON.stringify(request),
       output,
-      { timeoutMs: FILE_OPERATION_TIMEOUT_MS, signal: null },
+      // Stdout only: it is parsed, and a runtime warning on stderr must not break that.
+      { timeoutMs: FILE_OPERATION_TIMEOUT_MS, signal: null, includeStderr: false },
     );
     if (killedOnHost || code !== 0 || output.truncated) {
       throw new SandboxFileError("io_error", "The file operation did not complete.");
@@ -448,7 +449,7 @@ class DockerToolSandbox implements ToolSandbox {
     args: string[],
     stdin: string,
     output: BoundedOutput,
-    options: { timeoutMs: number; signal: AbortSignal | null },
+    options: { timeoutMs: number; signal: AbortSignal | null; includeStderr: boolean },
   ): Promise<{ code: number | null; killedOnHost: boolean }> {
     return new Promise((resolve) => {
       const child = spawn(this.config.containerEngine, args, {
@@ -465,7 +466,7 @@ class DockerToolSandbox implements ToolSandbox {
         if (output.total > DRAIN_LIMIT_BYTES) kill();
       };
       child.stdout.on("data", onData);
-      child.stderr.on("data", onData);
+      child.stderr.on("data", options.includeStderr ? onData : () => undefined);
       // A command that exits without reading its stdin is not an error here.
       child.stdin.on("error", () => undefined);
       child.stdin.end(stdin);

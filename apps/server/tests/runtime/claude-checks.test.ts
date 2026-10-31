@@ -261,6 +261,7 @@ describe("the read-only command set, now that commands reach it as bare text", (
     "wc -l a.ts",
     "sed -n '2,5p' a.ts",
     "sed -n 7p a.ts",
+    "sed -n '1,2p' '/workspace/a b.ts'",
   ])("allows %s", async (command) => {
     expect(await outcomeFor(command)).toBe("allow");
   });
@@ -273,6 +274,9 @@ describe("the read-only command set, now that commands reach it as bare text", (
     "sed -i 's/a/b/' a.ts",
     "sed 's/a/b/w out.txt' a.ts",
     "sed -n '1p' -i a.ts",
+    "sed -n '1p' a.ts -i",
+    "sed -n '1p' a.ts b.ts --in-place",
+    "rg --hostname-bin=./evil.sh foo",
     "awk 'BEGIN{print 1}' a.ts",
     "awk -f script.awk a.ts",
     "rg --pre ./evil.sh foo",
