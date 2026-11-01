@@ -40,6 +40,10 @@ OPENAI_API_KEY=your-openai-api-key
 OPENAI_MODEL=gpt-5.1
 ```
 
+The template documents Claude as its default choice, but this guide is for the
+single-agent Playground, which needs Codex. To run multi-agent Runs on Claude
+instead, follow [Run on Claude](README.md#run-on-claude).
+
 Never commit `.env` or paste the API key into source files. Use a long random
 `APP_AUTH_TOKEN` when the app will be reachable beyond your own machine.
 
@@ -69,7 +73,8 @@ npm run dev
 
 Open <http://localhost:5173>. The API runs at <http://localhost:3000>.
 
-This mode requires the Codex CLI on the host:
+This mode requires `RUNTIME_PROVIDER=local-process` in `.env`, and the Codex CLI on
+the host:
 
 ```bash
 npm install --global @openai/codex@0.111.0
@@ -80,7 +85,16 @@ same container trace and runtime isolation as `npm run poc`.
 
 ## 4. Docker Compose
 
-To run the production-shaped image locally:
+To run the production-shaped image locally, set this in `.env`, because the image
+runs Codex:
+
+```dotenv
+MODEL_PROVIDER=openai
+RUNTIME_PROVIDER=local-process
+CONTAINER_RUNTIME_IMAGE=volc-agent-runtime:local
+```
+
+Then:
 
 ```bash
 docker compose up --build

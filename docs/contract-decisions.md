@@ -591,6 +591,65 @@ It does not make the application multi-instance-ready: orchestration waiters,
 cancellation, approval coordination and run-scoped taint remain process-local.
 Keep deployment single-instance until those lifecycle boundaries are shared.
 
+## 30. Claude runs through an agent loop AgentGuard owns
+
+**Decision (31 October 2026):** With `MODEL_PROVIDER=anthropic`, a new
+`ClaudeExecutionRuntime` implements the existing `ExecutionRuntime` port on the Claude
+Messages API, and replaces Codex on the multi-agent path. The agent loop and the API
+key stay on the host, and tools run in one disposable container per execution. The
+supervisor planner and the semantic monitor call Claude under the same provider. No
+migration, shared enum or scheduling change was needed. Codex's code stays until a
+real Claude Run has proven this path.
+
+- **The gate.** Every command and file change goes through `ActionGate.decide` before
+  it runs, with the shapes `gated-turn.ts` uses, and the same stop semantics.
+  `assertGatedPolicy` runs before a container starts. The model has no other way to
+  act, so this does not depend on an agent honouring an approval protocol.
+- **Reads count.** The editor's `view` is gated as the read command it is equivalent
+  to, so `view .env` counts as a sensitive read exactly as `cat .env` does.
+- **Network.** A policy that denies network gives the container `--network none`.
+  Nothing in the container reaches the model, so this closes, for this path, the gap
+  [handover.md](../handover.md) records. A policy that allows network keeps a bridge,
+  which can reach the host.
+- **Trace.** Records use the Codex app-server shapes, ordering and the `declined`
+  item, taken from real traces in `benchmark-results/`. No check was forked or
+  weakened. `threadId` is null, because there is no server-side thread.
+- **Usage.** `inputTokens` includes cache reads and writes, and `cachedInputTokens` is
+  the reads, matching how Codex totals its input. An attempt that fails records its
+  usage only in its trace, because `ExecutionOutcome` is not returned.
+- **The legacy path** is unchanged and needs Codex. The message route answers 503 with
+  the reason. The web app reads `modelProvider` from `/api/system`, a field the server
+  already returned, so this is no contract change. Only `apps/web`'s local type gained
+  the field.
+
+**The read-only command set narrowed.** `isKnownSafeRead` in the middleware used to
+see Codex commands wrapped in `bash -lc`, which it never matched. Claude's commands
+reach it as the model wrote them, so it would have passed `find -exec`, `find
+-delete`, `sed -i`, `awk`, `rg --pre` and `file -C` as reads for agents that may not
+write. It now refuses those, and allows `sed` only as `sed -n 'A,Bp'`. A read-only
+execution's workspace is also mounted read-only.
+
+**One exception to "pass the response back unchanged".** The API requires that after a
+mid-output fallback, thinking and `tool_use` blocks before the last `fallback` block
+are left out of the echoed turn. Those tool calls come from the declined attempt, can
+be cut off mid-input, and never run.
+
+**Why:** The client asked to replace Codex with Claude, and AgentGuard's value is that
+enforcement sits outside the agent. The Claude Agent SDK and Managed Agents were
+rejected for this because the loop must stay ours: with Managed Agents the loop and
+the tools run elsewhere, and with the Agent SDK the gate would again depend on a
+harness calling back.
+
+**Not verified:** nothing here has run against the real API. The structured-output
+schemas, the `fallbacks` opt-in, the thinking summaries, the semantic monitor's latency
+within its 15-second timeout, and real token use are all unproven until a first real
+Run. Steps and costs are in the README, under
+[Run on Claude](../README.md#run-on-claude).
+
+**Review:** P1 (the gate, the narrowed read-only set, what reaches the model), P2 (the
+runtime port, retries after a limit, `threadId` null), P3 (the container, the image,
+deployment).
+
 ## Guidance for P3's schema
 
 These points are implementation guidance, not part of the contract:

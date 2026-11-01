@@ -1,3 +1,5 @@
+import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
+import { CLAUDE_FALLBACKS, createClaudeClient, structuredText, type ClaudeClient } from "../anthropic-client.js";
 import type { AppConfig } from "../config.js";
 import { supervisorPlanSchema, type SupervisorPlan } from "./plan.js";
 
@@ -78,7 +80,52 @@ export class ModelPlanner implements Planner {
   }
 }
 
+export interface ClaudePlannerOptions {
+  client: ClaudeClient;
+  model: string;
+  timeoutMs: number;
+}
+
+/**
+ * The same tool-less call on Claude, using structured outputs for the plan's
+ * shape. Refusals and cut-off responses reject, the plan schema still decides
+ * whether the result is valid, and validatePlan and the middleware still stand
+ * between the plan and any work.
+ */
+export class ClaudePlanner implements Planner {
+  constructor(private readonly options: ClaudePlannerOptions) {}
+
+  async plan(request: PlanRequest): Promise<SupervisorPlan> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.options.timeoutMs);
+    timeout.unref();
+    const onAbort = () => controller.abort();
+    request.signal?.addEventListener("abort", onAbort, { once: true });
+
+    try {
+      const message = await this.options.client.beta.messages.create(
+        {
+          model: this.options.model,
+          // Thinking counts toward this, and a plan may hold several long objectives.
+          max_tokens: 16_000,
+          output_config: { effort: "medium", format: zodOutputFormat(supervisorPlanSchema) },
+          messages: [{ role: "user", content: plannerPrompt(request) }],
+          ...CLAUDE_FALLBACKS,
+        },
+        { signal: controller.signal },
+      );
+      return supervisorPlanSchema.parse(parseJsonObject(structuredText(message, "supervisor")));
+    } finally {
+      clearTimeout(timeout);
+      request.signal?.removeEventListener("abort", onAbort);
+    }
+  }
+}
+
 export function createModelPlanner(config: AppConfig, timeoutMs = 60_000): Planner {
+  if (config.modelProvider === "anthropic") {
+    return new ClaudePlanner({ client: createClaudeClient(config), model: config.modelName, timeoutMs });
+  }
   return new ModelPlanner({
     apiKey: config.modelApiKey,
     baseUrl: config.modelProvider === "openai" ? "https://api.openai.com/v1" : config.arkBaseUrl,

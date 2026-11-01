@@ -23,12 +23,15 @@ always the middleware's decision
 | `task-disposition.ts` | Strictly validates whether a specialist reports its Task complete or incomplete. |
 | `ports.ts` | The interfaces the orchestrator depends on: `RunStore`, `AgentDirectory`, `ExecutionRuntime`, `WorkingCopies` and `ActionGate`. |
 | `in-memory-run-store.ts` | `RunStore` in memory, publishing RunEvents with per-run seqs. Used by tests and by `dev:demo` without `DATABASE_URL`; real Runs use `PostgresRunStore`. |
+| `claude-execution-runtime.ts` | `ClaudeExecutionRuntime`, for `MODEL_PROVIDER=anthropic`: an agent loop on this host over the Messages API, with tools in one disposable container per execution. Writes Codex-shaped trace records. |
 | `codex-execution-runtime.ts` | `CodexExecutionRuntime`: one execution, one disposable container, the Run's working copy at `/workspace`, its own trace file. Drives the turn with `../gated-turn.ts`. |
 | `working-copies.ts` | `DirectoryWorkingCopies`: copies the workspace to `<root>/<runId>/workspace` once per Run. Skips dependencies, local tool/credential stores, environment secrets, and common private-key files; keeps example environment templates and copies other symlinks as links. |
 
 Outside this folder: `../gated-turn.ts` drives one Codex turn whose
 approval requests go to `ActionGate.decide` and whose trace records go to
-`ActionGate.observe`. `../run-routes.ts` holds the HTTP routes.
+`ActionGate.observe`. `../claude-tool-sandbox.ts` is Claude's container and
+`../claude-editor.ts` turns its file edits into the diffs the gate evaluates.
+`../run-routes.ts` holds the HTTP routes.
 
 ## What goes through the middleware
 
@@ -36,7 +39,7 @@ approval requests go to `ActionGate.decide` and whose trace records go to
 | --- | --- | --- |
 | `delegation` | the supervisor's execution, before the Task is created | orchestrator |
 | `context_handoff` | the receiving execution, before its prompt is built | orchestrator |
-| `command`, `file_change` | the acting execution, before the action runs | runtime, through `ActionGate.decide` |
+| `command`, `file_change` | the acting execution, before the action runs | runtime, through `ActionGate.decide`. On Claude, the editor's `view` counts as a `command`: the read it is equivalent to. |
 
 A blocked or denied delegation creates no Task, and nothing that depends on it
 is created either. A blocked handoff withholds that result from the prompt.
@@ -63,12 +66,19 @@ is created either. A blocked handoff withholds that result from the prompt.
   from here. When the resolved policy denies network, the container runtime
   disables Codex's service-side `web_search` tool as well as workspace network
   access.
-- **The runtime fails closed.** `CodexExecutionRuntime` refuses to start
-  unless the policy is `workspace-write` sandbox with `untrusted` approvals.
-  Workspace writes are scoped to the isolated run workspace, and proposals must
-  stop at an approval request before the gate allows them.
-  A gate that throws declines the action and ends the turn. A file change it
-  cannot describe is declined.
+- **The runtime fails closed.** Both runtimes refuse to start unless the policy
+  is `workspace-write` sandbox with `untrusted` approvals, and a gate that throws
+  declines the action and ends the turn. On Codex, workspace writes are scoped to
+  the isolated run workspace, proposals must stop at an approval request before the
+  gate allows them, and a file change it cannot describe is declined. On Claude, the
+  model can only act by asking the loop, so no tool runs without a decision.
+  A model refusal, a truncated response, an unknown stop reason or an exhausted
+  limit fails the execution, and a tool call from such a turn never runs.
+- **Claude's limits** are per execution: model turns, tokens per call, total input
+  and output tokens, model and tool time, command time, and tool output size
+  (`CLAUDE_*` in `.env.example`). Time waiting at the gate does not count. An
+  execution that fails on a limit is retried like any other crash, up to
+  `maxAttempts`, so a limit bounds an attempt, not a Task.
 - **Fresh thread per execution.** Context moves between agents only through
   results the middleware has evaluated. An agent's configured instructions
   travel in its prompt, because a shared working copy has no per-agent
@@ -121,8 +131,8 @@ Changing any of these is a contract change: record it in
 ## Wiring it into the server
 
 `../postgres-runs.ts` builds the orchestrator with P3's PostgreSQL
-repositories, P1's middleware, the model planner, the Codex runtime and
-per-Run working copies. `index.ts` uses it with `APP_AUTH_MODE=password`,
+repositories, P1's middleware, the model planner, the runtime for the selected
+provider (Claude or Codex) and per-Run working copies. `index.ts` uses it with `APP_AUTH_MODE=password`,
 recovers interrupted Runs before it listens, and starts the approval sweep.
 
 ## Still to do

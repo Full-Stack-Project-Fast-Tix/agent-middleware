@@ -1,0 +1,35 @@
+# Where a Claude execution's tools run: bash commands and the editor's file
+# operations, as a non-root user, with the Run's working copy at /workspace.
+#
+# No agent runs in here. The agent loop and the API key stay on the host, so this
+# image has no Codex and no credentials, and needs no route to the model.
+#
+# Build it with: npm run build:claude-runtime
+ARG NODE_IMAGE=node:22-bookworm-slim
+FROM ${NODE_IMAGE}
+
+ARG DEBIAN_MIRROR=""
+ARG DEBIAN_SECURITY_MIRROR=""
+ARG RUNTIME_APT_PACKAGES="ca-certificates curl git ripgrep"
+
+LABEL org.opencontainers.image.title="AgentGuard Claude tool runtime"
+LABEL org.opencontainers.image.description="Disposable container for the tools of a Claude execution. Contains no agent and no credentials."
+
+RUN if [ -n "$DEBIAN_SECURITY_MIRROR" ]; then \
+      find /etc/apt -type f \( -name '*.list' -o -name '*.sources' \) \
+        -exec sed -i "s|http://deb.debian.org/debian-security|$DEBIAN_SECURITY_MIRROR|g" {} +; \
+    fi \
+    && if [ -n "$DEBIAN_MIRROR" ]; then \
+      find /etc/apt -type f \( -name '*.list' -o -name '*.sources' \) \
+        -exec sed -i "s|http://deb.debian.org/debian|$DEBIAN_MIRROR|g" {} +; \
+    fi \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends $RUNTIME_APT_PACKAGES \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV HOME=/tmp
+ENV NO_COLOR=1
+
+WORKDIR /workspace
+
+CMD ["bash", "--version"]

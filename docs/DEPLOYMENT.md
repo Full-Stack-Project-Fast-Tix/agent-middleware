@@ -10,6 +10,8 @@ Use one of these Volcengine ECS paths:
   signed-in users and multi-agent Runs.
 
 All of them require a Volcengine Ark API key and a Responses-capable endpoint.
+They run Codex. Multi-agent Runs on Claude run on a host with a container engine
+instead: see [Claude runtime](#claude-runtime).
 
 ## Existing Linux ECS
 
@@ -99,10 +101,17 @@ Set these values in `.env.production`:
 
 ```dotenv
 PUBLIC_PORT=80
+MODEL_PROVIDER=ark
+RUNTIME_PROVIDER=local-process
+CONTAINER_RUNTIME_IMAGE=volc-agent-runtime:local
 ARK_API_KEY=your-ark-api-key
 ARK_MODEL=ep-your-endpoint-id
 APP_AUTH_TOKEN=the-random-token-generated-above
 ```
+
+The template now documents Claude as its default, and this Compose path runs
+Codex, so these first three lines are required here. See
+[Claude runtime](#claude-runtime) for why it does not use Compose.
 
 Deploy:
 
@@ -257,6 +266,34 @@ tenants.
 Settings worth knowing: `RUN_ARTIFACT_RETENTION_DAYS` (30, 0 keeps files forever)
 removes a finished Run's working copy and raw traces, and `RUN_TOKEN_BUDGET`
 (2,000,000) stops new attempts once a Run has used that many tokens.
+
+## Claude runtime
+
+`MODEL_PROVIDER=anthropic` runs multi-agent Runs on Claude. The first-run steps
+and costs are in the README, under
+[Run on Claude](../README.md#run-on-claude). What is different for deployment:
+
+- **It runs on a host with a container engine.** The server process starts one
+  container per execution, so it needs `RUNTIME_PROVIDER=container` and access to
+  Docker, Colima or Podman. `npm run poc` does this. The Compose and ECS paths in
+  this file do not give the application container an engine, and mounting the
+  Docker socket into it would give it control of the host, so they stay on Codex
+  for now.
+- **The image contains no Codex.** Build it with `npm run build:claude-runtime`
+  (`Dockerfile.claude-runtime`). The default name is
+  `agentguard-claude-runtime:local`, and it is never pulled from a registry.
+- **The API key stays with the server process.** Only the server needs
+  `ANTHROPIC_API_KEY`. The server needs outbound HTTPS to `api.anthropic.com`. The
+  tool containers need no route to it, and get none when policy denies network.
+- **Only the host's network matters for model calls.** With any guard enabled the
+  policy denies network to every execution, so containers run with
+  `--network none`. An agent profile with the `network` capability and no guard
+  gets a bridge network, which can reach the host, including
+  `host.docker.internal`. Treat that capability accordingly.
+- **Tools run as a non-root user.** Set `CONTAINER_USER` to a non-root `uid:gid` if
+  the server itself runs as root; the runtime refuses to start a container as root.
+- **Check the boundary after any image change:**
+  `npm run verify:claude-runtime -w @launchpad/server`. It needs Docker and no key.
 
 ## Back up and restore PostgreSQL
 

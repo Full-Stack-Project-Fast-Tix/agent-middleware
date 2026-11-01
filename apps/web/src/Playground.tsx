@@ -2,6 +2,7 @@ import { Fragment, useEffect, useRef } from "react";
 import { api } from "./api";
 import { MessageContent } from "./MessageContent";
 import { ReflectionList } from "./Reflections";
+import { Link, paths } from "./router";
 import { Trajectory } from "./Trajectory";
 import { Workspace } from "./Workspace";
 import { AgentSafetyDetails } from "./Admin";
@@ -126,7 +127,8 @@ export function Playground({ state }: { state: PlaygroundState }) {
       </>
     );
 
-  const composerClosed = selected?.status === "stopped" || selected?.status === "busy" || isActiveRun(activeRun);
+  const composerClosed =
+    system?.modelProvider === "anthropic" || selected?.status === "stopped" || selected?.status === "busy" || isActiveRun(activeRun);
 
   return (
     <div className="playground-page">
@@ -180,7 +182,17 @@ export function Playground({ state }: { state: PlaygroundState }) {
       </aside>
 
       <div className="playground-main">
-        {system !== null && (!system.arkConfigured || !system.codexAvailable) && (
+        {system?.modelProvider === "anthropic" && (
+          <div className="runtime-notice" role="status">
+            <strong>The Playground is unavailable with Claude</strong>
+            <p>
+              The Playground runs single agents on Codex, and this server is set to MODEL_PROVIDER=anthropic.
+              Past conversations stay readable, but agents here cannot run. Start <Link to={paths.newRun}>a new Run</Link>, which runs on Claude.
+            </p>
+          </div>
+        )}
+
+        {system !== null && system.modelProvider !== "anthropic" && (!system.arkConfigured || !system.codexAvailable) && (
           <div className="runtime-notice" role="status">
             <strong>The runtime needs configuring</strong>
             <p>

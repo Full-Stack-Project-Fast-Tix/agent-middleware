@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it } from "vitest";
 import { AgentService } from "../../src/agent-service.js";
 import { loadConfig } from "../../src/config.js";
+import { CodexUnavailableRunner } from "../../src/runner-factory.js";
 import { JsonStore } from "../../src/store.js";
 import { RunCancelledError } from "../../src/errors.js";
 import type {
@@ -68,6 +69,24 @@ async function makeService(
   await service.initialize();
   return service;
 }
+
+describe("system info under the Claude provider", () => {
+  it("tells the web app the Playground needs Codex, and never holds the key", async () => {
+    const key = "sk-ant-test-sentinel-not-a-real-key-0123456789";
+    const service = await makeService(new CodexUnavailableRunner(), { MODEL_PROVIDER: "anthropic", ANTHROPIC_API_KEY: key });
+    const info = await service.systemInfo();
+
+    expect(info).toMatchObject({
+      modelProvider: "anthropic",
+      arkConfigured: true,
+      arkModel: "claude-opus-5-5",
+      arkBaseUrl: "https://api.anthropic.com",
+      codexAvailable: false,
+    });
+    expect(info.runtime).toContain("Codex");
+    expect(JSON.stringify(info)).not.toContain(key);
+  });
+});
 
 describe("Agent lifecycle", () => {
   it("creates, updates, stops, starts and deletes an Agent", async () => {

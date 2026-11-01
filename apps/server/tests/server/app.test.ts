@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { createApp } from "../../src/app.js";
 import { loadConfig } from "../../src/config.js";
@@ -40,6 +41,54 @@ describe("HTTP boundary", () => {
     const missing = await app.inject({ method: "GET", url: "/api/agents/00000000-0000-4000-8000-000000000001" });
     expect(missing.statusCode).toBe(404);
     expect(missing.json()).toEqual({ error: "Agent not found" });
+    await app.close();
+  });
+
+  it("says plainly that the Playground needs Codex under the Claude provider", async () => {
+    let sent = false;
+    const app = await createApp(
+      loadConfig({ NODE_ENV: "test", MODEL_PROVIDER: "anthropic", ANTHROPIC_API_KEY: "sk-ant-test" }),
+      {
+        sendMessage: async () => {
+          sent = true;
+        },
+      } as unknown as AgentService,
+    );
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/agents/00000000-0000-4000-8000-000000000001/messages",
+      payload: { content: "hello" },
+    });
+    expect(response.statusCode).toBe(503);
+    expect(response.json().error).toContain("Codex");
+    expect(response.json().error).toContain("MODEL_PROVIDER=anthropic");
+    expect(sent).toBe(false);
+    await app.close();
+  });
+
+  // Serving the web app needs its build, which exists by the time CI runs tests.
+  const webBuilt = existsSync(new URL("../../../web/dist/index.html", import.meta.url));
+
+  it.skipIf(!webBuilt)("sends the same error body in production as in development", async () => {
+    const app = await createApp(
+      loadConfig({ NODE_ENV: "production", HOST: "127.0.0.1", APP_AUTH_MODE: "password", DATABASE_URL: "unused", MODEL_PROVIDER: "anthropic", ANTHROPIC_API_KEY: "sk-ant-test" }),
+      {
+        getAgent: () => {
+          throw new HttpError(404, "Agent not found");
+        },
+      } as unknown as AgentService,
+    );
+    const missing = await app.inject({ method: "GET", url: "/api/agents/00000000-0000-4000-8000-000000000001" });
+    expect(missing.statusCode).toBe(404);
+    expect(missing.json()).toEqual({ error: "Agent not found" });
+
+    const legacy = await app.inject({
+      method: "POST",
+      url: "/api/agents/00000000-0000-4000-8000-000000000001/messages",
+      payload: { content: "hello" },
+    });
+    expect(legacy.statusCode).toBe(503);
+    expect(legacy.json().error).toContain("MODEL_PROVIDER=anthropic");
     await app.close();
   });
 

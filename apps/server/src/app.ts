@@ -22,6 +22,7 @@ import { isOpenRequest } from "./api-access.js";
 import { registerMemberRoutes } from "./member-routes.js";
 import { registerRunRoutes, type RunRoutesOptions } from "./run-routes.js";
 import { registerWorkspaceConfigRoutes } from "./workspace-config-routes.js";
+import { PLAYGROUND_NEEDS_CODEX } from "./runner-factory.js";
 import { registerSessionAuth, type Identity, type SignInThrottleStore } from "./auth-routes.js";
 
 /**
@@ -270,6 +271,8 @@ export async function createApp(
   app.post("/api/agents/:id/messages", async (request, reply) => {
     const { id } = agentIdParams.parse(request.params);
     const body = messageBody.parse(request.body);
+    // Before a run record exists, so the answer is the reason rather than a failed run.
+    if (config.modelProvider === "anthropic") throw new HttpError(503, PLAYGROUND_NEEDS_CODEX);
     const result = await service.sendMessage(id, body.content);
     return reply.code(202).send(result);
   });

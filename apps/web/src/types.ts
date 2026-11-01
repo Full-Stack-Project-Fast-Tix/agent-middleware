@@ -101,6 +101,8 @@ export interface AgentRun {
 }
 
 export interface SystemInfo {
+  /** "anthropic" means Claude, on Runs only: the Playground needs Codex and is unavailable. */
+  modelProvider: string;
   arkConfigured: boolean;
   arkBaseUrl: string;
   arkModel: string | null;

@@ -21,6 +21,7 @@ load_env_var() {
   fi
 }
 load_env_var MODEL_PROVIDER
+load_env_var ANTHROPIC_API_KEY
 load_env_var OPENAI_API_KEY
 load_env_var OPENAI_MODEL
 load_env_var ARK_API_KEY
@@ -42,7 +43,17 @@ load_env_var GUARDRAIL_BLOB_MIN_CHARS
 load_env_var GUARDRAIL_INTENT_ENABLED
 load_env_var GUARDRAIL_REFLECTION_ENABLED
 
-runtime_image="${CONTAINER_RUNTIME_IMAGE:-volc-agent-runtime:local}"
+# Claude runs its tools in an image with no Codex; its agent loop stays on this host.
+is_claude() {
+  [[ "${MODEL_PROVIDER:-ark}" == "anthropic" ]]
+}
+if is_claude; then
+  runtime_image="${CONTAINER_RUNTIME_IMAGE:-agentguard-claude-runtime:local}"
+  runtime_dockerfile="Dockerfile.claude-runtime"
+else
+  runtime_image="${CONTAINER_RUNTIME_IMAGE:-volc-agent-runtime:local}"
+  runtime_dockerfile="Dockerfile.runtime"
+fi
 runtime_base_image="${CONTAINER_RUNTIME_BASE_IMAGE:-node:22-bookworm-slim}"
 runtime_apt_mirror="${CONTAINER_APT_MIRROR:-}"
 runtime_apt_security_mirror="${CONTAINER_APT_SECURITY_MIRROR:-}"
@@ -102,7 +113,17 @@ detect_engine() {
 }
 
 # Credentials depend on which model service is selected.
-if [[ "${MODEL_PROVIDER:-ark}" == "openai" ]]; then
+if is_claude; then
+  if [[ -z "${ANTHROPIC_API_KEY:-}" || "${ANTHROPIC_API_KEY}" == replace-* ]]; then
+    log "MODEL_PROVIDER=anthropic requires ANTHROPIC_API_KEY. Set it in .env."
+    exit 2
+  fi
+  load_env_var APP_AUTH_MODE
+  if [[ "${APP_AUTH_MODE:-}" != "password" ]]; then
+    log "Note: Claude only runs multi-agent Runs, which need APP_AUTH_MODE=password and DATABASE_URL."
+    log "See 'Run on Claude' in README.md. Starting anyway."
+  fi
+elif [[ "${MODEL_PROVIDER:-ark}" == "openai" ]]; then
   if [[ -z "${OPENAI_API_KEY:-}" ]]; then
     log "MODEL_PROVIDER=openai requires OPENAI_API_KEY."
     exit 2
@@ -150,13 +171,14 @@ else
 fi
 export RUNTIME_INSTANCE_ID="${RUNTIME_INSTANCE_ID:-local-$(id -u)-$(printf '%s' "$repo_dir" | cksum | awk '{print $1}')}"
 
-mkdir -p "$APP_DATA_DIR" "$AGENT_WORKSPACE_ROOT" "$CODEX_HOME"
+mkdir -p "$APP_DATA_DIR" "$AGENT_WORKSPACE_ROOT"
+is_claude || mkdir -p "$CODEX_HOME"
 log "Persistent state: $local_state_root"
 export CONTAINER_USER="${CONTAINER_USER:-$(id -u):$(id -g)}"
 
-log "Building $runtime_image from Dockerfile.runtime (base: $runtime_base_image)."
+log "Building $runtime_image from $runtime_dockerfile (base: $runtime_base_image)."
 "$engine" build \
-  --file Dockerfile.runtime \
+  --file "$runtime_dockerfile" \
   --build-arg "NODE_IMAGE=$runtime_base_image" \
   --build-arg "DEBIAN_MIRROR=$runtime_apt_mirror" \
   --build-arg "DEBIAN_SECURITY_MIRROR=$runtime_apt_security_mirror" \
@@ -169,18 +191,31 @@ preflight_user_args=(--user "$CONTAINER_USER")
 if [[ "$(basename "$engine")" == "podman" ]]; then
   preflight_user_args+=(--userns keep-id)
 fi
-if ! "$engine" run --rm \
-  "${preflight_user_args[@]}" \
-  --mount "type=bind,src=$AGENT_WORKSPACE_ROOT,dst=/workspace" \
-  --mount "type=bind,src=$CODEX_HOME,dst=/codex-home" \
-  "$runtime_image" sh -lc \
-    'touch /workspace/.launchpad-write-test /codex-home/.launchpad-write-test && rm /workspace/.launchpad-write-test /codex-home/.launchpad-write-test'; then
+mount_check_ok() {
+  if is_claude; then
+    # Claude mounts each Run's working copy, kept under the data directory.
+    "$engine" run --rm \
+      "${preflight_user_args[@]}" \
+      --mount "type=bind,src=$APP_DATA_DIR,dst=/workspace" \
+      "$runtime_image" sh -lc \
+        'touch /workspace/.launchpad-write-test && rm /workspace/.launchpad-write-test'
+  else
+    "$engine" run --rm \
+      "${preflight_user_args[@]}" \
+      --mount "type=bind,src=$AGENT_WORKSPACE_ROOT,dst=/workspace" \
+      --mount "type=bind,src=$CODEX_HOME,dst=/codex-home" \
+      "$runtime_image" sh -lc \
+        'touch /workspace/.launchpad-write-test /codex-home/.launchpad-write-test && rm /workspace/.launchpad-write-test /codex-home/.launchpad-write-test'
+  fi
+}
+if ! mount_check_ok; then
   log "The container engine cannot mount $local_state_root."
   log "Set LOCAL_POC_DATA_ROOT to a directory shared with Docker/Colima/Podman."
   exit 2
 fi
 
-if [[ "$codex_sandbox_mode" == "workspace-write" ]] \
+if ! is_claude \
+  && [[ "$codex_sandbox_mode" == "workspace-write" ]] \
   && ! "$engine" run --rm "$runtime_image" \
     codex sandbox linux --full-auto -- true >/dev/null 2>&1; then
   log "Codex Landlock is unavailable in this Linux Runtime."

@@ -30,6 +30,9 @@ proof of concept and does not claim production-grade tenant isolation.
   PostgreSQL reflection tables, using the same structured `learnFrom` rules as
   token mode. It is not prompt text, and its live efficacy still needs benchmark
   evidence.
+- The Claude runtime keeps the model call on the host, so its tool containers
+  run with `--network none` when policy denies network (`docs/contract-decisions.md`,
+  decision 30). Host-level egress remains open for Codex.
 
 ### P2 — Orchestration
 

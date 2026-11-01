@@ -157,6 +157,11 @@ single-agent path above, which is unchanged. These parts exist:
   request goes to the middleware, and it fails closed. Each execution mounts a
   disposable Codex home containing only generated provider configuration; the
   shared host Codex home is not mounted into agent containers.
+- **Claude runtime**
+  ([`claude-execution-runtime.ts`](../apps/server/src/orchestrator/claude-execution-runtime.ts),
+  [`claude-tool-sandbox.ts`](../apps/server/src/claude-tool-sandbox.ts)):
+  the same port on `MODEL_PROVIDER=anthropic`, with the agent loop on the host and
+  the tools in the container. See [below](#the-claude-runtime).
 - **Web console** ([`apps/web/src`](../apps/web/src), conventions in
   [`apps/web/DESIGN.md`](../apps/web/DESIGN.md)): a shared shell with real URLs
   (`/`, `/runs`, `/runs/new`, `/runs/:id`, `/playground`, `/safety`, `/members`;
@@ -190,7 +195,7 @@ sequenceDiagram
     participant O as Orchestrator
     participant P as Supervisor planner
     participant M as Security middleware (P1)
-    participant R as Codex runtime (container)
+    participant R as Agent runtime (Claude or Codex)
     participant S as RunStore + RunEventHub
 
     Dev->>API: POST /api/workspaces/:id/runs
@@ -227,7 +232,8 @@ Multi-user mode is `APP_AUTH_MODE=password`, with `DATABASE_URL` and
 `RUNTIME_PROVIDER=container`. Users sign in with accounts kept in Postgres
 instead of the shared token, and `index.ts` composes the orchestrator with
 `PostgresRunStore`, `PostgresAgentDirectory`, P1's middleware on
-`PostgresSecuritySource`, the model planner and Codex containers
+`PostgresSecuritySource`, the model planner and one disposable container per
+execution, on Claude or Codex by `MODEL_PROVIDER`
 ([`postgres-runs.ts`](../apps/server/src/postgres-runs.ts)). In a workspace,
 any role may read bounded Run data; `developer` and `security_admin` may also
 start and cancel Runs and read redacted raw execution traces. An `auditor` reads
@@ -285,11 +291,111 @@ committed results and are not live measurements or runs initiated by the UI.
 Orchestration test and load results are in
 [orchestration-evaluation.md](orchestration-evaluation.md).
 
+### The Claude runtime
+
+`MODEL_PROVIDER=anthropic` replaces Codex on the multi-agent path. It has been
+proven against a local mock of the API and in real containers, and has not yet run
+against the real API. Codex's code stays, and removing it waits for that proof.
+
+```mermaid
+flowchart LR
+    subgraph Host["Trusted host: the server process"]
+      Loop["ClaudeExecutionRuntime<br/>agent loop, holds the API key"]
+      Gate["ActionGate → security middleware"]
+      Trace["TraceWriter<br/>Codex-shaped records"]
+    end
+    Model["Claude Messages API"]
+    subgraph Box["Disposable container, one per execution"]
+      Tools["bash and file operations<br/>non-root, CPU/memory/PID limits<br/>no key, --network none when denied"]
+      WC["/workspace: the Run's working copy<br/>read-only unless the agent may write"]
+    end
+    Loop <-->|"HTTPS, from the host"| Model
+    Loop -->|"every tool call, before it runs"| Gate
+    Loop --> Trace
+    Trace -->|"every record"| Gate
+    Loop -->|"only what the gate allowed"| Tools
+    Tools --- WC
+```
+
+**Why the gate holds by construction.** The model has no way to act except by asking
+the loop. A `tool_use` block is a request, and the loop is the only thing that can
+carry it out, so the gate does not depend on an agent CLI honouring an approval
+protocol. Nothing in the container talks to the model, so a stopped loop stops
+everything.
+
+**This closes the open egress problem for this path.** The Codex container needs a
+bridge network to reach its model, which [handover.md](../handover.md) records as an
+open problem: `--network none` would also stop model requests. Here the model call
+stays on the host, so a policy that denies network gives the container no network at
+all, with no provider-only egress path to build or trust. It stays open for Codex.
+
+**The same semantics as Codex.** Commands and file changes go through
+`ActionGate.decide` with the shapes `gated-turn.ts` uses. Allow and steer run; a
+block with `stop: "action"` refuses and goes on; a block with `stop: "execution"` ends
+the loop with no further model call; an error from the gate fails closed. A refusal
+reaches the model as a `tool_result` with `is_error`. Corrections from the middleware
+arrive as text after the tool results, never inside one.
+
+**Trace records** copy a real Codex trace, down to the ordering of approval requests
+and the `declined` item a refusal leaves
+([`benchmark-results/`](../benchmark-results/2026-08-31-slice) holds real ones), so
+the deterministic checks, trajectory state, findings, trace route, web trace view
+and benchmark scorers read them unchanged. Thinking summaries become `reasoning`
+items, which is what the agent-intent check and the semantic monitor read. One
+consequence is shared with Codex: re-running the checks over a declined egress
+attempt fires `sensitive-egress` in `observe`, which ends the execution, so a
+refused send after a secret read stops the attempt rather than only the action.
+
+**Where it differs from Codex**, in order of consequence:
+
+| | Codex | Claude |
+| --- | --- | --- |
+| API key | In the container's environment | On the host only |
+| Network denied | Inner sandbox, in a bridged container | No network in the container |
+| Reads | Known-safe commands skip the gate | Every command reaches the gate, including reads, so the guard's cost and its evidence both rise slightly |
+| Commands the gate sees | Wrapped in `bash -lc` | The text the model wrote |
+| Read-only agents | Writable mount, gate only | Read-only mount as well |
+| Read-only agents' compound reads | Codex's parser allows `ls && cat a` | Refused, because the middleware's set accepts only single plain commands. The system prompt tells the agent. |
+| Inner sandbox | Landlock where available | None. The container is the boundary, so a writer can change anything its user can inside it, such as `/tmp`, through the gate. |
+| Editing | `apply_patch`, applied by Codex | Read in the container, then gated, then written if the file still hashes the same, following no symlink |
+
+**File edits and symlinks.** Paths with `..` or outside `/workspace` are refused on
+the host, before the gate. Inside the container, a fixed script checks every parent
+with `lstat`, opens with `O_NOFOLLOW`, and verifies the open descriptor through
+`/proc/self/fd` before reading or writing. It runs in the container, so a path can
+only ever resolve against the container's filesystem, never the host's. A process in
+the same container racing to swap a directory can at worst leave an empty file
+elsewhere in that container, which a gated shell command could do anyway.
+
+**Limits**, all configurable, per execution: model turns, tokens per call, total
+input and output tokens, model and tool time, command time, tool output, and edit
+size. They bound an attempt, and the orchestrator retries a failed attempt once, as
+it does any crash. The refusal and limit errors say which setting was hit.
+
+**Claude API use.** `claude-opus-5-5` by default, with `output_config.effort` set,
+adaptive thinking with summaries, streaming with `finalMessage()`, `tool_choice:
+auto`, the Anthropic-defined `bash_20250124` and `text_editor_20250728` tools, a
+frozen system prompt with prompt caching, and the server-side `fallbacks: "default"`
+opt-in (beta `server-side-fallback-2026-07-01`). History is passed back unchanged,
+with one exception the API requires: after a mid-output fallback, the declined
+attempt's thinking and tool calls are left out, and those tool calls never run. The
+supervisor planner and the semantic monitor call Claude too, with structured
+outputs, the same prompts, schemas, timeouts and fail-closed behaviour, and
+`GUARDRAIL_SEMANTIC_MODEL` as the monitor's override.
+
+**The legacy path.** `AgentService` and `run-turn.ts` are unchanged and need Codex.
+Under this provider the message route answers 503 with the reason, and the Playground
+and Safety pages say so; the web app reads `modelProvider`, which `/api/system`
+already returned.
+
+Run the boundary probe with `npm run verify:claude-runtime -w @launchpad/server`. It
+uses real Docker, a mock API and no key, and is not part of `npm test`.
+
 ## Deployment profiles
 
 | Profile | Control plane | Agent execution |
 | --- | --- | --- |
-| Local POC | Host Node.js | Disposable local container |
+| Local POC | Host Node.js | Disposable local container (Codex in it, or Claude's tools with the loop on the host) |
 | Multi-agent host (`scripts/deploy-multi-agent.sh`) | Host Node.js under systemd, Postgres in Compose | Disposable local container |
 | ECS | Application container | Codex process in the same container |
 | Local development | Host Node.js | Host Codex process |

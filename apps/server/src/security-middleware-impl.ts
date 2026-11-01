@@ -522,11 +522,23 @@ function policyFinding(code: string, message: string, severity: FindingSeverity,
   return { layer: "policy", check: "capability-policy", code, severity, message, facts: null, evidence: null, intervened };
 }
 
+/**
+ * A runtime that reports commands as bare text (the Claude runtime does; Codex
+ * wraps everything in `bash -lc`) reaches this with the real command, so a read
+ * tool's writing or executing flags must not pass as a read.
+ */
+const NOT_A_READ =
+  /^\s*(?:find\b.*\s-(?:exec|execdir|ok|okdir|delete|fprint|fprint0|fprintf|fls)\b|rg\b.*\s--(?:pre|pre-glob|hostname-bin)\b|file\b.*\s(?:-C|--compile)\b)/is;
+
 function isKnownSafeRead(command: string): boolean {
   // This accepts only a single plain command. Shell syntax, substitutions,
   // redirections and command chaining require the shell capability.
   if (/[;&|<>`$()\\\n\r]/.test(command)) return false;
-  return /^\s*(?:ls|pwd|cat|head|tail|rg|grep|find|stat|file|wc|sed|awk)(?:\s+[^\n]*)?\s*$/i.test(command);
+  if (NOT_A_READ.test(command)) return false;
+  // sed and awk are programming languages: only printing a line range of one file
+  // is a read. GNU sed also takes options after the file, so nothing may follow it.
+  if (/^\s*sed\b/i.test(command)) return /^\s*sed\s+-n\s+'?\d+(?:,\d+)?p'?\s+(?:'[^']*'|[^\s'-]\S*)\s*$/.test(command);
+  return /^\s*(?:ls|pwd|cat|head|tail|rg|grep|find|stat|file|wc)(?:\s+[^\n]*)?\s*$/i.test(command);
 }
 
 function toDraft(finding: Finding | SecurityFindingDraft): SecurityFindingDraft {

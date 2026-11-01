@@ -1,4 +1,6 @@
+import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { z } from "zod";
+import { CLAUDE_FALLBACKS, createClaudeClient, structuredText, type ClaudeClient } from "./anthropic-client.js";
 import type { AppConfig } from "./config.js";
 // This file used to carry its own credential regexes — the third independent
 // copy in the repo, and the weakest of the three: no base64, no hex, no PEM
@@ -169,7 +171,55 @@ export class ModelSemanticIntentMonitor implements SemanticIntentMonitor {
   }
 }
 
+export interface ClaudeSemanticIntentMonitorOptions {
+  client: ClaudeClient;
+  model: string;
+  timeoutMs: number;
+}
+
+/**
+ * The same observer on Claude: tool-less, redacted input, the same prompt and the
+ * same schema check, with structured outputs for the response's shape. A refusal,
+ * a cut-off response or a timeout rejects, and IntentController treats that as a
+ * review that is unavailable, which fails closed for consequential actions.
+ */
+export class ClaudeSemanticIntentMonitor implements SemanticIntentMonitor {
+  constructor(private readonly options: ClaudeSemanticIntentMonitorOptions) {}
+
+  async assess(input: SemanticMonitorInput): Promise<SemanticAssessment> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.options.timeoutMs);
+    timeout.unref();
+
+    try {
+      const message = await this.options.client.beta.messages.create(
+        {
+          model: this.options.model,
+          // Thinking counts toward this, unlike the 700 output tokens of the Responses call.
+          max_tokens: 4_000,
+          // Low, because this runs on a short timeout between an agent's actions.
+          output_config: { effort: "low", format: zodOutputFormat(assessmentSchema) },
+          messages: [{ role: "user", content: monitorPrompt(redactMonitorInput(input)) }],
+          ...CLAUDE_FALLBACKS,
+        },
+        { signal: controller.signal },
+      );
+      const text = structuredText(message, "semantic monitor");
+      return assessmentSchema.parse(normalizeAssessmentAuditFields(parseJsonObject(text)));
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+}
+
 export function createSemanticIntentMonitor(config: AppConfig): SemanticIntentMonitor {
+  if (config.modelProvider === "anthropic") {
+    return new ClaudeSemanticIntentMonitor({
+      client: createClaudeClient(config),
+      model: config.semanticGuardModel || config.modelName,
+      timeoutMs: config.semanticGuardTimeoutMs,
+    });
+  }
   return new ModelSemanticIntentMonitor({
     apiKey: config.modelApiKey,
     baseUrl:
