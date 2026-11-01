@@ -584,15 +584,18 @@ credentials or session state. Stronger OS, database, and network isolation
 requires a separate threat model and deployment design before production
 multi-tenant claims.
 
-## 27. Password sign-in limits are shared through PostgreSQL
+## 27. Password sign-in currently has no failed-attempt limit
 
-**Decision (1 November 2026, P3):** Keep the existing limits (five attempts per
-account and 30 per source address in a 15-minute fixed window), but store them
-in PostgreSQL and update counters transactionally under row locks. Account and
-source keys are SHA-256 digests; raw passwords are never involved. Successful
-authentication clears that account's failures and gives the successful attempt
-back to the source-address budget. This makes authentication limits consistent
-across restarts and app replicas.
+**Current behavior (1 November 2026):** Password sign-in does not throttle failed
+attempts. The PostgreSQL-backed design below was removed before release, along
+with its migration, implementation and tests. It is historical context, not an
+active security control. Do not describe sign-in as rate-limited until an
+implementation is restored and verified.
+
+The removed design proposed five attempts per account and 30 per source address
+in a 15-minute fixed window, stored transactionally in PostgreSQL. Account and
+source keys were to be SHA-256 digests; raw passwords were never involved. This
+would have made limits consistent across restarts and app replicas.
 
 ## 28. Multi-agent reflections reuse the deterministic memory contract
 

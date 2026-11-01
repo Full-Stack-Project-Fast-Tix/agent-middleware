@@ -244,10 +244,9 @@ profiles and policies is decision 21. `npm run db:admin -w
 @launchpad/server` bootstraps the first users and registers host project paths;
 it also lists users/workspaces and can create empty workspaces. A
 `security_admin` can create accounts attached to their workspace, manage its
-members, and create additional empty workspaces (contract decision 15). Failed sign-ins
-are limited by shared PostgreSQL counters: five attempts per account and 30 per
-source address within 15 minutes. Authentication limits are consistent across
-restarts and replicas. Run streams detect commits made by another instance and
+members, and create additional empty workspaces (contract decision 15). Password
+sign-in currently has no failed-attempt rate limit (contract decision 27 records
+the removed design). Run streams detect commits made by another instance and
 ask the client to reload its snapshot, but orchestration waiters, cancellation,
 approval coordination and run-scoped taint remain process-local. Keep the app
 single-instance. The
@@ -273,7 +272,7 @@ Not built yet, by owner:
 - **P3:** tenant isolation beyond workspace roles (every workspace's Runs share one
   host). First-account bootstrap and host project paths stay operator-only
   (decision 15); workspace admins can create accounts in their workspace and
-  empty workspaces. Sign-in has no limit on failed attempts.
+  empty workspaces. Sign-in has no limit on failed attempts (contract decision 27).
   Migrating token-mode JSON records
   was decided against (decision 23). The
   integration harness still runs on `InMemoryRunStore`; the fuzz suite and the
