@@ -10,7 +10,7 @@ if [[ -z "${VOLCENGINE_ACCESS_KEY:-}" || -z "${VOLCENGINE_SECRET_KEY:-}" ]]; the
 fi
 
 if [[ ! -f .env.production ]]; then
-  echo "Missing .env.production. Copy .env.example and fill the Ark values." >&2
+  echo "Missing .env.production. Copy .env.example and fill the Ark values, with MODEL_PROVIDER=ark and APP_AUTH_MODE=token." >&2
   exit 1
 fi
 

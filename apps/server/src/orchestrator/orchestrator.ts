@@ -1193,7 +1193,7 @@ function decisionSummary(decision: SecurityDecision): JsonObject {
 function safeDetailsOf(action: ProposedAction): JsonObject {
   switch (action.type) {
     case "command":
-      return { command: bounded(redactSensitiveText(action.command), 500), cwd: action.cwd };
+      return { command: bounded(redactSensitiveText(action.command), 200_000), cwd: action.cwd };
     case "file_change":
       return {
         files: action.changes.slice(0, 50).map((change) => ({

@@ -350,8 +350,8 @@ Two small writes make this possible, neither a schema change:
 P3 owns migrations, so none of these were added here.
 
 **Changed (1 November 2026, at Wai's request):** `security.decision` metadata now
-also holds `proposed` for commands, using the same redaction and 500-character limit
-as `approvals.safe_details`, so the timeline shows them. P1 had kept command text out
+also holds `proposed` for commands, using the same redaction and 200,000-character limit as `approvals.safe_details`, so
+the timeline shows each whole command. P1 had kept command text out
 of durable rows because a redaction miss in the append-only audit trail cannot be
 removed. That risk is accepted for this proof of concept, and P1 should review it
 before any deployment. A `gate_actions` table the 30-day retention can expire is the

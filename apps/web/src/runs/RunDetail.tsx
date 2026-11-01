@@ -249,7 +249,13 @@ export function RunDetail({ runId }: { runId: string }) {
             active={active}
             names={names}
             selectedTaskId={selectedTask?.id ?? null}
-            onSelectTask={setPicked}
+            onSelectTask={(taskId) => {
+              setPicked(taskId);
+              // The drill-down sits below the timeline on narrow screens.
+              window.requestAnimationFrame(() => {
+                document.querySelector(".task-drilldown")?.scrollIntoView({ block: "nearest" });
+              });
+            }}
             resolvingApprovalId={resolvingApprovalId}
             canAnswer={(approvalId) => {
               const approval = view.approvals.find((candidate) => candidate.id === approvalId);

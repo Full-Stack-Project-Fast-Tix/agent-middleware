@@ -209,7 +209,8 @@ describe("anthropic configuration", () => {
     const config = loadConfig({ ...template, NODE_ENV: "test" });
 
     expect(config.modelProvider).toBe("anthropic");
-    expect(config.modelName).toBe("claude-opus-5-5");
+    expect(config.modelName).toBe("claude-haiku-5-5");
+    expect(config.authMode).toBe("password");
     expect(config.runtimeProvider).toBe("container");
     expect(config.containerRuntimeImage).toBe("agentguard-claude-runtime:local");
     expect(template.ANTHROPIC_API_KEY).toMatch(/^replace-/);
@@ -217,11 +218,11 @@ describe("anthropic configuration", () => {
     expect(() => assertModelProviderReady(config)).toThrow("ANTHROPIC_API_KEY");
     // The bounded defaults the docs' cost table is written against.
     expect(config.claude).toEqual({
-      effort: "high",
-      maxIterations: 40,
+      effort: "medium",
+      maxIterations: 20,
       maxTokensPerCall: 32_000,
-      maxTotalOutputTokens: 200_000,
-      maxTotalInputTokens: 2_000_000,
+      maxTotalOutputTokens: 50_000,
+      maxTotalInputTokens: 500_000,
       executionTimeoutMs: 900_000,
       commandTimeoutMs: 120_000,
       toolOutputMaxBytes: 32_768,

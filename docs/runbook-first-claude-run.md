@@ -7,8 +7,8 @@ not to get a perfect result. If something fails, stop and report it using
 
 **Time:** about 30 minutes.
 
-**Cost:** roughly $0.30 to $1, and at most about $7 with the limits below. These are
-estimates, because no real run has been measured. This run uses your API key, so you
+**Cost:** a few cents on Claude Haiku 5.5, and at most about $0.90 with the template's
+limits. These are estimates, because no real run has been measured. This run uses your API key, so you
 pay for it.
 
 ## Before you start
@@ -60,17 +60,12 @@ This work is on `feat/claude-runtime`, not `main`.
 cp .env.example .env
 ```
 
-Open `.env` in an editor and change these lines. Edit the existing lines, and don't
-add second copies.
+Open `.env` in an editor and change this line. Edit the existing line, and don't add
+a second copy. The template sets everything else this run needs.
 
 | Line | Change it to |
 | --- | --- |
 | `ANTHROPIC_API_KEY=...` | Your key, right after the `=`, with no quotes or spaces |
-| `# APP_AUTH_MODE=password` | `APP_AUTH_MODE=password` |
-| `# DATABASE_URL=postgres://...` | Remove the `# ` only |
-| `CLAUDE_MAX_ITERATIONS=40` | `CLAUDE_MAX_ITERATIONS=20` |
-| `CLAUDE_MAX_TOTAL_OUTPUT_TOKENS=200000` | `CLAUDE_MAX_TOTAL_OUTPUT_TOKENS=50000` |
-| `CLAUDE_MAX_TOTAL_INPUT_TOKENS=2000000` | `CLAUDE_MAX_TOTAL_INPUT_TOKENS=500000` |
 
 Leave `TEST_DATABASE_URL` commented out.
 
@@ -159,7 +154,7 @@ Wait for `Open http://localhost:3000`, then in your browser:
    2 minutes, and an expired one counts as denied.
 
 **Stop the run** with **Cancel run** if it does something you didn't expect or the
-spend in the Console passes about $5. If that doesn't work, press `Ctrl+C` in the
+spend in the Console passes about $1. If that doesn't work, press `Ctrl+C` in the
 terminal.
 
 Run this once only. A failed attempt is retried automatically once, which can double

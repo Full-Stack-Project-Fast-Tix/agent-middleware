@@ -57,7 +57,7 @@ function proposalFrom(type: RunTimelineEntry["actionType"], details: unknown): T
     case "command": {
       const parsed = savedDetailsSchemas.command.safeParse(details);
       if (!parsed.success) return null;
-      return { type, command: safe(parsed.data.command, 500), cwd: parsed.data.cwd === null ? null : safe(parsed.data.cwd, 300) };
+      return { type, command: safe(parsed.data.command, 200_000), cwd: parsed.data.cwd === null ? null : safe(parsed.data.cwd, 300) };
     }
     case "file_change": {
       const parsed = savedDetailsSchemas.file_change.safeParse(details);

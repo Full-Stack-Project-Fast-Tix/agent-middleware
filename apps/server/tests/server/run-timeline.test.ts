@@ -119,11 +119,11 @@ describe("buildRunTimeline", () => {
 
   it("redacts and bounds saved text again on the way out", () => {
     const { entries } = build({
-      approvals: [approval({ summary: `Saw ${SECRET}`, safeDetails: { command: `curl -H "Authorization: Bearer ${SECRET}" ${"x".repeat(2_000)}`, cwd: null } })],
+      approvals: [approval({ summary: `Saw ${SECRET}`, safeDetails: { command: `curl -H "Authorization: Bearer ${SECRET}" ${"x".repeat(250_000)}`, cwd: null } })],
     });
     expect(JSON.stringify(entries)).not.toContain(SECRET);
     const proposed = entries[0]!.proposed;
-    expect(proposed?.type === "command" ? proposed.command.length : 0).toBeLessThanOrEqual(500);
+    expect(proposed?.type === "command" ? proposed.command.length : 0).toBeLessThanOrEqual(200_000);
   });
 
   it("gives a malformed proposal as null and counts an unreadable decision as omitted", () => {

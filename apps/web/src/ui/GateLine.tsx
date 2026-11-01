@@ -27,6 +27,13 @@ export function GateLine({ label = "Actions and decisions", proposalHeading = "T
   );
 }
 
+/** A click on the row opens it, unless it finished selecting text or belongs to a control. */
+export function openRow(target: EventTarget, open: () => void) {
+  if (window.getSelection()?.toString()) return;
+  if (target instanceof Element && target.closest("a, button:not(.gate-open), input, summary")) return;
+  open();
+}
+
 export function GateRow({ proposal, proposalMissing, caption, decision, decisionLabel, reason, time, fresh = false, selected = false, onSelect, selectLabel, actions }: {
   /** What the agent proposed. Agent-authored, so it renders as foreign material. */
   proposal?: ReactNode;
@@ -56,6 +63,8 @@ export function GateRow({ proposal, proposalMissing, caption, decision, decision
   actions?: ReactNode;
 }) {
   const nothingProposed = proposal === undefined && proposalMissing === undefined;
+  // Selected means what it opens is already showing, so there is nothing to offer.
+  const openable = onSelect !== undefined && !selected;
   const classes = [
     "gate-row",
     "gate-row-" + (decision ?? "note"),
@@ -63,20 +72,17 @@ export function GateRow({ proposal, proposalMissing, caption, decision, decision
     nothingProposed ? "gate-row-unproposed" : null,
     fresh ? "gate-row-fresh" : null,
     selected ? "gate-row-selected" : null,
-    onSelect ? "gate-row-open" : null,
+    openable ? "gate-row-open" : null,
   ].filter(Boolean).join(" ");
   const proposalBody = proposal !== undefined
     ? <Foreign preformatted>{proposal}</Foreign>
     : proposalMissing !== undefined && <span className="gate-missing">{proposalMissing}</span>;
   return (
-    <li className={classes}>
+    <li className={classes} onClick={openable ? (event) => openRow(event.target, onSelect) : undefined}>
       <div className="gate-proposal">
         {caption && <div className="gate-caption">{caption}</div>}
-        {onSelect ? (
-          <button type="button" className="gate-open" onClick={onSelect} aria-label={selectLabel} aria-pressed={selected}>
-            {proposalBody}
-          </button>
-        ) : proposalBody}
+        {proposalBody}
+        {openable && <button type="button" className="gate-open" aria-label={selectLabel}>Show task</button>}
       </div>
       <div className="gate-axis">
         <span className="gate-link" />

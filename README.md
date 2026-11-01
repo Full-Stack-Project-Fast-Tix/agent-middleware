@@ -478,8 +478,8 @@ Full detail: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 ## Quick start
 
 The two steps here, and the Playground below, run Codex. With a `.env` copied from
-`.env.example`, set `MODEL_PROVIDER=ark` first, because that template now documents
-Claude. To run multi-agent Runs on Claude instead, see
+`.env.example`, set `MODEL_PROVIDER=ark` and `APP_AUTH_MODE=token` first, because that
+template now documents Claude. To run multi-agent Runs on Claude instead, see
 [Run on Claude](#run-on-claude).
 
 Two steps.
@@ -528,22 +528,15 @@ only thing that reads it. No container ever gets it.
 cp .env.example .env
 ```
 
-In `.env`, set the key and turn on sign-in and the database, which Runs need:
+In `.env`, set the key:
 
 ```dotenv
 ANTHROPIC_API_KEY=your-key
-APP_AUTH_MODE=password
-DATABASE_URL=postgres://launchpad:launchpad@127.0.0.1:5433/launchpad
 ```
 
-For a first run, also add these lower limits. They hold one attempt at one task to
-$3.50 ([what a Run costs](#what-a-run-costs)):
-
-```dotenv
-CLAUDE_MAX_ITERATIONS=20
-CLAUDE_MAX_TOTAL_OUTPUT_TOKENS=50000
-CLAUDE_MAX_TOTAL_INPUT_TOKENS=500000
-```
+The template already turns on sign-in and the database, which Runs need, and uses
+Claude Haiku 5.5 at medium effort with limits that hold one attempt at one task to
+about $0.45 ([what a Run costs](#what-a-run-costs)).
 
 Set a monthly spend limit for the key's workspace in the Anthropic Console as well.
 That is the only limit here that covers everything.
@@ -614,10 +607,14 @@ before.
 
 #### What a Run costs
 
-Estimates, from the list prices for `claude-opus-5-5` ($4 per million input tokens,
-$20 output, $0.20 cache reads, $5 cache writes). They have not been measured on real
-Runs. Thinking counts as output, and `CLAUDE_EFFORT=high` thinks more than the
-API's default of `medium`.
+The template uses `claude-haiku-5-5` at medium effort: $0.10 per million input tokens
+and $0.50 output for prompts of 100K tokens or fewer, $0.50 and $2.50 above that. A
+small Run should cost cents, and one attempt at most about $0.45.
+
+The table shows the same work on `claude-opus-5-5` ($4 per million input tokens, $20
+output, $0.20 cache reads, $5 cache writes) with `CLAUDE_EFFORT=high`, which thinks
+more than `medium`. These are estimates that have not been measured on real Runs.
+Thinking counts as output.
 
 | | Estimate |
 | --- | --- |
@@ -625,12 +622,12 @@ API's default of `medium`.
 | The supervisor's plan | about $0.05 |
 | One semantic review, when one is needed | about $0.02 |
 | A small `auto` Run: a plan and three tasks, with guards on | $1 to $4 |
-| **Most one attempt can cost, default limits** | **$14** (2M input tokens all billed as cache writes, $10, plus 200K output, $4) |
-| **Most one attempt can cost, the first-run limits above** | **$3.50** |
+| **Most one attempt can cost, the limits in code** | **$14** (2M input tokens all billed as cache writes, $10, plus 200K output, $4) |
+| **Most one attempt can cost, the template's limits** | **$3.50** |
 | Most one task can cost | twice the attempt, since a failed attempt is retried once |
 
-The limits apply per attempt, and a Run can plan up to six tasks. So the default
-limits only bound one `auto` Run to about $168 plus its reviews, which is why the
+The limits apply per attempt, and a Run can plan up to six tasks. So the limits in
+code only bound one `auto` Run to about $168 plus its reviews, which is why the
 Console spend limit matters. Most input in a long loop is cache reads, so an attempt
 that reaches the input limit normally costs nearer $4.40 than $14. A fallback bills at
 the fallback model's rates.
@@ -687,6 +684,7 @@ npm run dev
 Set the Codex provider and local paths in `.env` when running outside Docker:
 
 ```dotenv
+APP_AUTH_MODE=token
 MODEL_PROVIDER=openai
 RUNTIME_PROVIDER=local-process
 APP_DATA_DIR=.data
@@ -770,11 +768,11 @@ want the result without paying for the first two runs.
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `MODEL_PROVIDER` | `ark` in code, `anthropic` in `.env.example` | `anthropic` runs Runs on Claude. `openai` and `ark` run Codex. |
-| `ANTHROPIC_API_KEY` / `ANTHROPIC_MODEL` | — / `claude-opus-5-5` | Claude credentials and model. Startup refuses `anthropic` with no key, except for the simulated `dev:demo`. |
-| `CLAUDE_EFFORT` | `high` | Effort for each turn of an execution: `low` to `max`. |
-| `CLAUDE_MAX_ITERATIONS` | `40` | Model turns per execution. |
+| `ANTHROPIC_API_KEY` / `ANTHROPIC_MODEL` | — / `claude-opus-5-5` in code, `claude-haiku-5-5` in `.env.example` | Claude credentials and model. Startup refuses `anthropic` with no key, except for the simulated `dev:demo`. |
+| `CLAUDE_EFFORT` | `high` in code, `medium` in `.env.example` | Effort for each turn of an execution: `low` to `max`. |
+| `CLAUDE_MAX_ITERATIONS` | `40` in code, `20` in `.env.example` | Model turns per execution. |
 | `CLAUDE_MAX_TOKENS_PER_CALL` | `32000` | `max_tokens` for one turn, thinking included. |
-| `CLAUDE_MAX_TOTAL_OUTPUT_TOKENS` / `CLAUDE_MAX_TOTAL_INPUT_TOKENS` | `200000` / `2000000` | Tokens per execution. Input counts cache reads and writes. |
+| `CLAUDE_MAX_TOTAL_OUTPUT_TOKENS` / `CLAUDE_MAX_TOTAL_INPUT_TOKENS` | `200000` / `2000000` in code, `50000` / `500000` in `.env.example` | Tokens per execution. Input counts cache reads and writes. |
 | `CLAUDE_EXECUTION_TIMEOUT_MS` | `900000` | Model and tool time per execution. Waiting for an approval does not count. |
 | `CLAUDE_COMMAND_TIMEOUT_MS` | `120000` | One shell command, enforced inside the container. |
 | `CLAUDE_TOOL_OUTPUT_MAX_BYTES` | `32768` | One tool's output, as the model and the trace see it. |

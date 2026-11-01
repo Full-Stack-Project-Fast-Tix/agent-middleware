@@ -35,6 +35,7 @@ cp .env.example .env
 Edit `.env` and set:
 
 ```dotenv
+APP_AUTH_MODE=token
 MODEL_PROVIDER=openai
 OPENAI_API_KEY=your-openai-api-key
 OPENAI_MODEL=gpt-5.1

@@ -101,6 +101,7 @@ Set these values in `.env.production`:
 
 ```dotenv
 PUBLIC_PORT=80
+APP_AUTH_MODE=token
 MODEL_PROVIDER=ark
 RUNTIME_PROVIDER=local-process
 CONTAINER_RUNTIME_IMAGE=volc-agent-runtime:local
@@ -171,7 +172,8 @@ cp deploy/volcengine/terraform.tfvars.example \
   deploy/volcengine/terraform.tfvars
 ```
 
-Set `ARK_API_KEY` and `ARK_MODEL` in `.env.production`. Set the region, zone,
+Set `APP_AUTH_MODE=token`, `MODEL_PROVIDER=ark`, `ARK_API_KEY` and `ARK_MODEL` in
+`.env.production`. Set the region, zone,
 image, instance type, key pair, allowed CIDRs, and repository URL in
 `terraform.tfvars`.
 
