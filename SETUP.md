@@ -1,6 +1,6 @@
 # Setup from a fresh GitHub clone
 
-This guide gets the Agent Launchpad running from a clean checkout. The project
+This guide gets AgentGuard running from a clean checkout. The project
 uses Codex with the native OpenAI provider.
 
 ## Prerequisites

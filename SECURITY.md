@@ -1,6 +1,6 @@
 # Security policy
 
-Volc Agent Launchpad is a security-focused proof of concept. Only the latest revision
+AgentGuard is a security-focused proof of concept. Only the latest revision
 on the default branch is supported.
 
 ## Report a vulnerability
