@@ -208,6 +208,38 @@
   gap: 28px;
 }
 
+.run-file-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.run-file-preview {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-control);
+  background: var(--surface-sunk);
+}
+
+.run-file-preview-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  overflow-wrap: anywhere;
+}
+
+.run-file-preview pre {
+  max-height: 32rem;
+  margin: 0;
+  overflow: auto;
+  white-space: pre;
+  tab-size: 2;
+}
+
 .run-head {
   display: flex;
   flex-wrap: wrap;
