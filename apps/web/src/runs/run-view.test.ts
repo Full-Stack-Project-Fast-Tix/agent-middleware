@@ -8,6 +8,7 @@ const NOW = "2026-10-09T10:00:00.000Z";
 const run = (overrides: Partial<Run> = {}): Run => ({
   id: RUN_ID,
   workspaceId: "00000000-0000-4000-8000-0000000000aa",
+  parentRunId: null,
   createdByUserId: "00000000-0000-4000-8000-0000000000bb",
   supervisorAgentId: null,
   userPrompt: "Add validation",

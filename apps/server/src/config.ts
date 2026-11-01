@@ -27,7 +27,7 @@ const envSchema = z.object({
   HOST: z.string().default("0.0.0.0"),
   PORT: z.coerce.number().int().min(1).max(65535).default(3000),
   LOG_LEVEL: z.string().default("info"),
-  /** Days a finished Run's working copy and raw traces are kept. 0 keeps them forever. */
+  /** Days finished Run artifacts and raw traces are kept; the latest successful workspace copy is retained as the continuation head. 0 keeps all files forever. */
   RUN_ARTIFACT_RETENTION_DAYS: z.coerce.number().int().min(0).default(30),
   /** Input plus output tokens one Run may use. No new attempt starts past it. */
   RUN_TOKEN_BUDGET: z.coerce.number().int().positive().default(2_000_000),

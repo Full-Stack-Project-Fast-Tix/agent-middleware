@@ -24,6 +24,7 @@ function runRow(id: string, status: Run["status"] = "running"): Run {
   return {
     id,
     workspaceId: "7d3c1a0e-5b1f-4c8e-9a2d-1f0e3b4c5d6e",
+    parentRunId: null,
     createdByUserId: "0b9e8d7c-6a5b-4c3d-8e2f-1a0b9c8d7e6f",
     supervisorAgentId: null,
     userPrompt: "Add input validation to the signup endpoint",

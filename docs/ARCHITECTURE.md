@@ -140,6 +140,10 @@ single-agent path above, which is unchanged. These parts exist:
   production-stack test.
 - **Orchestrator**
   ([`apps/server/src/orchestrator`](../apps/server/src/orchestrator/README.md)):
+  - starts each follow-up Run from the latest completed Run's working copy,
+    while keeping a separate Run, task graph, security context and audit history;
+  - serializes Runs per workspace and supplies bounded prior prompts/reports
+    as untrusted context, with the current prompt remaining authoritative;
   - plans with a tool-less supervisor call, validates the plan, and delegates
     each task through the middleware;
   - schedules tasks in dependency order, with limited parallelism and one
@@ -257,9 +261,11 @@ check as the other run routes. Password mode rejects the legacy global
 `/api/agents`, `/api/admin`, `/api/system` and single-agent Run routes because
 their JSON store has no workspace identity to authorize against.
 
-Each Run has a token budget (`RUN_TOKEN_BUDGET`). Files of a finished Run
-are removed after `RUN_ARTIFACT_RETENTION_DAYS` (contract decision 18), while its rows
-stay, and reading such a trace answers 410 rather than a plain 404.
+Each Run has a token budget (`RUN_TOKEN_BUDGET`). Expired Run files and traces
+are removed after `RUN_ARTIFACT_RETENTION_DAYS` (contract decision 18), except
+the latest successfully completed workspace copy, which remains available as
+the starting point for its next Run. Rows stay, and reading an expired trace
+answers 410 rather than a plain 404.
 
 Not built yet, by owner:
 - **P1:** multi-agent reflection memory now loads and folds structured findings

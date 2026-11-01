@@ -264,8 +264,9 @@ tenants.
 > token mode. Serve it over TLS before real use, because sessions are bearer tokens.
 
 Settings worth knowing: `RUN_ARTIFACT_RETENTION_DAYS` (30, 0 keeps files forever)
-removes a finished Run's working copy and raw traces, and `RUN_TOKEN_BUDGET`
-(2,000,000) stops new attempts once a Run has used that many tokens.
+removes finished Run traces and non-current working copies. The latest successful
+workspace copy stays available for follow-up Runs. `RUN_TOKEN_BUDGET` (2,000,000)
+stops new attempts once a Run has used that many tokens.
 
 ## Claude runtime
 

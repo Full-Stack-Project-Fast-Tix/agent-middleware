@@ -146,6 +146,9 @@ export class Orchestrator {
   private readonly onError: (error: unknown, runId: string) => void;
 
   private readonly active = new Map<string, RunState>();
+  /** Runs being created or executed, ordered one at a time per workspace. */
+  private readonly activeWorkspaceRuns = new Map<string, string>();
+  private readonly creatingWorkspaceRuns = new Set<string>();
   /** Approvals some execution is waiting on, by approval id. */
   private readonly waiters = new Map<string, (answer: Answer) => void>();
   /** Approvals being resolved right now, so a double submit gets a 409. */
@@ -186,28 +189,42 @@ export class Orchestrator {
     if (agent === null || agent.workspaceId !== input.workspaceId) throw new HttpError(404, "Agent not found");
     if (!agent.enabled || agent.archivedAt !== null) throw new HttpError(409, `Agent "${agent.name}" is disabled`);
 
+    if (this.activeWorkspaceRuns.has(input.workspaceId) || this.creatingWorkspaceRuns.has(input.workspaceId)) {
+      throw new HttpError(409, "A run is already active in this workspace. Wait for it to finish before submitting another prompt.");
+    }
+    this.creatingWorkspaceRuns.add(input.workspaceId);
+
     const now = this.now();
-    const run = await this.store.createRun({
-      id: this.newId(),
-      workspaceId: input.workspaceId,
-      createdByUserId: input.createdByUserId,
-      supervisorAgentId: input.orchestrationMode === "auto" ? agentId : null,
-      userPrompt: input.userPrompt,
-      orchestrationMode: input.orchestrationMode,
-      status: "queued",
-      finalOutput: null,
-      error: null,
-      cancelRequestedAt: null,
-      evaluation: null,
-      createdAt: now,
-      updatedAt: now,
-      startedAt: null,
-      completedAt: null,
-    }, (created) =>
-      this.auditEvent(created.workspaceId, created.id, "run.created", { type: "user", id: input.createdByUserId }, {
-        metadata: { orchestrationMode: created.orchestrationMode, agentId },
-      }),
-    );
+    let run: Run;
+    try {
+      run = await this.store.createRun({
+        id: this.newId(),
+        workspaceId: input.workspaceId,
+        parentRunId: null,
+        createdByUserId: input.createdByUserId,
+        supervisorAgentId: input.orchestrationMode === "auto" ? agentId : null,
+        userPrompt: input.userPrompt,
+        orchestrationMode: input.orchestrationMode,
+        status: "queued",
+        finalOutput: null,
+        error: null,
+        cancelRequestedAt: null,
+        evaluation: null,
+        createdAt: now,
+        updatedAt: now,
+        startedAt: null,
+        completedAt: null,
+      }, (created) =>
+        this.auditEvent(created.workspaceId, created.id, "run.created", { type: "user", id: input.createdByUserId }, {
+          metadata: { orchestrationMode: created.orchestrationMode, agentId },
+        }),
+      );
+    } catch (error) {
+      this.creatingWorkspaceRuns.delete(input.workspaceId);
+      throw error;
+    }
+    this.creatingWorkspaceRuns.delete(input.workspaceId);
+    this.activeWorkspaceRuns.set(run.workspaceId, run.id);
     this.workspaces.set(run.id, run.workspaceId);
 
     const state: RunState = {
@@ -223,7 +240,10 @@ export class Orchestrator {
     this.active.set(run.id, state);
     state.done = this.process(state, run, agentId)
       .catch((error: unknown) => this.onError(error, run.id))
-      .finally(() => this.active.delete(run.id));
+      .finally(() => {
+        this.active.delete(run.id);
+        if (this.activeWorkspaceRuns.get(run.workspaceId) === run.id) this.activeWorkspaceRuns.delete(run.workspaceId);
+      });
     return run;
   }
 
@@ -377,8 +397,10 @@ export class Orchestrator {
       );
       if (assignable.length === 0) throw new Error("This workspace has no enabled agents to delegate to.");
 
+      const continuityContext = await this.continuityContext(run);
       const plan = await this.planner.plan({
         userPrompt: run.userPrompt,
+        ...(continuityContext === undefined ? {} : { continuityContext }),
         agents: assignable.map(({ id, name, description }) => ({ id, name, description })),
         maxTasks: this.limits.maxTasks,
         signal: state.abort.signal,
@@ -592,6 +614,7 @@ export class Orchestrator {
     let usage: ExecutionUsage | null = null;
     try {
       const { inputs, withheld } = await this.handOff(launch, run, task);
+      const continuityContext = await this.continuityContext(run);
       const outcome = await this.runtime.execute({
         run,
         task,
@@ -603,6 +626,7 @@ export class Orchestrator {
           instructions: agent.instructions,
           inputs,
           withheld,
+          ...(continuityContext === undefined ? {} : { continuityContext }),
           nonce: randomUUID().replaceAll("-", "").slice(0, 12),
         }),
         runtimePolicy: policy.runtime,
@@ -664,6 +688,28 @@ export class Orchestrator {
     } finally {
       await launch.guard.close().catch(() => undefined);
     }
+  }
+
+  /** A few bounded prior prompt/report pairs help resolve references without
+   * making previous Runs authoritative or changing the current user goal. */
+  private async continuityContext(run: Run): Promise<string | undefined> {
+    const entries: string[] = [];
+    let parentRunId = run.parentRunId;
+    let remaining = 8_000;
+    for (let depth = 0; parentRunId !== null && depth < 3 && remaining > 0; depth += 1) {
+      const parent = await this.store.getRun(parentRunId);
+      if (parent === null) break;
+      const entry = [
+        `Run ${parent.id} (${parent.status})`,
+        `Previous request: ${redactSensitiveText(parent.userPrompt).slice(0, 1_500)}`,
+        `Previous report: ${redactSensitiveText(parent.finalOutput ?? parent.error ?? "No report was saved.").slice(0, 1_500)}`,
+      ].join("\n");
+      const bounded = entry.slice(0, remaining);
+      entries.push(bounded);
+      remaining -= bounded.length;
+      parentRunId = parent.parentRunId;
+    }
+    return entries.length === 0 ? undefined : entries.join("\n\n");
   }
 
   /**

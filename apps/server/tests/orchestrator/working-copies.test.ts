@@ -43,7 +43,7 @@ async function setup() {
   };
 }
 
-const run = (id = RUN_ID) => ({ id, workspaceId: "00000000-0000-4000-8000-000000000001" }) as Run;
+const run = (id = RUN_ID, parentRunId: string | null = null) => ({ id, workspaceId: "00000000-0000-4000-8000-000000000001", parentRunId }) as Run;
 
 /** One path per guard marker, standing for what that marker recognizes. */
 const EXAMPLE_FOR_MARKER: Record<string, string[]> = {
@@ -205,6 +205,15 @@ describe("DirectoryWorkingCopies", () => {
     const second = await copies.prepare(run("66666666-7777-4888-8999-aaaaaaaaaaaa"));
     await writeFile(path.join(first, "src", "signup.ts"), "changed\n");
     expect(await readFile(path.join(second, "src", "signup.ts"), "utf8")).toBe("export const signup = 1;\n");
+    expect(await readFile(path.join(source, "src", "signup.ts"), "utf8")).toBe("export const signup = 1;\n");
+  });
+
+  it("starts a follow-up from the completed run copy rather than the configured source", async () => {
+    const { source, copies } = await setup();
+    const first = await copies.prepare(run());
+    await writeFile(path.join(first, "src", "signup.ts"), "changed in first run\n");
+    const second = await copies.prepare(run("66666666-7777-4888-8999-aaaaaaaaaaaa", RUN_ID));
+    expect(await readFile(path.join(second, "src", "signup.ts"), "utf8")).toBe("changed in first run\n");
     expect(await readFile(path.join(source, "src", "signup.ts"), "utf8")).toBe("export const signup = 1;\n");
   });
 

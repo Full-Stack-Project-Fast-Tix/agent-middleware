@@ -130,8 +130,9 @@ export interface ActionGate {
 }
 
 /**
- * Each Run gets its own copy of the workspace, so Runs cannot overwrite each
- * other (plan section 3.2). Within a Run, write-capable work is serialised.
+ * Each Run gets its own copy, based on the latest successful Run in the
+ * workspace (or the configured source for the first Run). The orchestrator
+ * serializes Runs per workspace and write-capable work within each Run.
  */
 export interface WorkingCopies {
   /** Prepare the Run's working copy if it does not exist yet, and return its absolute path. */

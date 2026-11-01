@@ -3,10 +3,10 @@ import path from "node:path";
 import type pg from "pg";
 import { traceFilePath } from "./trace.js";
 
-// Removes the files a finished Run left behind once they are past retention: its
-// working copy and its attempts' raw traces. Rows stay, so audit events, findings
-// and statuses outlive the files. Only a Run the database says has finished is
-// touched; a directory with no matching Run is left alone.
+// Removes expired traces and non-head working copies for finished Runs. The
+// latest successful workspace copy stays available for follow-up Runs. Rows
+// stay, so audit events, findings and statuses outlive the files. Only a Run
+// the database says has finished is touched; unmatched directories are left alone.
 
 const RUN_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DAY_MS = 24 * 60 * 60 * 1_000;
@@ -29,16 +29,25 @@ export async function removeExpiredRunFiles(
   const names = entries.filter((name) => RUN_ID.test(name));
   if (names.length === 0) return 0;
   const cutoff = new Date((options.now?.() ?? Date.now()) - options.retentionDays * DAY_MS).toISOString();
-  const { rows } = await pool.query<{ id: string }>(
-    `SELECT id FROM runs
-      WHERE id = ANY($1::uuid[]) AND status IN ('completed', 'failed', 'cancelled') AND completed_at < $2`,
+  const { rows } = await pool.query<{ id: string; keep_workspace: boolean }>(
+    `SELECT r.id,
+        (r.status = 'completed' AND NOT EXISTS (
+          SELECT 1 FROM runs newer
+          WHERE newer.workspace_id = r.workspace_id AND newer.status = 'completed'
+            AND (coalesce(newer.completed_at, newer.created_at), newer.created_at, newer.id)
+              > (coalesce(r.completed_at, r.created_at), r.created_at, r.id)
+        )) AS keep_workspace
+      FROM runs r
+      WHERE r.id = ANY($1::uuid[]) AND r.status IN ('completed', 'failed', 'cancelled') AND r.completed_at < $2
+    `,
     [names, cutoff],
   );
-  for (const { id } of rows) {
+  for (const { id, keep_workspace } of rows) {
     const executions = await pool.query<{ id: string }>("SELECT id FROM agent_executions WHERE run_id = $1", [id]);
     for (const execution of executions.rows) await rm(traceFilePath(options.dataDirectory, execution.id), { force: true });
-    // The working copy goes last: finding it again is how a failed sweep gets retried.
-    await rm(path.join(root, id), { recursive: true, force: true });
+    // Keep only the latest successful copy as the workspace's continuation head.
+    // Other files, including the head's traces, follow ordinary retention.
+    if (!keep_workspace) await rm(path.join(root, id), { recursive: true, force: true });
   }
   return rows.length;
 }

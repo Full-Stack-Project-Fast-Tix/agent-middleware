@@ -44,10 +44,14 @@ export class InMemoryRunStore implements RunStore, RunReads {
   ) {}
 
   async createRun(run: Run, audit?: AuditFor<Run>): Promise<Run> {
-    this.record(audit, run);
-    this.runs.set(run.id, run);
-    this.commit({ runId: run.id, type: "run.updated", payload: { run } });
-    return run;
+    const parent = [...this.runs.values()]
+      .filter((candidate) => candidate.workspaceId === run.workspaceId && candidate.status === "completed")
+      .sort((a, b) => (b.completedAt ?? b.createdAt).localeCompare(a.completedAt ?? a.createdAt) || b.id.localeCompare(a.id))[0];
+    const created = { ...run, parentRunId: parent?.id ?? null };
+    this.record(audit, created);
+    this.runs.set(created.id, created);
+    this.commit({ runId: created.id, type: "run.updated", payload: { run: created } });
+    return created;
   }
 
   async getRun(runId: string): Promise<Run | null> {

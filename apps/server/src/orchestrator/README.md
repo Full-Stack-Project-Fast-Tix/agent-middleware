@@ -18,14 +18,14 @@ always the middleware's decision
 | `orchestrator.ts` | `Orchestrator`: `createRun`, `resolveApproval`, `expireApproval`, `cancel`, `whenSettled`. Runs planning, scheduling, executions, approvals and cancellation, and enforces `lifecycle.ts` on every status change. |
 | `plan.ts` | The supervisor plan schema and `validatePlan`: registered and enabled agents only, never the supervisor itself, no cycles, within `maxTasks`. Pure. |
 | `scheduler.ts` | `tasksToMarkReady`, `tasksToSkip`, `pickLaunches`: dependency order, skipping downstream of a failure, `maxParallel`, one writer at a time. Pure. |
-| `planner.ts` | `ModelPlanner`: one tool-less model call returning the plan as JSON. It sees the request and the agent catalogue, never workspace content. |
-| `task-prompt.ts` | What a specialist is told: its objective, earlier results fenced with a per-prompt nonce and marked as data, and the required final disposition report. |
+| `planner.ts` | `ModelPlanner`: one tool-less model call returning the plan as JSON. It sees the current request, bounded prior Run prompts/reports, and the agent catalogue, never workspace files. Prior Runs are labeled untrusted context. |
+| `task-prompt.ts` | What a specialist is told: its objective, bounded prior Run context, earlier results fenced with a per-prompt nonce and marked as data, and the required final disposition report. |
 | `task-disposition.ts` | Strictly validates whether a specialist reports its Task complete or incomplete. |
 | `ports.ts` | The interfaces the orchestrator depends on: `RunStore`, `AgentDirectory`, `ExecutionRuntime`, `WorkingCopies` and `ActionGate`. |
 | `in-memory-run-store.ts` | `RunStore` in memory, publishing RunEvents with per-run seqs. Used by tests and by `dev:demo` without `DATABASE_URL`; real Runs use `PostgresRunStore`. |
 | `claude-execution-runtime.ts` | `ClaudeExecutionRuntime`, for `MODEL_PROVIDER=anthropic`: an agent loop on this host over the Messages API, with tools in one disposable container per execution. Writes Codex-shaped trace records. |
 | `codex-execution-runtime.ts` | `CodexExecutionRuntime`: one execution, one disposable container, the Run's working copy at `/workspace`, its own trace file. Drives the turn with `../gated-turn.ts`. |
-| `working-copies.ts` | `DirectoryWorkingCopies`: copies the workspace to `<root>/<runId>/workspace` once per Run. Skips dependencies, local tool/credential stores, environment secrets, and common private-key files; keeps example environment templates and copies other symlinks as links. |
+| `working-copies.ts` | `DirectoryWorkingCopies`: copies the configured source for the first Run and the latest successful Run's copy for each follow-up to `<root>/<runId>/workspace`. Skips dependencies, local tool/credential stores, environment secrets, and common private-key files; keeps example environment templates and copies other symlinks as links. |
 
 Outside this folder: `../gated-turn.ts` drives one Codex turn whose
 approval requests go to `ActionGate.decide` and whose trace records go to

@@ -439,14 +439,52 @@ review and the security middleware remain separate evidence. The existing Task
 status and error fields express the result; no new shared lifecycle status is
 needed.
 
+## 21. Follow-up prompts continue a workspace through new Runs
+
+**Decision (1 November 2026):** Every submitted prompt creates a new Run, with
+its own task graph, executions, security context and audit trail. A Run records
+`parentRunId`, the most recent successfully completed Run in the same
+workspace, or null for the first Run. PostgreSQL selects that parent and
+creates the Run while holding a workspace advisory lock and rejects creation
+while another Run is active. The orchestrator also serializes Runs in process,
+which covers the in-memory demo and gives a quick local refusal; the database
+lock coordinates separately running service processes.
+
+The first Run copies the configured workspace source. A later Run copies its
+parent's working copy into a fresh isolated directory. Only `completed` Runs
+become parents: failed and cancelled Runs remain in history, while the next
+prompt starts from the most recent successful copy. The latest successful copy
+is exempt from working-copy retention so the workspace can continue after an
+idle period. Other Run artifacts still follow normal retention.
+
+The supervisor and specialists may receive at most 8,000 characters of recent
+successful Run prompts and reports across up to three ancestors. This context
+is explicitly untrusted; the current prompt and task remain authoritative, and
+no prior approval or policy decision carries over. The middleware continues to
+load the current Run's prompt as its trusted goal. The UI offers a follow-up
+composer on a finished Run page; submitting it creates a new Run in the same
+workspace and preserves chronological history in the Runs list.
+
+**Why:** Users expect a later prompt such as “add tests for that” to see the
+files produced by the prior request. Reopening a completed Run would mix two
+requests and obscure their audit boundaries. Copy-forward keeps the project
+continuous while keeping each request independently inspectable.
+
+**Limit:** The workspace is serialized, including Runs that could otherwise be
+read-only, to give a simple ordering for which successful file state is the
+starting point. A failed Run's partial files are deliberately not promoted;
+there is no recovery-from-partial-output control yet.
+
 ## 18. Terminal execution artifacts expire after 30 days
 
 **Decision (31 October 2026):** Run working copies and raw execution traces are
 retained for 30 days after a Run reaches a terminal state. Cleanup must never
-remove artifacts for a queued, planning, running or approval-waiting Run. Audit
-rows, statuses, bounded findings and saved task results remain after artifact
-expiry. A missing expired artifact is reported as expired rather than as proof
-that no execution occurred.
+remove artifacts for a queued, planning, running or approval-waiting Run. The
+latest successfully completed working copy in each workspace is retained as
+the starting point for follow-up Runs; that Run's raw traces still expire on
+schedule. Audit rows, statuses, bounded findings and saved task results remain
+after artifact expiry. A missing expired artifact is reported as expired
+rather than as proof that no execution occurred.
 
 P2 owns these lifecycle semantics. P3 owns the cleanup job, storage operations
 and any schema needed to distinguish expiry from an unexpected missing file.

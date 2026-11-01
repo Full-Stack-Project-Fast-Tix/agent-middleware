@@ -15,6 +15,10 @@
   min-height: 132px;
 }
 
+.continue-workspace form textarea {
+  min-height: 110px;
+}
+
 .new-run-workspace {
   color: var(--ink-soft);
 }

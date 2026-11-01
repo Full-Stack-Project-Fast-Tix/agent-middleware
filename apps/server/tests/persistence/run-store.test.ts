@@ -95,6 +95,14 @@ function record(hub: RunEventHub, runId: string): RunEvent[] {
 
 for (const target of targets) {
   describe.skipIf(target.skip)(target.name, () => {
+    it("records the latest completed workspace Run as the next Run's parent", async () => {
+      const store = target.open(new RunEventHub());
+      const first = makeRun({ status: "completed", completedAt: LATER });
+      await store.createRun(first);
+      const next = await store.createRun(makeRun({ workspaceId: first.workspaceId }));
+      expect(next.parentRunId).toBe(first.id);
+    });
+
     it("reads a run's newest audit events of one type, oldest first, with the total", async () => {
       const store = target.open(new RunEventHub());
       const run = makeRun();

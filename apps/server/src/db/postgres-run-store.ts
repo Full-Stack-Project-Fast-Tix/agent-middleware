@@ -51,10 +51,42 @@ export class PostgresRunStore implements RunStore, RunReads {
   ) {}
 
   async createRun(run: Run, audit?: AuditFor<Run>): Promise<Run> {
-    return this.write(run.id, audit, async (db) => {
-      const created = runSchema.parse(fromRow(await insertRow(db, "runs", run)));
-      return { result: created, event: { runId: run.id, type: "run.updated", payload: { run: created } } };
-    });
+    const db = await this.pool.connect();
+    let entry: OutboxEntry | undefined;
+    try {
+      await db.query("BEGIN");
+      // Serialize Run creation for this workspace across server processes.
+      await db.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [run.workspaceId]);
+      const active = await db.query(
+        "SELECT 1 FROM runs WHERE workspace_id = $1 AND status NOT IN ('completed', 'failed', 'cancelled') LIMIT 1",
+        [run.workspaceId],
+      );
+      if (active.rowCount) throw new HttpError(409, "A run is already active in this workspace. Wait for it to finish before submitting another prompt.");
+      const parent = await db.query<{ id: string }>(
+        "SELECT id FROM runs WHERE workspace_id = $1 AND status = 'completed' ORDER BY completed_at DESC NULLS LAST, created_at DESC, id DESC LIMIT 1",
+        [run.workspaceId],
+      );
+      const created = runSchema.parse(fromRow(await insertRow(db, "runs", {
+        ...run,
+        parentRunId: parent.rows[0]?.id ?? null,
+      })));
+      const auditEvent = audit?.(created) ?? null;
+      if (auditEvent !== null) await insertRow(db, "audit_events", auditEventSchema.parse(auditEvent));
+      const seq = await this.nextSeq(db, run.id);
+      if (seq === undefined) throw new Error(`Run ${run.id} disappeared during creation`);
+      entry = { event: { runId: run.id, type: "run.updated", payload: { run: created }, seq }, committed: false };
+      this.outbox(run.id).push(entry);
+      await db.query("COMMIT");
+      entry.committed = true;
+      return created;
+    } catch (error) {
+      if (entry !== undefined && !entry.committed) this.outbox(run.id).splice(this.outbox(run.id).indexOf(entry), 1);
+      await db.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      db.release();
+      if (entry !== undefined) this.flush(run.id);
+    }
   }
 
   async getRun(runId: string): Promise<Run | null> {

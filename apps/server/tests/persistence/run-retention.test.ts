@@ -26,6 +26,40 @@ let agentId = "";
 
 const exists = (file: string) => stat(file).then(() => true, () => false);
 
+describe("retaining the workspace continuation head", () => {
+  it("keeps only the latest successful copy while expiring its trace normally", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "run-retention-head-"));
+    const olderId = randomUUID();
+    const headId = randomUUID();
+    const executionId = randomUUID();
+    const olderWorkspace = path.join(directory, "runs", olderId, "workspace");
+    const headWorkspace = path.join(directory, "runs", headId, "workspace");
+    const headTrace = traceFilePath(directory, executionId);
+    await mkdir(olderWorkspace, { recursive: true });
+    await mkdir(headWorkspace, { recursive: true });
+    await mkdir(path.dirname(headTrace), { recursive: true });
+    await writeFile(headTrace, "trace\n");
+    const mockPool = {
+      query: async (sql: string) => {
+        if (sql.includes("SELECT r.id")) {
+          return { rows: [{ id: olderId, keep_workspace: false }, { id: headId, keep_workspace: true }] };
+        }
+        if (sql.includes("agent_executions")) return { rows: sql.includes("run_id = $1") ? [{ id: executionId }] : [] };
+        return { rows: [] };
+      },
+    } as unknown as Pick<pg.Pool, "query">;
+
+    try {
+      expect(await removeExpiredRunFiles(mockPool, { dataDirectory: directory, retentionDays: 30, now: () => NOW })).toBe(2);
+      expect(await exists(olderWorkspace)).toBe(false);
+      expect(await exists(headWorkspace)).toBe(true);
+      expect(await exists(headTrace)).toBe(false);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+});
+
 beforeAll(async () => {
   if (!url) return;
   const admin = new pg.Client({ connectionString: url });

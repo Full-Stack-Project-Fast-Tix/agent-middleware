@@ -141,15 +141,16 @@ Proposed action / delegation
 
 ### Workspace isolation and concurrency
 
-Each run gets an isolated working copy instead of modifying a shared permanent directory:
+Each prompt creates a separate Run with an isolated working copy. The first Run starts from the configured project source; later Runs start from the latest successfully completed Run in that workspace. This lets a user submit follow-up prompts while keeping each request and its security evidence separately auditable:
 
 ```text
 Workspace (logical project)
-├── Run 123 -> /runs/123/workspace
-└── Run 124 -> /runs/124/workspace
+├── configured project source
+├── Run 123 -> /runs/123/workspace (copied from source)
+└── Run 124 -> /runs/124/workspace (copied from Run 123)
 ```
 
-Within a run, read-only analysis tasks may run concurrently. Write-capable tasks should initially be serialized to avoid merge/conflict complexity. Multi-agent working copies exclude `.env` and `.env.*` except example/sample/template files, common credential-store directories and filenames, and private-key/state-file extensions. These are filename-based defaults, not general secret detection; unusual secrets in other files can still be copied. This approach is **not a claim of production-grade sandboxing** beyond what is actually demonstrated.
+Only one Run may be active in a workspace at a time. A failed or cancelled Run remains in history but does not become the next starting point; follow-up work starts from the last successful files. The latest successful copy is retained beyond ordinary artifact retention so it can seed the next Run. Within a Run, read-only analysis tasks may run concurrently. Write-capable tasks are serialized. Multi-agent working copies exclude `.env` and `.env.*` except example/sample/template files, common credential-store directories and filenames, and private-key/state-file extensions. These are filename-based defaults, not general secret detection; unusual secrets in other files can still be copied. This approach is **not a claim of production-grade sandboxing** beyond what is actually demonstrated.
 
 ### Data and event conventions
 
