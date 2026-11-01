@@ -383,6 +383,25 @@ describe("retries and failures", () => {
     expect(snapshot.executions.filter((execution) => execution.taskId === implement.id)).toHaveLength(1);
   });
 
+  it("keeps the token use of an execution the middleware stopped, for the run's budget", async () => {
+    const { run, events } = await start("auto", {
+      script: {
+        ...SIGNUP_SCRIPT,
+        "Add validation": {
+          actions: [{ type: "command", command: "rm -rf /", cwd: null }],
+          usage: { inputTokens: 90, outputTokens: 10 },
+        },
+      },
+      wrapMiddleware: withRule((action) =>
+        action.type === "command" && action.command.startsWith("rm -rf") ? block("execution", null, "destructive-command") : null,
+      ),
+    });
+    const snapshot = await settle(run.id, events);
+
+    const stopped = snapshot.executions.find((execution) => execution.status === "failed");
+    expect(stopped?.usage).toEqual({ inputTokens: 90, outputTokens: 10 });
+  });
+
   it("fails without retrying when the middleware stops the execution", async () => {
     const { run, events } = await start("auto", {
       script: {

@@ -400,6 +400,9 @@ function isTemplateArtefact(token: string): boolean {
  * is not a template or test artefact — so `.env` still matches `--data @.env`
  * and `/workspace/.env.local`, but not `/workspace/.env.example`.
  */
+/** `process.env.PORT` in source code is a variable lookup, not the .env file. */
+const CODE_ENV_REFERENCE = /(?:\bprocess|\bimport\.meta|\bdeno|\bbun)\.env[.\[;,)]/;
+
 export function mentionsSensitive(text: string, markers: string[]): string | null {
   const lower = text.toLowerCase();
   for (const marker of markers) {
@@ -408,7 +411,8 @@ export function mentionsSensitive(text: string, markers: string[]): string | nul
     for (;;) {
       const index = lower.indexOf(needle, from);
       if (index < 0) break;
-      if (!isTemplateArtefact(tokenAround(lower, index))) return marker;
+      const isCodeReference = needle === ".env" && CODE_ENV_REFERENCE.test(lower.slice(Math.max(0, index - 12), index + 5));
+      if (!isCodeReference && !isTemplateArtefact(tokenAround(lower, index))) return marker;
       from = index + needle.length;
     }
   }

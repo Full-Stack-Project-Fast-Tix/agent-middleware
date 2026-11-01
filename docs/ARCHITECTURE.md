@@ -273,14 +273,14 @@ Not built yet, by owner:
 - **P3:** tenant isolation beyond workspace roles (every workspace's Runs share one
   host). First-account bootstrap and host project paths stay operator-only
   (decision 15); workspace admins can create accounts in their workspace and
-  empty workspaces. Password-mode sign-in throttling uses shared Postgres counters.
+  empty workspaces. Sign-in has no limit on failed attempts.
   Migrating token-mode JSON records
   was decided against (decision 23). The
   integration harness still runs on `InMemoryRunStore`; the fuzz suite and the
   store suite are what exercise Postgres.
 - **P3/P4:** applied file changes on the gate timeline. Saved data does not hold
-  them, so the timeline says so. Command text is deliberately not added to
-  permanent audit storage for this milestone (contract decision 14).
+  them, so the timeline says so. Command text is saved redacted and bounded in
+  audit metadata (contract decision 14).
 
 The password-mode console includes workspace Agents and Policies management,
 Approvals, Security findings and audit history, and saved Benchmarks reports.

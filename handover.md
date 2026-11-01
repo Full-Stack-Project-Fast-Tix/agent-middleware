@@ -22,8 +22,8 @@ proof of concept and does not claim production-grade tenant isolation.
   workspace identity and remain available only in token mode.
 - Raw execution traces are restricted to `developer` and `security_admin`.
   Auditors use the bounded, redacted Run timeline and snapshots.
-- Command text is not copied into permanent audit rows or a new `gate_actions`
-  table for this milestone. The timeline explicitly reports unsaved proposals.
+- Command text is saved redacted and bounded in `security.decision` audit rows so the
+  timeline can show it. A redaction miss there cannot be removed (decision 14).
 - Arbitrary `SecurityPolicy.rules` remain unsupported and fail closed. A future
   rules feature requires a versioned schema and enforcement semantics.
 - Multi-agent reflection memory now loads from and saves to the existing
@@ -51,7 +51,7 @@ proof of concept and does not claim production-grade tenant isolation.
 
 ### Platform and product already present
 
-- Password sign-in, PostgreSQL-backed sign-in throttling, PostgreSQL persistence,
+- Password sign-in with no limit on failed attempts, PostgreSQL persistence,
   workspace roles, member management APIs, Run APIs, SSE updates and backup
   tooling are implemented.
 - The web console has the shared shell, Dashboard, Runs list and detail, task
@@ -110,8 +110,7 @@ a missing directory. Remaining P2 work:
 - Run `scripts/deploy-multi-agent.sh` on a real ECS host. Its systemd steps have
   not been exercised yet; verify its fail-closed sandbox check and network
   behavior on the target host.
-- Password-mode throttling uses shared PostgreSQL fixed-window counters. Open
-  Run streams detect another instance's durable event cursor and resync the
+- Open Run streams detect another instance's durable event cursor and resync the
   client snapshot. This does not support multi-instance operation: orchestration
   waiters, cancellation, approval coordination and run-scoped taint are local.
   Keep deployment single-instance until those are shared.

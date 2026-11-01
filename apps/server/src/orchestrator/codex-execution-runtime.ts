@@ -1,8 +1,17 @@
-import { attachTrace, RunCancelledError } from "../errors.js";
+import { attachTrace, attachUsage, RunCancelledError } from "../errors.js";
 import type { ContainerCodexRunner } from "../container-codex-runner.js";
 import { assertGatedPolicy, runGatedTurn } from "../gated-turn.js";
+import { readUsage } from "../run-turn.js";
+import type { TraceRecord } from "../trace.js";
 import type { ExecutionOutcome, ExecutionRequest, ExecutionRuntime } from "./ports.js";
 import { parseTaskDisposition } from "./task-disposition.js";
+
+/** The last running totals Codex reported, for a turn that ended in an error. */
+function lastUsage(records: readonly TraceRecord[]): ReturnType<typeof readUsage> {
+  const last = records.findLast((record) => record.method === "thread/tokenUsage/updated");
+  const params = (last?.payload as { params?: Record<string, unknown> } | undefined)?.params;
+  return params === undefined ? null : readUsage(params);
+}
 
 /**
  * Runs one AgentExecution as one Codex turn in its own disposable container,
@@ -23,6 +32,7 @@ export class CodexExecutionRuntime implements ExecutionRuntime {
       void this.runner.cancel(request.execution.id);
     };
     request.signal.addEventListener("abort", onAbort, { once: true });
+    let records: readonly TraceRecord[] = [];
     try {
       const { result, trace } = await this.runner.session(
         {
@@ -32,8 +42,9 @@ export class CodexExecutionRuntime implements ExecutionRuntime {
           disableWebSearch: request.runtimePolicy.denyNetwork,
           traceId: request.execution.id,
         },
-        (session) =>
-          runGatedTurn({
+        (session) => {
+          records = session.records;
+          return runGatedTurn({
             rpc: session.rpc,
             prompt: request.prompt,
             policy: request.runtimePolicy,
@@ -42,7 +53,8 @@ export class CodexExecutionRuntime implements ExecutionRuntime {
             onRecord: session.onRecord,
             exited: session.exited,
             signal: request.signal,
-          }),
+          });
+        },
       );
       // A stopped execution may end without a message; the orchestrator fails it anyway.
       if (result.output === "" && !result.stopped) {
@@ -57,6 +69,9 @@ export class CodexExecutionRuntime implements ExecutionRuntime {
         tracePath: trace.path,
         traceTruncated: trace.truncated,
       };
+    } catch (error) {
+      // A timed-out turn still spent these tokens, so they count towards the Run's budget.
+      throw attachUsage(error, lastUsage(records));
     } finally {
       request.signal.removeEventListener("abort", onAbort);
     }

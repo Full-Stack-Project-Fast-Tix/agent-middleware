@@ -7,6 +7,7 @@ import { agentName, formatClock } from "./format";
 import { runsApi } from "./runs-api";
 import { focusTaskId, isRunActive, isWrittenByPlan, pendingApprovals } from "./run-view";
 import { GateTimeline, ProposedFiles } from "./RunTimeline";
+import { RunFiles } from "./RunFiles";
 import { TaskDrilldown } from "./TaskDrilldown";
 import { TaskGraph } from "./TaskGraph";
 import { heldProposals, type Names } from "./timeline-view";
@@ -257,6 +258,7 @@ export function RunDetail({ runId }: { runId: string }) {
             onResolve={(approvalId, decision) => void resolve(approvalId, decision)}
           />
           {timeline.timeline !== null && <ProposedFiles timeline={timeline.timeline} runEnded={!active} />}
+          {mayAct && <RunFiles runId={runId} runEnded={!active} />}
         </div>
 
         {selectedTask !== null && (

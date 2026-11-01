@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import path from "node:path";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
 import {
@@ -21,6 +22,7 @@ import type { Orchestrator } from "./orchestrator/orchestrator.js";
 import type { RunAudit } from "./orchestrator/ports.js";
 import { buildRunTimeline } from "./run-timeline.js";
 import { traceFilePath } from "./trace.js";
+import { listWorkspaceFiles, readWorkspaceFile, WorkspacePathError } from "./workspace-files.js";
 
 // HTTP routes for the Run -> Task -> AgentExecution model, as specified in
 // packages/shared/src/api.ts:
@@ -34,6 +36,8 @@ import { traceFilePath } from "./trace.js";
 //   POST /api/runs/:runId/cancel                                    -> 202 { run }
 //   POST /api/approvals/:approvalId/resolve  ResolveApprovalRequest -> { approval }
 //   GET  /api/runs/:runId/executions/:executionId/trace             -> JSON Lines
+//   GET  /api/runs/:runId/files                                     -> { files }
+//   GET  /api/runs/:runId/file?path=                                -> RunFileResponse
 //
 // The SSE stream (GET /api/runs/:runId/events) is run-events-route.ts.
 // Authentication is the app's onRequest hook. Authorisation is the caller's
@@ -68,6 +72,7 @@ const RAW_TRACE_ROLES: ReadonlySet<WorkspaceRole> = new Set(["developer", "secur
 const workspaceParams = z.object({ workspaceId: z.guid() });
 const runParams = z.object({ runId: z.guid() });
 const approvalParams = z.object({ approvalId: z.guid() });
+const runFileQuery = z.object({ path: z.string().min(1).max(4_096) });
 const executionParams = z.object({ runId: z.guid(), executionId: z.guid() });
 
 export function registerRunRoutes(app: FastifyInstance, options: RunRoutesOptions, dataDirectory: string): void {
@@ -169,6 +174,29 @@ export function registerRunRoutes(app: FastifyInstance, options: RunRoutesOption
       throw new HttpError(404, "No trace for this execution");
     }
     return reply.type("application/x-ndjson").send(contents);
+  });
+
+  // A working copy holds what agents wrote, like a raw trace, so the same roles may read it.
+  async function readableWorkingCopy(request: FastifyRequest, runId: string): Promise<string> {
+    const { role } = await readableSnapshot(request, runId);
+    if (!RAW_TRACE_ROLES.has(role)) throw new HttpError(403, `The ${role} role cannot read a run's working copy`);
+    return path.join(dataDirectory, "runs", runId, "workspace");
+  }
+
+  app.get("/api/runs/:runId/files", async (request) => {
+    const { runId } = runParams.parse(request.params);
+    return { files: await listWorkspaceFiles(await readableWorkingCopy(request, runId)) };
+  });
+
+  app.get("/api/runs/:runId/file", async (request) => {
+    const { runId } = runParams.parse(request.params);
+    const { path: filePath } = runFileQuery.parse(request.query);
+    const root = await readableWorkingCopy(request, runId);
+    return readWorkspaceFile(root, filePath).catch((error: NodeJS.ErrnoException) => {
+      if (error instanceof WorkspacePathError) throw new HttpError(400, error.message);
+      if (error.code === "ENOENT") throw new HttpError(404, "No such file in this run");
+      throw error;
+    });
   });
 
   app.post("/api/runs/:runId/cancel", async (request, reply) => {

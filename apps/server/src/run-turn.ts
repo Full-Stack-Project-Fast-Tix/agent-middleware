@@ -910,14 +910,18 @@ export function buildSandboxPolicy(
 }
 
 export function readUsage(params: Record<string, unknown>): RunUsage | null {
-  const totals = (params.usage ?? params) as Record<string, unknown>;
+  // thread/tokenUsage/updated nests running totals under tokenUsage.total.
+  const nested = (params.tokenUsage as { total?: unknown } | undefined)?.total;
+  const totals = (nested ?? params.usage ?? params) as Record<string, unknown>;
   const input = totals.inputTokens ?? totals.input_tokens;
   const output = totals.outputTokens ?? totals.output_tokens;
+  const cached = totals.cachedInputTokens ?? totals.cached_input_tokens;
 
   if (typeof input !== "number" && typeof output !== "number") return null;
 
   const usage: RunUsage = {};
   if (typeof input === "number") usage.inputTokens = input;
+  if (typeof cached === "number") usage.cachedInputTokens = cached;
   if (typeof output === "number") usage.outputTokens = output;
   return usage;
 }

@@ -44,7 +44,7 @@ const envSchema = z.object({
     .default("false")
     .transform((value) => value === "true" || value === "1"),
   CODEX_TIMEOUT_MS: z.coerce.number().int().min(1_000).default(600_000),
-  CODEX_MAX_OUTPUT_BYTES: z.coerce.number().int().min(65_536).default(2_097_152),
+  CODEX_MAX_OUTPUT_BYTES: z.coerce.number().int().min(65_536).default(16_777_216),
   RUNTIME_PROVIDER: z.enum(["local-process", "container"]).default("local-process"),
   CONTAINER_ENGINE: z.string().min(1).default("docker"),
   /** Defaults by provider: the Claude runtime image contains no Codex. */

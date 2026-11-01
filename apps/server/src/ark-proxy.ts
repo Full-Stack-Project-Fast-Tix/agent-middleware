@@ -13,6 +13,7 @@
 
 import http from "node:http";
 import https from "node:https";
+import { Transform } from "node:stream";
 import type { AppConfig } from "./config.js";
 
 /** Input item types Ark validates `status` on. */
@@ -52,6 +53,43 @@ export function repairArkInput(body: RequestBody): number {
     }
   }
   return patched;
+}
+
+/**
+ * Codex refuses a completed response whose usage details lack these counters,
+ * and retries the whole request. Providers that send `input_tokens_details: {}`
+ * trigger that, so one SSE `data:` line is filled in here. Anything else passes
+ * through unchanged.
+ */
+export function repairArkEventLine(line: string): string {
+  if (!line.startsWith("data:") || !line.includes('"response.completed"')) return line;
+  try {
+    const event = JSON.parse(line.slice(5)) as { type?: string; response?: { usage?: Record<string, Record<string, unknown> | undefined> } };
+    const usage = event.response?.usage;
+    if (event.type !== "response.completed" || usage === undefined) return line;
+    usage.input_tokens_details = { cached_tokens: 0, ...usage.input_tokens_details };
+    usage.output_tokens_details = { reasoning_tokens: 0, ...usage.output_tokens_details };
+    return "data: " + JSON.stringify(event);
+  } catch {
+    return line;
+  }
+}
+
+/** Applies repairArkEventLine to whole lines of a stream, whatever the chunking. */
+export function arkEventRepair(): Transform {
+  let pending = "";
+  return new Transform({
+    decodeStrings: true,
+    transform(chunk: Buffer, _encoding, done) {
+      pending += chunk.toString("utf8");
+      const lines = pending.split("\n");
+      pending = lines.pop() ?? "";
+      done(null, lines.map((line) => repairArkEventLine(line) + "\n").join(""));
+    },
+    flush(done) {
+      done(null, repairArkEventLine(pending));
+    },
+  });
 }
 
 export interface ArkProxy {
@@ -99,8 +137,12 @@ export async function startArkProxy(config: AppConfig): Promise<ArkProxy> {
           headers,
         },
         (upstreamResponse) => {
-          clientResponse.writeHead(upstreamResponse.statusCode ?? 502, upstreamResponse.headers);
-          upstreamResponse.pipe(clientResponse);
+          const isStream = String(upstreamResponse.headers["content-type"] ?? "").includes("text/event-stream");
+          const responseHeaders = { ...upstreamResponse.headers };
+          // The repair can change the body's length.
+          if (isStream) delete responseHeaders["content-length"];
+          clientResponse.writeHead(upstreamResponse.statusCode ?? 502, responseHeaders);
+          (isStream ? upstreamResponse.pipe(arkEventRepair()) : upstreamResponse).pipe(clientResponse);
         },
       );
 

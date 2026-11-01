@@ -22,8 +22,9 @@ import {
   type Task,
   type TaskDependency,
   type TaskStatus,
+  type ExecutionUsage,
 } from "@launchpad/shared";
-import { HttpError, RunCancelledError, traceOf } from "../errors.js";
+import { HttpError, RunCancelledError, traceOf, usageOf } from "../errors.js";
 import { redactSensitiveText } from "../redaction/index.js";
 import type { ExecutionGuard, ResolvedPolicy, SecurityMiddleware } from "../security-middleware.js";
 import { validatePlan } from "./plan.js";
@@ -587,6 +588,8 @@ export class Orchestrator {
       return "failed";
     }
 
+    // A stopped attempt still spent these tokens, so they count towards the Run's budget.
+    let usage: ExecutionUsage | null = null;
     try {
       const { inputs, withheld } = await this.handOff(launch, run, task);
       const outcome = await this.runtime.execute({
@@ -606,6 +609,7 @@ export class Orchestrator {
         gate: launch.gate,
         signal: state.abort.signal,
       });
+      usage = outcome.usage;
       if (launch.stopReason !== null) throw new ExecutionStoppedError(launch.stopReason);
       this.throwIfCancelled(state);
       await launch.guard.complete?.(outcome.threadId);
@@ -648,6 +652,7 @@ export class Orchestrator {
       const trace = traceOf(error);
       await this.moveExecution(launch.execution.id, "failed", {
         error: message,
+        usage: usage ?? usageOf(error),
         completedAt: this.now(),
         ...(trace === null ? {} : { tracePath: trace.path, traceTruncated: trace.truncated }),
       });
@@ -1210,12 +1215,11 @@ function safeDetailsOf(action: ProposedAction): JsonObject {
 }
 
 /**
- * What the Run Detail timeline shows of an action that goes to no person. Only
- * file paths and handoff ids: a command's text stays out of the audit trail,
- * and a delegation's details are already on its delegation.requested event.
+ * What the Run Detail timeline shows of an action that goes to no person: file
+ * paths, handoff ids, and a command's redacted, length-limited text (decision 14).
  */
 function auditedProposal(action: ProposedAction): JsonObject {
-  return action.type === "file_change" || action.type === "context_handoff" ? { proposed: safeDetailsOf(action) } : {};
+  return action.type === "delegation" ? {} : { proposed: safeDetailsOf(action) };
 }
 
 /** Free text for audit metadata, such as an error that may quote a container's stderr. */

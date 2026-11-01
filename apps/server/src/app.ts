@@ -23,7 +23,7 @@ import { registerMemberRoutes } from "./member-routes.js";
 import { registerRunRoutes, type RunRoutesOptions } from "./run-routes.js";
 import { registerWorkspaceConfigRoutes } from "./workspace-config-routes.js";
 import { PLAYGROUND_NEEDS_CODEX } from "./runner-factory.js";
-import { registerSessionAuth, type Identity, type SignInThrottleStore } from "./auth-routes.js";
+import { registerSessionAuth, type Identity } from "./auth-routes.js";
 
 /**
  * Response bodies the outbound redactor runs over. Anything else — static
@@ -87,8 +87,6 @@ export interface AppExtensions {
   identity?: Identity;
   /** Rejects when the database cannot answer, which fails the health check. */
   checkDatabase?: () => Promise<unknown>;
-  /** Limits on sign-in attempts. Omitted, each app gets its own. */
-  signInThrottle?: SignInThrottleStore;
 }
 
 export async function createApp(
@@ -137,7 +135,7 @@ export async function createApp(
   });
 
   // Signed-in sessions replace the shared token when the server has identity.
-  if (extensions.identity) registerSessionAuth(app, extensions.identity, extensions.signInThrottle);
+  if (extensions.identity) registerSessionAuth(app, extensions.identity);
   app.addHook("onRequest", async (request, reply) => {
     if (extensions.identity !== undefined && LEGACY_ROUTE_PATTERNS.has(request.routeOptions.url ?? "")) {
       return reply.code(404).send({ error: "API route not found" });

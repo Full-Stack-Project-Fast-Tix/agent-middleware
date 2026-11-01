@@ -36,6 +36,16 @@ describe("ModelPlanner", () => {
     await expect(planner.plan(request)).resolves.toEqual(SIGNUP_PLAN);
   });
 
+  it("ignores reasoning text the provider puts in content, which may hold braces", async () => {
+    const { planner } = plannerReturning({
+      output: [
+        { type: "reasoning", content: [{ type: "reasoning_text", text: "Maybe {tasks: []} would do." }] },
+        { type: "message", content: [{ type: "output_text", text: JSON.stringify(SIGNUP_PLAN) }] },
+      ],
+    });
+    await expect(planner.plan(request)).resolves.toEqual(SIGNUP_PLAN);
+  });
+
   it("rejects output that is not a valid plan", async () => {
     await expect(plannerReturning({ output_text: "I would start by reading the README." }).planner.plan(request)).rejects.toThrow(
       "not JSON",

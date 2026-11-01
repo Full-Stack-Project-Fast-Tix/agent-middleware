@@ -343,18 +343,19 @@ Two small writes make this possible, neither a schema change:
 
 | Gap | How the contract says so | Schema change that would close it |
 | --- | --- | --- |
-| The text of a command that went to no person. Audit events deliberately hold no command text. | `proposed: null` on that entry | New table `gate_actions` (`run_id`, `task_id`, `execution_id`, `action_id`, `action_type`, `safe_details jsonb`, `created_at`), written before evaluation with the same redacted, bounded details as `approvals.safe_details`. A separate table keeps commands out of the append-only audit trail, where a redaction miss could never be removed, and lets the 30-day artifact retention expire them. |
 | Files that actually changed. `fileChanges` holds what was proposed at the gate. It cannot show whether a change landed, or what an allowed command edited. | `fileChanges.allowedCommands`, and `allow` documented as not proof | New table `execution_changed_files` (`execution_id`, `run_id`, `path`, `kind`), written when an execution ends by comparing the working copy with its starting state, holding bounded and redacted paths without contents. |
 | File lists on decisions saved before this change, unless the action went to a person. | `fileChanges.entriesWithoutFileList` | None; these rows age out of view. |
 | Strict order within one millisecond. `audit_events` has no creation sequence. | Not visible to clients | `ALTER TABLE audit_events ADD COLUMN created_seq bigint GENERATED ALWAYS AS IDENTITY`, as migration 002 did for tasks, executions, findings and approvals. |
 
-P3 owns migrations, so none of these were added here. P1 decided that command
-text will not be added to permanent audit rows or a `gate_actions` table for
-the current milestone. Commands can contain credentials and arbitrary source
-text, and a redaction miss in durable rows is harder to remove than a retained
-artifact. The timeline therefore keeps `proposed: null` for commands that did
-not require human approval. A future command-history feature needs a new P1
-review, bounded and erasable storage, and the artifact-retention rules below.
+P3 owns migrations, so none of these were added here.
+
+**Changed (1 November 2026, at Wai's request):** `security.decision` metadata now
+also holds `proposed` for commands, using the same redaction and 500-character limit
+as `approvals.safe_details`, so the timeline shows them. P1 had kept command text out
+of durable rows because a redaction miss in the append-only audit trail cannot be
+removed. That risk is accepted for this proof of concept, and P1 should review it
+before any deployment. A `gate_actions` table the 30-day retention can expire is the
+safer design if it matters. Commands saved before this change still show as not saved.
 
 **Why:** The gate-line view needs what was proposed and what was decided, from
 evidence that survives a restart. Saying "not saved" is more accurate than
@@ -479,6 +480,10 @@ multi-agent runs:
 2. The semantic monitor being unsure or unavailable gives `semantic_uncertainty`
    or `semantic_unavailable`, as before.
 
+`rm -rf "$dir"` does not ask when `dir` was set once from `mktemp` in the same command
+and nothing else follows on that `rm` (1 November 2026, at Wai's request). Agents clean
+up their own temp folders constantly, and an unanswered approval cost a real run minutes.
+
 An ordinary edit does **not** ask by default. Holding every edit would interrupt
 most benign runs, against the plan's target of at most 1 in 10, and an unanswered
 approval declines the action. Blocks run first, so a capability refusal or a
@@ -491,6 +496,24 @@ a rules schema, and P1 reviews any such schema before it is enabled, so
 Delegations now get the semantic review too, on every delegation, against the
 trusted user prompt. That closes the "steered supervisor" row of the threat model
 at the semantic layer; the capability, depth and target checks still run first.
+
+The network capability treats an inline script as network use only when it names
+a network token, or after a sensitive source was read in this Run. It used to assume
+a read as soon as a trace existed, which refused harmless `node -e` checks and stopped
+real runs. An inline script that hides its network use is not caught by this check,
+as a script written to a file never was.
+
+Run taint ignores base64 output chunks, whose text arrives in the clear in another
+event, and git hashes on a diff's `index` lines. It tracks up to 1,024 values, and
+past that still fails closed on handoffs. A blocked handoff does not count towards
+stopping the receiving agent, because the orchestrator proposed it, not the agent.
+
+A read-only agent may run chains of known read-only commands, including Codex's
+`bash -lc` wrapper, which the earlier single-command rule could never match
+(`read-only-command.ts`). `|`, `||`, `&&`, `;` and `2>&1` or `2>/dev/null` are the only
+shell syntax accepted. Writing or executing flags are refused, as are `awk` and any
+`sed` that does more than print a line range. Known limit: a git config planted by an
+earlier write-capable task could still run a command through `git status`.
 
 ## 21. Editing agents, profiles and policies
 

@@ -84,7 +84,8 @@ describe("audit trail", () => {
     ]);
     expect(decisions[3]).toMatchObject({ stop: "action", findingCodes: ["deterministic:read-then-egress"] });
     expect(decisions[4]).toMatchObject({ requiredApproval: true });
-    expect(JSON.stringify(audit)).not.toContain("--data @.env");
+    // A command's text is saved for the timeline, redacted and bounded (decision 14).
+    expect(decisions[3]).toMatchObject({ proposed: { command: expect.stringContaining("--data @.env") } });
     // The timeline's file list is on the decision, with no file contents.
     expect(decisions[4]).toMatchObject({ proposed: { files: [{ path: "src/signup.ts", kind: "update" }] } });
     expect(JSON.stringify(audit)).not.toContain("validate(body)");

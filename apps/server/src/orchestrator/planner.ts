@@ -167,6 +167,8 @@ function responseText(body: unknown): string {
   const parts: string[] = [];
   for (const output of record.output) {
     if (output === null || typeof output !== "object") continue;
+    // Some providers put reasoning text in content, and a brace in it would break the JSON parse.
+    if ((output as Record<string, unknown>).type === "reasoning") continue;
     const content = (output as Record<string, unknown>).content;
     if (!Array.isArray(content)) continue;
     for (const entry of content) {

@@ -20,7 +20,7 @@
 // out of the API does that for every JSON response, and doing it in one place
 // is what keeps a guard from blocking a credential that the UI then renders.
 
-import { readdir, readFile, stat, writeFile, mkdir } from "node:fs/promises";
+import { readdir, readFile, realpath, stat, writeFile, mkdir } from "node:fs/promises";
 import path from "node:path";
 
 /** Directories never worth listing, and expensive to walk. */
@@ -158,6 +158,12 @@ export async function readWorkspaceFile(
   relative: string,
 ): Promise<WorkspaceFile> {
   const absolute = resolveInside(root, relative);
+
+  // An agent can plant a symlink, and this read runs on the host, outside its container.
+  const [realRoot, realFile] = await Promise.all([realpath(root), realpath(absolute)]);
+  if (!realFile.startsWith(realRoot + path.sep)) {
+    throw new WorkspacePathError("Path leaves the workspace");
+  }
 
   const info = await stat(absolute);
   if (!info.isFile()) {

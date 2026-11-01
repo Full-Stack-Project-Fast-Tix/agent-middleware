@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Agent, AgentExecution, Run, Task } from "@launchpad/shared";
 import type { RuntimeSession, RuntimeSessionRequest } from "../../src/container-codex-runner.js";
-import { RunCancelledError } from "../../src/errors.js";
+import { RunCancelledError, usageOf } from "../../src/errors.js";
 import { UngatedRuntimePolicyError } from "../../src/gated-turn.js";
 import { CodexExecutionRuntime } from "../../src/orchestrator/codex-execution-runtime.js";
 import type { ExecutionRequest } from "../../src/orchestrator/ports.js";
@@ -100,6 +100,24 @@ describe("CodexExecutionRuntime", () => {
     const before = new AbortController();
     before.abort();
     await expect(new CodexExecutionRuntime(runner).execute(request({ signal: before.signal }))).rejects.toBeInstanceOf(RunCancelledError);
+  });
+
+  it("carries the token use reported so far out on a turn that times out", async () => {
+    const { runner } = fakeRunner(async (server) => {
+      await server.turnStarted();
+      server.session.records.push({
+        seq: 1,
+        at: "2026-11-01T00:00:00.000Z",
+        dir: "in",
+        method: "thread/tokenUsage/updated",
+        payload: { method: "thread/tokenUsage/updated", params: { tokenUsage: { total: { inputTokens: 470_000, outputTokens: 10_000 } } } },
+      });
+      throw new Error("Runtime timed out after 600000 ms");
+    });
+
+    const error = await new CodexExecutionRuntime(runner).execute(request()).catch((reason: unknown) => reason);
+
+    expect(usageOf(error)).toEqual({ inputTokens: 470_000, outputTokens: 10_000 });
   });
 
   it("treats a turn that ends without a message as a failure, with the trace attached", async () => {

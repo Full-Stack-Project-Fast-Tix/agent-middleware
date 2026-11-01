@@ -44,7 +44,7 @@ locals {
     "CODEX_BIN=codex",
     "CODEX_SANDBOX_MODE=workspace-write",
     "CODEX_TIMEOUT_MS=600000",
-    "CODEX_MAX_OUTPUT_BYTES=2097152",
+    "CODEX_MAX_OUTPUT_BYTES=16777216",
     ""
   ])
 }

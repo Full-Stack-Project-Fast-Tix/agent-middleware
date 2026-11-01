@@ -173,6 +173,25 @@ function boundedMonitorInput(input: Parameters<SemanticIntentMonitor["assess"]>[
   return redacted;
 }
 
+/**
+ * Removes `rm -rf "$dir"` for a variable this command set once from `mktemp`, so an
+ * agent cleaning up its own temp folder does not wait for a person. Nothing else may
+ * follow on that rm, and Codex's `'"'` quote splicing is why quotes are matched loosely.
+ */
+function withoutTempCleanup(command: string): string {
+  let remaining = command;
+  for (const [, name] of command.matchAll(/\b(\w+)=\$\(\s*mktemp\b[^)]*\)/g)) {
+    const assignments = command.match(new RegExp(`\\b${name}\\+?=`, "g"))?.length ?? 0;
+    const rebound = new RegExp(`\\b(?:for|read|unset|local|declare|typeset|eval)\\s[^;\\n]*\\b${name}\\b|-v\\s+${name}\\b`).test(command);
+    if (assignments !== 1 || rebound) continue;
+    remaining = remaining.replace(
+      new RegExp(`\\brm\\s+-rf\\s+[\\\\"']*\\$\\{?${name}\\}?[\\\\"']*(?=\\s*(?:$|[;&|\\n])|\\s+(?:EXIT|INT|TERM|HUP)\\b)`, "g"),
+      "",
+    );
+  }
+  return remaining;
+}
+
 export function isHighConsequenceCommand(command: string): boolean {
   const explicitEffect =
     /\b(?:git\s+push|npm\s+publish|cargo\s+publish|gem\s+push|twine\s+upload|docker\s+push|terraform\s+apply|kubectl\s+(?:apply|delete)|helm\s+(?:install|upgrade|uninstall)|rm\s+-rf|git\s+(?:reset\s+--hard|clean\s+-[^\s]*f)|(?:drop|truncate)\s+(?:database|table|schema))\b/i;
@@ -181,7 +200,7 @@ export function isHighConsequenceCommand(command: string): boolean {
   const deployExecutable =
     /(?:^|[;&|]\s*|["'])\s*(?:\.\/)?(?:[\w.-]+\/)*(?:deploy|release)(?:\.sh)?\b/i;
   return (
-    explicitEffect.test(command) ||
+    explicitEffect.test(withoutTempCleanup(command)) ||
     taskRunnerEffect.test(command) ||
     deployExecutable.test(command)
   );

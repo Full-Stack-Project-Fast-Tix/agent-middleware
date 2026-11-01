@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -70,6 +70,61 @@ async function start(
 
 const inject = (method: "GET" | "POST", url: string, payload?: object) =>
   app.inject({ method, url, ...(payload === undefined ? {} : { payload }) });
+
+describe("a run's working copy", () => {
+  let directory: string;
+  let outside: string;
+
+  afterEach(async () => {
+    await rm(directory, { recursive: true, force: true });
+    await rm(outside, { recursive: true, force: true });
+  });
+
+  async function startWithFiles(role: WorkspaceRole = "developer") {
+    directory = await mkdtemp(path.join(tmpdir(), "run-files-"));
+    outside = await mkdtemp(path.join(tmpdir(), "run-files-outside-"));
+    const config = loadConfig({ NODE_ENV: "test", APP_DATA_DIR: directory });
+    const workspace = path.join(config.dataDirectory, "runs", RUN, "workspace");
+    await mkdir(workspace, { recursive: true });
+    await writeFile(path.join(workspace, "index.html"), "<h1>Todo</h1>", "utf8");
+    await writeFile(path.join(outside, "host-secret.txt"), "host secret", "utf8");
+    await symlink(path.join(outside, "host-secret.txt"), path.join(workspace, "planted"));
+    await symlink(outside, path.join(workspace, "planted-dir"));
+    const options = {
+      snapshot: async (runId: string) => (runId === RUN ? ({ run: { id: RUN, workspaceId: MINE }, executions: [] } as unknown as RunSnapshot) : null),
+      currentUserId: () => "00000000-0000-4000-8000-0000000000ee",
+      workspaceRole: async (workspaceId: string) => (workspaceId === MINE ? role : null),
+    } as unknown as RunRoutesOptions;
+    app = await createApp(config, {} as AgentService, { runs: options });
+  }
+
+  it("lists and serves what the agents wrote, leaving out symlinks", async () => {
+    await startWithFiles();
+    const listed = await inject("GET", apiPaths.runFiles(RUN));
+    expect(listed.statusCode).toBe(200);
+    expect(listed.json().files.map((file: { path: string }) => file.path)).toEqual(["index.html"]);
+
+    const file = await inject("GET", apiPaths.runFile(RUN, "index.html"));
+    expect(file.statusCode).toBe(200);
+    expect(file.json()).toMatchObject({ path: "index.html", content: "<h1>Todo</h1>", truncated: false });
+  });
+
+  it("will not follow a planted symlink or a relative path out of the working copy", async () => {
+    await startWithFiles();
+    for (const escape of ["planted", "planted-dir/host-secret.txt", "../../../secret"]) {
+      const response = await inject("GET", apiPaths.runFile(RUN, escape));
+      expect(response.statusCode, escape).toBeGreaterThanOrEqual(400);
+      expect(response.body).not.toContain("host secret");
+    }
+    expect((await inject("GET", apiPaths.runFile(RUN, "missing.txt"))).statusCode).toBe(404);
+  });
+
+  it("keeps it from auditors, like a raw trace", async () => {
+    await startWithFiles("auditor");
+    expect((await inject("GET", apiPaths.runFiles(RUN))).statusCode).toBe(403);
+    expect((await inject("GET", apiPaths.runFile(RUN, "index.html"))).statusCode).toBe(403);
+  });
+});
 
 describe("an attempt's trace", () => {
   const EXECUTION = "00000000-0000-4000-8000-0000000000f1";

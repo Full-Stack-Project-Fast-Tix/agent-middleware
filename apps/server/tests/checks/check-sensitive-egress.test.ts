@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { runChecks } from "../../src/checks.js";
-import { sensitiveEgressCheck } from "../../src/check-sensitive-egress.js";
+import { DEFAULT_SENSITIVE_MARKERS, mentionsSensitive, sensitiveEgressCheck } from "../../src/check-sensitive-egress.js";
 import type { TraceRecord } from "../../src/trace.js";
 
 // A trace is a plain list of objects, so these tests build one by hand. Each
@@ -21,6 +21,20 @@ function commandStarted(id: string, command: string, readPath?: string): TraceRe
     },
   });
 }
+
+describe("mentionsSensitive with environment lookups in code", () => {
+  it("does not take a variable lookup for the .env file", () => {
+    for (const text of ["const PORT = Number(process.env.PORT) || 3000", "process.env['X']", "const { A } = process.env;", "import.meta.env.MODE", "Deno.env.get('X')"]) {
+      expect(mentionsSensitive(text, DEFAULT_SENSITIVE_MARKERS), text).toBeNull();
+    }
+  });
+
+  it("still finds the file, even next to a lookup", () => {
+    for (const text of ["cat .env", "cat /workspace/.env.local", "cat prod.env", "cat process.env", "echo process.env.PORT; cat .env"]) {
+      expect(mentionsSensitive(text, DEFAULT_SENSITIVE_MARKERS), text).toBe(".env");
+    }
+  });
+});
 
 function commandFinished(id: string, command: string, exitCode = 0, output = ""): TraceRecord {
   return record("item/completed", {

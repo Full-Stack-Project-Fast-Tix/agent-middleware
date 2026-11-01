@@ -19,6 +19,7 @@ import {
   sensitiveReadSeqs,
 } from "./check-sensitive-egress.js";
 import { buildGuardChecks } from "./container-codex-runner.js";
+import { isKnownSafeRead, isPlainRead } from "./read-only-command.js";
 import { IntentController, isHighConsequenceCommand, type IntentControllerResult } from "./intent-controller.js";
 import { sharedSeverityOf, type ExecutionGuard, type ResolvedPolicy, type SecurityMiddleware } from "./security-middleware.js";
 import { resolveAgentPolicy, type SecurityPolicySource } from "./security-policy-resolver.js";
@@ -65,7 +66,7 @@ interface RunTaintState {
 
 const RUN_TAINT_TTL_MS = 60 * 60 * 1_000;
 const MAX_TAINTED_RUNS = 1_000;
-const MAX_TAINT_VALUES_PER_RUN = 16;
+export const MAX_TAINT_VALUES_PER_RUN = 1_024;
 const MAX_TAINT_VALUE_CHARS = 4_096;
 
 /** Concrete Person 1 middleware. It is constructed with trusted persistence adapters by the host. */
@@ -198,15 +199,16 @@ class StatefulExecutionGuard implements ExecutionGuard {
     const deferredSteer = this.deferredSteer;
     this.deferredSteer = null;
     const parsed = actionSchemaParse(action);
+    const refuse = (finding: SecurityFindingDraft) =>
+      // The orchestrator proposes a handoff, not the agent, so it must not count towards stopping the agent.
+      parsed.type === "context_handoff"
+        ? this.decision("block", [...deferredFindings, finding], { stop: "action", steer: deferredSteer })
+        : this.blockAction(parsed.actionId, [...deferredFindings, finding], false, deferredSteer);
     const capabilityFinding = await this.capabilityFinding(parsed);
-    if (capabilityFinding !== null) {
-      return this.blockAction(parsed.actionId, [...deferredFindings, capabilityFinding], false, deferredSteer);
-    }
+    if (capabilityFinding !== null) return refuse(capabilityFinding);
 
     const taintFinding = this.runTaintFinding(parsed);
-    if (taintFinding !== null) {
-      return this.blockAction(parsed.actionId, [...deferredFindings, taintFinding], false, deferredSteer);
-    }
+    if (taintFinding !== null) return refuse(taintFinding);
 
     const records = this.recordsFor(parsed);
     const deterministic = runChecks(this.checks, [...this.trace, ...records]);
@@ -375,8 +377,7 @@ class StatefulExecutionGuard implements ExecutionGuard {
       this.runTaint.sensitiveSourceRead = true;
     }
     try {
-      const serialized = JSON.stringify(record);
-      for (const value of harvestCredentialValues(serialized)) {
+      for (const value of runTaintValues(record)) {
         if (this.runTaint.values.has(value)) continue;
         if (value.length > MAX_TAINT_VALUE_CHARS || this.runTaint.values.size >= MAX_TAINT_VALUES_PER_RUN) {
           this.runTaint.taintIncomplete = true;
@@ -423,14 +424,14 @@ class StatefulExecutionGuard implements ExecutionGuard {
       return policyFinding("capability-write-denied", "This agent profile does not permit workspace changes.", "high", true);
     }
     if (action.type === "command") {
-      const isSafeRead = isKnownSafeRead(action.command);
-      if (!capabilities.shell && !isSafeRead) {
+      if (!capabilities.shell && !isPlainRead(action.command)) {
         return policyFinding("capability-shell-denied", "This agent profile does not permit this shell command.", "high", true);
       }
-      if (!capabilities.write && !isSafeRead) {
+      if (!capabilities.write && !isKnownSafeRead(action.command)) {
         return policyFinding("capability-write-denied", "This agent profile does not permit commands outside the read-only command set.", "high", true);
       }
-      if (!capabilities.network && classifyEgress(action.command, this.trace.length > 0).egress) {
+      // Assuming a secret was read whenever a trace exists refused every inline script (`node -e`).
+      if (!capabilities.network && classifyEgress(action.command, this.runTaint?.sensitiveSourceRead ?? false).egress) {
         return policyFinding("capability-network-denied", "This agent profile does not permit network access.", "high", true);
       }
     }
@@ -484,7 +485,8 @@ class StatefulExecutionGuard implements ExecutionGuard {
     const severity = highestSeverity(drafts.map((finding) => finding.severity));
     return {
       outcome,
-      reason: drafts[0]?.message ?? (outcome === "allow" ? "The action passed the active security checks." : "The action requires security intervention."),
+      // The finding that intervened, not an earlier aligned note, is why this outcome happened.
+      reason: (drafts.find((finding) => finding.intervened) ?? drafts[0])?.message ?? (outcome === "allow" ? "The action passed the active security checks." : "The action requires security intervention."),
       severity,
       findings: drafts,
       appliedPolicies: this.policy.appliedPolicies,
@@ -523,22 +525,14 @@ function policyFinding(code: string, message: string, severity: FindingSeverity,
 }
 
 /**
- * A runtime that reports commands as bare text (the Claude runtime does; Codex
- * wraps everything in `bash -lc`) reaches this with the real command, so a read
- * tool's writing or executing flags must not pass as a read.
+ * Credential-shaped values in one trace record, without the two sources that are
+ * never secrets and would fill the per-run limit: base64 output chunks, whose
+ * text item/commandExecution/outputDelta carries in the clear, and the git object
+ * hashes on a diff's `index` lines.
  */
-const NOT_A_READ =
-  /^\s*(?:find\b.*\s-(?:exec|execdir|ok|okdir|delete|fprint|fprint0|fprintf|fls)\b|rg\b.*\s--(?:pre|pre-glob|hostname-bin)\b|file\b.*\s(?:-C|--compile)\b)/is;
-
-function isKnownSafeRead(command: string): boolean {
-  // This accepts only a single plain command. Shell syntax, substitutions,
-  // redirections and command chaining require the shell capability.
-  if (/[;&|<>`$()\\\n\r]/.test(command)) return false;
-  if (NOT_A_READ.test(command)) return false;
-  // sed and awk are programming languages: only printing a line range of one file
-  // is a read. GNU sed also takes options after the file, so nothing may follow it.
-  if (/^\s*sed\b/i.test(command)) return /^\s*sed\s+-n\s+'?\d+(?:,\d+)?p'?\s+(?:'[^']*'|[^\s'-]\S*)\s*$/.test(command);
-  return /^\s*(?:ls|pwd|cat|head|tail|rg|grep|find|stat|file|wc)(?:\s+[^\n]*)?\s*$/i.test(command);
+export function runTaintValues(record: TraceRecord): Set<string> {
+  if (record.method === "codex/event/exec_command_output_delta") return new Set();
+  return harvestCredentialValues(JSON.stringify(record).replace(/index [0-9a-f]{7,64}\.\.[0-9a-f]{7,64}/g, ""));
 }
 
 function toDraft(finding: Finding | SecurityFindingDraft): SecurityFindingDraft {

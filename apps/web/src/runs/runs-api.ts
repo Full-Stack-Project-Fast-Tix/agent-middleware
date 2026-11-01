@@ -3,6 +3,8 @@ import {
   apiPaths,
   approvalResponseSchema,
   followRunEvents,
+  runFileResponseSchema,
+  runFilesResponseSchema,
   runListResponseSchema,
   runResponseSchema,
   runSnapshotResponseSchema,
@@ -12,6 +14,8 @@ import {
   type CreateRunRequest,
   type Run,
   type RunEvent,
+  type RunFileResponse,
+  type RunFilesResponse,
   type RunListResponse,
   type RunSnapshot,
   type RunStatus,
@@ -75,6 +79,13 @@ export const runsApi = {
     const redactions = Number(response.headers.get("x-redactions") ?? 0);
     return { text: await response.text(), redactions: Number.isFinite(redactions) ? redactions : 0 };
   },
+
+  /** What the agents left in the Run's working copy. */
+  files: async (runId: string): Promise<RunFilesResponse["files"]> =>
+    runFilesResponseSchema.parse(await request(apiPaths.runFiles(runId))).files,
+
+  file: async (runId: string, filePath: string): Promise<RunFileResponse> =>
+    runFileResponseSchema.parse(await request(apiPaths.runFile(runId, filePath))),
 
   /** Follow the Run's events until `signal` aborts; reconnects and resyncs on its own. */
   follow: (

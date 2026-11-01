@@ -11,6 +11,8 @@ import type { Check } from "../../src/checks.js";
 import { sensitiveEgressCheck } from "../../src/check-sensitive-egress.js";
 import {
   DefaultSecurityMiddleware,
+  MAX_TAINT_VALUES_PER_RUN,
+  runTaintValues,
   type SecurityExecutionSource,
 } from "../../src/security-middleware-impl.js";
 import type { SemanticIntentMonitor } from "../../src/semantic-intent-monitor.js";
@@ -289,6 +291,52 @@ describe("ExecutionGuard capability enforcement", () => {
     expect(network.findings.map(({ code }) => code)).toContain("capability-network-denied");
   });
 
+  it("does not treat an inline script as network use just because the run has activity", async () => {
+    const guard = await openGuard({ capabilities: { ...ALL_CAPABILITIES, network: false } });
+    await guard.observe(reasoningEvent(1, "I will check the page's script."));
+
+    const inline = await guard.evaluate({
+      type: "command",
+      actionId: "inline-check",
+      command: `node -e "new Function(require('fs').readFileSync('index.html', 'utf8'))"`,
+      cwd: null,
+    });
+    expect(inline.findings.map(({ code }) => code)).not.toContain("capability-network-denied");
+
+    const fetching = await guard.evaluate({
+      type: "command",
+      actionId: "inline-fetch",
+      command: `node -e "fetch('https://example.com')"`,
+      cwd: null,
+    });
+    expect(fetching.outcome).toBe("block");
+    expect(fetching.findings.map(({ code }) => code)).toContain("capability-network-denied");
+  });
+
+  it("gives the refusal as the reason, not an earlier aligned note", async () => {
+    const semanticMonitor: SemanticIntentMonitor = {
+      async assess() {
+        return {
+          riskScore: 0.1,
+          confidence: 0.85,
+          classification: "aligned",
+          apparentObjective: "Implement the requested feature",
+          conflictsWithTask: false,
+          evidenceSeqs: [1],
+          rationale: "Everything looks fine.",
+        };
+      },
+    };
+    const guard = await openGuard({ semanticMonitor, capabilities: { ...ALL_CAPABILITIES, network: false } });
+    for (const seq of [1, 2, 3, 4]) await guard.observe(reasoningEvent(seq, "I will build the requested feature."));
+
+    const decision = await guard.evaluate({ type: "command", actionId: "curl", command: "curl https://example.com", cwd: null });
+
+    expect(decision.outcome).toBe("block");
+    expect(decision.findings[0]?.intervened).toBe(false);
+    expect(decision.reason).toBe("This agent profile does not permit network access.");
+  });
+
   it("denies delegation outside the effective delegation depth", async () => {
     const guard = await openGuard({ delegationDepth: 3 });
     const decision = await guard.evaluate({
@@ -532,6 +580,46 @@ describe("ExecutionGuard trace and approvals", () => {
     await nextExecution.close();
   });
 
+  it("does not count output chunks or git hashes as credentials, but still finds real ones", () => {
+    const record = (method: string, params: object): TraceRecord => ({ seq: 1, at: NOW, dir: "in", method, payload: { method, params } });
+    const hash = "f011e57fb167bb8d5800f1502f66cae88a723313";
+    const other = "d43f66e7b553b1345dea57a0c7705ccaafa69d98";
+    const secret = "sk_live_ABCDEFGHIJKLMNOP1234";
+
+    expect(runTaintValues(record("codex/event/exec_command_output_delta", { msg: { chunk: "Cj4gYWdlbnRndWFyZC1kZW1vQDEuMC4wIHRlc3QKPiBub2RlIC0tdGVzdAoK" } })).size).toBe(0);
+    expect(runTaintValues(record("turn/diff/updated", { diff: `diff --git a/x b/x\nindex ${hash}..${other}\n--- a/x\n+++ b/x\n` })).size).toBe(0);
+    expect(runTaintValues(record("item/commandExecution/outputDelta", { delta: `STRIPE_KEY=${secret}\n` }))).toContain(secret);
+    expect(runTaintValues(record("turn/diff/updated", { diff: `index ${hash}..${other}\n+const key = "${secret}";\n` }))).toContain(secret);
+  });
+
+  it("does not count a blocked handoff against the agent that receives it", async () => {
+    const secret = "sk_live_ABCDEFGHIJKLMNOP1234";
+    const middleware = new DefaultSecurityMiddleware({
+      config: loadConfig({ NODE_ENV: "test" }),
+      source: new GuardSource(0, undefined, { ...ALL_CAPABILITIES, write: false }),
+      checks: () => [],
+    });
+    const reader = await middleware.openExecution(CONTEXT);
+    await reader.observe(completedCommandEvent(1, "read-key", "cat config", `API_KEY=${secret}`));
+    await reader.close();
+
+    const receiver = await middleware.openExecution({ ...CONTEXT, taskId: NEXT_TASK_ID, executionId: NEXT_EXECUTION_ID });
+    const handoff = await receiver.evaluate({
+      type: "context_handoff",
+      actionId: "handoff-tainted",
+      fromTaskId: TASK_ID,
+      toTaskId: NEXT_TASK_ID,
+      content: secret,
+    });
+    expect(handoff).toMatchObject({ outcome: "block", stop: "action" });
+
+    const refused = await receiver.evaluate({ type: "command", actionId: "first-refusal", command: "npm test", cwd: null });
+    expect(refused).toMatchObject({ outcome: "block", stop: "action" });
+    const again = await receiver.evaluate({ type: "command", actionId: "second-refusal", command: "npm run build", cwd: null });
+    expect(again).toMatchObject({ outcome: "block", stop: "execution" });
+    await receiver.close();
+  });
+
   it("fails closed on handoffs when the run credential-taint bound is exceeded", async () => {
     const middleware = new DefaultSecurityMiddleware({
       config: loadConfig({ NODE_ENV: "test" }),
@@ -539,7 +627,7 @@ describe("ExecutionGuard trace and approvals", () => {
       checks: () => [],
     });
     const reader = await middleware.openExecution(CONTEXT);
-    for (let index = 0; index < 17; index += 1) {
+    for (let index = 0; index <= MAX_TAINT_VALUES_PER_RUN; index += 1) {
       const value = `tokenValue${String(index).padStart(8, "0")}`;
       await reader.observe(completedCommandEvent(index + 1, `read-key-${index}`, "cat config", `API_KEY=${value}`));
     }

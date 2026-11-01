@@ -787,7 +787,7 @@ want the result without paying for the first two runs.
 | `CODEX_SANDBOX_MODE` | `workspace-write` | Codex inner sandbox for unguarded container turns. The multi-agent deployment rejects `danger-full-access` and refuses to deploy when its workspace-write sandbox check fails. |
 | `CODEX_NETWORK_ACCESS` | `false` | Allow agent tool commands and built-in web search to use the network on unguarded container turns. Egress, semantic, and HITL guarded turns always deny network. This relies on Codex controls and is not host-level filtering or provider-only egress. |
 | `CODEX_TIMEOUT_MS` | `600000` | Max duration of one turn. |
-| `CODEX_MAX_OUTPUT_BYTES` | `2097152` | Crash guard on runtime stdout. |
+| `CODEX_MAX_OUTPUT_BYTES` | `16777216` | Crash guard on runtime stdout, which includes every streamed event, so a long turn reaches several MB. |
 | `GUARDRAIL_EGRESS_ENABLED` | `false` | Run the sensitive-egress + outbound-blob checks against every container turn. Also puts the turn on the `workspace-write` + `untrusted` policy with network denied, so file-edit proposals and commands that are not known-safe reads pause at an approval the guard can inspect. |
 | `GUARDRAIL_INTENT_ENABLED` | `false` | Run the agent-intent check every turn. Warn-only; needs no sandbox change; independent of the egress flag. |
 | `GUARDRAIL_REFLECTION_ENABLED` | `false` | Carry what a guard caught into this Agent's later runs, as check parameters — exact hosts, derived host families, watched files. Warn-only at any tier; independent of the other flags. |
@@ -972,7 +972,7 @@ false negative puts a live credential on a projector.
 ### Platform limitations
 
 Shared demo token by default (`APP_AUTH_MODE=password` adds user accounts and
-workspace roles); Postgres-backed sign-in throttling; logical workspace separation
+workspace roles); no limit on failed sign-in attempts; logical workspace separation
 but no hardened tenant isolation; no CSRF protection; no per-Agent container
 boundary in ECS mode; ordinary local containers rather than hardened
 multi-tenant sandboxes; unguarded single-agent turns may have outbound network

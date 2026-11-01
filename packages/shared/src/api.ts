@@ -42,7 +42,6 @@ export const API_ERROR_CODES = [
   "forbidden",
   "not_found",
   "conflict",
-  "rate_limited",
   "internal",
   "unavailable",
 ] as const;
@@ -76,8 +75,7 @@ export type PageQuery = z.infer<typeof pageQuerySchema>;
  * which kind: the operator's shared token, or a session from signing in.
  *
  *   GET    /api/auth                    -> AuthInfo
- *   POST   /api/auth/session  SignInRequest -> 201 Session (401 on a wrong email or password,
- *                                         429 with Retry-After after too many failed attempts)
+ *   POST   /api/auth/session  SignInRequest -> 201 Session (401 on a wrong email or password)
  *   DELETE /api/auth/session            -> 204, ends the session in the Authorization header
  *   GET    /api/auth/me                 -> { user }
  */
@@ -152,6 +150,9 @@ export const apiPaths = {
     `/api/workspaces/${encodeURIComponent(workspaceId)}/members/${encodeURIComponent(userId)}`,
   executionTrace: (runId: string, executionId: string) =>
     `/api/runs/${encodeURIComponent(runId)}/executions/${encodeURIComponent(executionId)}/trace`,
+  runFiles: (runId: string) => `/api/runs/${encodeURIComponent(runId)}/files`,
+  runFile: (runId: string, filePath: string) =>
+    `/api/runs/${encodeURIComponent(runId)}/file?path=${encodeURIComponent(filePath)}`,
   benchmarks: () => "/api/benchmarks",
   workspaceFindings: (workspaceId: string) => `/api/workspaces/${encodeURIComponent(workspaceId)}/findings`,
   workspaceApprovals: (workspaceId: string) => `/api/workspaces/${encodeURIComponent(workspaceId)}/approvals`,
@@ -352,6 +353,21 @@ export function mayAnswerApproval(input: {
   if (input.reason === "policy_required") return input.role === "security_admin";
   return input.userId === input.runCreatedByUserId;
 }
+
+/** The files in a Run's working copy, for the roles that may read raw traces. */
+export const runFilesResponseSchema = z.object({
+  files: z.array(z.object({ path: z.string(), size: z.number().int().nonnegative(), modifiedAt: z.string() })),
+});
+export type RunFilesResponse = z.infer<typeof runFilesResponseSchema>;
+
+/** One file as redacted text. `truncated` means it was too large to send whole. */
+export const runFileResponseSchema = z.object({
+  path: z.string(),
+  content: z.string(),
+  size: z.number().int().nonnegative(),
+  truncated: z.boolean(),
+});
+export type RunFileResponse = z.infer<typeof runFileResponseSchema>;
 
 export const resolveApprovalRequestSchema = z.object({
   decision: approvalDecisionSchema,

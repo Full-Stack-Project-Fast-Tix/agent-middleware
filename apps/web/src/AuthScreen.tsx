@@ -4,21 +4,11 @@ import { Button, GateLine, GateRow, Loading, Wordmark } from "./ui";
 
 export type AuthMethod = "token" | "password";
 
-/** "in 40 seconds" or "in 15 minutes", rounded up so the wait is never too short. */
-function waitWords(seconds: number): string {
-  if (seconds < 60) return `in ${Math.max(1, Math.ceil(seconds))} second${seconds <= 1 ? "" : "s"}`;
-  const minutes = Math.ceil(seconds / 60);
-  return `in ${minutes} minute${minutes === 1 ? "" : "s"}`;
-}
-
 /**
  * The same words whether or not the account exists, because the server answers
  * both the same way. This screen must not add a difference it cannot see.
  */
 function refusalMessage(reason: unknown, method: AuthMethod): string {
-  if (reason instanceof ApiError && reason.status === 429) {
-    return `Too many sign-in attempts. Try again ${reason.retryAfter === null ? "later" : waitWords(reason.retryAfter)}.`;
-  }
   if (reason instanceof ApiError && reason.status === 401) {
     return method === "password" ? "The email or password is not right." : "The access token is not valid.";
   }

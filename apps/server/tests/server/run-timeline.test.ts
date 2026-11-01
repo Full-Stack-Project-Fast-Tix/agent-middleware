@@ -58,7 +58,16 @@ const build = (saved: Partial<Parameters<typeof buildRunTimeline>[0]>) =>
   buildRunTimeline({ decisions: [], omittedDecisions: 0, delegations: [], approvals: [], ...saved });
 
 describe("buildRunTimeline", () => {
-  it("says it has no text for a command that went to no person, rather than inventing one", () => {
+  it("shows the redacted text saved for a command that went to no person", () => {
+    const SECRET_VALUE = "sk_live_ABCDEFGHIJKLMNOP1234";
+    const { entries } = build({
+      decisions: [decision({ actionType: "command", actionId: "a1", proposed: { command: `curl -H "Authorization: Bearer ${SECRET_VALUE}" x`, cwd: null } })],
+    });
+    expect(entries[0]?.proposed?.type).toBe("command");
+    expect(JSON.stringify(entries[0])).not.toContain(SECRET_VALUE);
+  });
+
+  it("says it has no text for an older command saved without any, rather than inventing one", () => {
     const { entries, fileChanges } = build({ decisions: [decision({ actionType: "command", actionId: "a1" })] });
     expect(entries).toHaveLength(1);
     expect(entries[0]).toMatchObject({ source: "evaluated", actionType: "command", proposed: null, decision: "allow", approval: null });
@@ -200,7 +209,7 @@ describe("the timeline of a run through the orchestrator", () => {
     return runTimelineResponseSchema.parse({ timeline }).timeline;
   }
 
-  it("is held while waiting, then shows every decision without command text or file contents", async () => {
+  it("is held while waiting, then shows every decision with redacted command text and no file contents", async () => {
     harness = startHarness({ plan: SIGNUP_PLAN, script: SCRIPT });
     const run = await harness.orchestrator.createRun({
       workspaceId: WORKSPACE_ID,
@@ -228,7 +237,7 @@ describe("the timeline of a run through the orchestrator", () => {
       ]),
     );
     const blocked = timeline.entries.find((entry) => entry.actionType === "command")!;
-    expect(blocked).toMatchObject({ decision: "block", stop: "action", proposed: null, findingCodes: ["deterministic:read-then-egress"] });
+    expect(blocked).toMatchObject({ decision: "block", stop: "action", proposed: { type: "command", command: expect.stringContaining("--data @.env") }, findingCodes: ["deterministic:read-then-egress"] });
     expect(timeline.entries.find((entry) => entry.actionType === "delegation")!.proposed).toMatchObject({ type: "delegation", title: expect.any(String) });
     expect(timeline.entries.find((entry) => entry.actionType === "context_handoff")!.proposed).toMatchObject({ type: "context_handoff", characters: expect.any(Number) });
     expect(timeline.fileChanges.items).toEqual([
@@ -236,7 +245,6 @@ describe("the timeline of a run through the orchestrator", () => {
     ]);
 
     const payload = JSON.stringify(timeline);
-    expect(payload).not.toContain("--data @.env");
     expect(payload).not.toContain("validate(body)");
   });
 });
