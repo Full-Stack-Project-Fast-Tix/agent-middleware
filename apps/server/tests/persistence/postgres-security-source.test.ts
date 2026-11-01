@@ -117,6 +117,7 @@ describe("PostgresSecuritySource", () => {
 
   it("loads execution facts only when execution, task, agent, run and workspace identities all match", async () => {
     const { pool, query } = mockPool((sql) => {
+      if (sql.includes("FROM reflections")) return [];
       expect(sql).toContain("WITH RECURSIVE task_ancestry");
       expect(sql).toContain("t.assigned_agent_id = e.agent_id");
       expect(sql).toContain("a.enabled AND a.archived_at IS NULL AND p.archived_at IS NULL");
@@ -142,6 +143,7 @@ describe("PostgresSecuritySource", () => {
       taskObjective: "Implement the API change.",
       agentInstructions: "Implement the requested task.",
       delegationDepth: 2,
+      reflections: [],
     });
     expect(query).toHaveBeenCalledWith(expect.any(String), [EXECUTION_ID, RUN_ID, TASK_ID, AGENT_ID, WORKSPACE_ID]);
   });
