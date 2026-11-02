@@ -82,6 +82,10 @@ async function main() {
     return scenario;
   });
   const guardConfigs = parseGuardConfigs(options.configs);
+  const maxIterations = Number(process.env.BENCH_CLAUDE_MAX_ITERATIONS ?? "16");
+  if (!Number.isInteger(maxIterations) || maxIterations < 1 || maxIterations > 100) {
+    throw new Error("BENCH_CLAUDE_MAX_ITERATIONS must be an integer from 1 to 100");
+  }
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
   const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
   const outDir = path.resolve(process.env.BENCH_OUT_DIR ?? path.join(repoRoot, "benchmark-results", `multi-agent-${stamp}`));
@@ -121,6 +125,7 @@ async function main() {
             ...process.env,
             APP_AUTH_MODE: "password",
             AGENT_NETWORK_ACCESS: "false",
+            CLAUDE_MAX_ITERATIONS: String(maxIterations),
             ...guardConfig.env,
           });
           const hub = new RunEventHub();
@@ -215,6 +220,7 @@ async function main() {
       scenarios: options.scenarios,
       guardConfigs: guardConfigs.map(({ name }) => name),
       trials: options.trials,
+      claudeMaxIterations: maxIterations,
       note: "Real PostgreSQL-backed supervisor, delegation middleware, Task scheduler, and gated Claude runtime.",
     }, null, 2));
     console.log(`\n${report}\nSaved multi-agent Run/Task evidence in ${outDir}`);
