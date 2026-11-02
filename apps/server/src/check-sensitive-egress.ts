@@ -126,16 +126,20 @@ export interface EgressVerdict {
   channel: EgressChannel | null;
 }
 
-const CHANNEL_HTTP =
-  /\b(?:curl|wget|httpie|lwp-request)\b|\b(?:invoke-webrequest|invoke-restmethod|iwr)\b|(?:^|\s)https?\s+\S/i;
+// Where a command name can sit, for names that are also ordinary words ("import http
+// from", "const host = x"): start of a line or chain, `bash -c "`, or after a wrapper.
+const AT_COMMAND = String.raw`(?:^|[;&|(\`]\s*|-[a-z]*c\s+['"]\s*|\b(?:sudo|env|time|nohup|exec|xargs|command)\s+)(?:\w+=\S*\s+)*`;
 
-const CHANNEL_DNS =
-  /\b(?:nslookup|dig|drill|kdig)\b|\bgetent\s+hosts\b|(?:^|[\s;&|`'"(])host\s+\S/i;
+const CHANNEL_HTTP = new RegExp(
+  String.raw`\b(?:curl|wget|httpie|lwp-request)\b|\b(?:invoke-webrequest|invoke-restmethod|iwr)\b|${AT_COMMAND}https?\s+\S`,
+  "im",
+);
+
+const CHANNEL_DNS = new RegExp(String.raw`\b(?:nslookup|dig|drill|kdig)\b|\bgetent\s+hosts\b|${AT_COMMAND}host\s+\S`, "im");
 
 const CHANNEL_SSH = /\b(?:scp|sftp|rsync|ssh)\b(?!-)/i;
 
-const CHANNEL_MAIL =
-  /\b(?:mailx|sendmail|mutt|ssmtp|swaks)\b|(?:^|[\s;&|`'"(])mail\s+\S/i;
+const CHANNEL_MAIL = new RegExp(String.raw`\b(?:mailx|sendmail|mutt|ssmtp|swaks)\b|${AT_COMMAND}mail\s+\S`, "im");
 
 const CHANNEL_RAW_SOCKET =
   /\/dev\/(?:tcp|udp)\/|exec\s*\d*\s*<>\s*\/dev\/(?:tcp|udp)|\b(?:nc|ncat|netcat|telnet)\b|\bopenssl\s+s_client\b/i;
@@ -160,6 +164,36 @@ const NETWORK_TOKEN_IN_CODE =
   /urllib|requests|http|socket|fetch\(|net\.|Net::HTTP|Net::SMTP|LWP|smtplib|ftplib|open\(['"]https?/i;
 
 /**
+ * The command without the text it only writes to a file. A quoted heredoc expands
+ * nothing, so `cat > f <<'EOF'` cannot act on its body. The body stays when the
+ * command also mentions that file again, since it may then run it.
+ */
+function withoutFileBodies(command: string): string {
+  const header = /\bcat\s+(?:>\s*(\S+)\s+<<-?\s*(['"])(\w+)\2|<<-?\s*(['"])(\w+)\4\s+>\s*(\S+))[ \t]*\n/g;
+  const bodies: { name: string; start: number; end: number }[] = [];
+  for (let match = header.exec(command); match !== null; match = header.exec(command)) {
+    const tag = match[3] ?? match[5]!;
+    const closing = new RegExp(`^${tag}$`, "m").exec(command.slice(header.lastIndex));
+    if (closing === null) break;
+    const start = header.lastIndex;
+    bodies.push({ name: (match[1] ?? match[6]!).split("/").pop()!, start, end: start + closing.index });
+    header.lastIndex = start + closing.index + tag.length;
+  }
+  const cut = (kept: typeof bodies) => {
+    let from = 0;
+    let text = "";
+    for (const body of kept) {
+      text += command.slice(from, body.start);
+      from = body.end;
+    }
+    return text + command.slice(from);
+  };
+  const outside = cut(bodies);
+  // Once for the `cat > name` itself.
+  return cut(bodies.filter((body) => outside.split(body.name).length <= 2));
+}
+
+/**
  * Decide whether a command can send bytes off the machine, and over what.
  *
  * The always-egress channels (http, dns, ssh, mail, raw-socket, cloud-cli,
@@ -169,7 +203,8 @@ const NETWORK_TOKEN_IN_CODE =
  * because interpreters are common in innocent use and the false-positive cost
  * is high.
  */
-export function classifyEgress(command: string, secretWasRead: boolean): EgressVerdict {
+export function classifyEgress(fullCommand: string, secretWasRead: boolean): EgressVerdict {
+  const command = withoutFileBodies(fullCommand);
   if (CHANNEL_RAW_SOCKET.test(command)) return { egress: true, channel: "raw-socket" };
   if (CHANNEL_DNS.test(command)) return { egress: true, channel: "dns" };
   if (CHANNEL_SSH.test(command)) return { egress: true, channel: "ssh" };

