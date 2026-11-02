@@ -785,3 +785,22 @@ These points are implementation guidance, not part of the contract:
   after the change.
 - **Legacy migration:** seed a legacy user, one workspace per legacy agent,
   and one task plus one execution per legacy run.
+
+## 14. Local vault grants are explicit per Run
+
+**Decision (2 November 2026):** The first local credential broker reads values
+from the server's private `.env` using the `AGENTGUARD_VAULT_<NAME>` prefix.
+The API returns names only. A developer selects names when starting a Run;
+selected values are held in active Run memory and passed to each execution via
+a short-lived host env file that is removed after container startup. Values are
+not copied to the workspace, prompt, audit metadata, or persisted raw trace.
+Exact selected values seed run-scoped taint; literal appearances in outbound
+commands, handoffs, and proposed file changes are refused. Every detected
+outbound command during a vault-granted Run requires a person to approve it.
+
+Network access remains denied unless the operator sets
+`AGENT_NETWORK_ACCESS=true`, and a vault grant never enables it. This is a
+single-local-operator convenience, not encrypted OS-keychain storage or a
+multi-tenant vault. If deployment changes, storage, unlock, user/workspace
+ownership, and restart behavior must be decided before exposing this to remote
+users.

@@ -59,6 +59,7 @@ interface RunTaintState {
   readonly values: Set<string>;
   activeExecutions: number;
   sensitiveSourceRead: boolean;
+  vaultSecretGranted: boolean;
   taintIncomplete: boolean;
   expiresAt: number;
   touchedAt: number;
@@ -151,6 +152,7 @@ export class DefaultSecurityMiddleware implements SecurityMiddleware {
         values: new Set(),
         activeExecutions: 0,
         sensitiveSourceRead: false,
+        vaultSecretGranted: false,
         taintIncomplete: false,
         expiresAt: now + RUN_TAINT_TTL_MS,
         touchedAt: now,
@@ -174,6 +176,19 @@ class StatefulExecutionGuard implements ExecutionGuard {
   private deferredSteer: string | null = null;
   private closed = false;
   private reflectionFolded = false;
+
+  seedSensitiveValues(values: readonly string[]): void {
+    if (this.runTaint === undefined) return;
+    if (values.some((value) => value.length >= 4)) this.runTaint.vaultSecretGranted = true;
+    for (const value of values) {
+      if (value.length < 4) continue;
+      if (value.length > MAX_TAINT_VALUE_CHARS || this.runTaint.values.size >= MAX_TAINT_VALUES_PER_RUN) {
+        this.runTaint.taintIncomplete = true;
+        continue;
+      }
+      this.runTaint.values.add(value);
+    }
+  }
 
   constructor(
     private readonly context: SecurityContext,
@@ -272,12 +287,18 @@ class StatefulExecutionGuard implements ExecutionGuard {
 
     const warnings = [...deferredFindings, ...actionFindings, ...(semanticResult?.finding ? [semanticResult.finding] : [])];
     // Asked regardless of what the checks thought: the effect reaches outside the working copy.
-    if (parsed.type === "command" && isHighConsequenceCommand(parsed.command)) {
+    if (
+      parsed.type === "command" &&
+      (isHighConsequenceCommand(parsed.command) ||
+        (this.runTaint?.vaultSecretGranted === true && classifyEgress(parsed.command, false).egress))
+    ) {
       this.pending.set(parsed.actionId, parsed);
       return this.decision("require_approval", warnings, {
         approvalReason: "high_consequence",
         // Not the first warning: an aligned semantic note would read as the reason it is held.
-        reason: "This command can reach outside the run's working copy, so a person decides.",
+        reason: this.runTaint?.vaultSecretGranted === true && classifyEgress(parsed.command, false).egress
+          ? "This run has a local vault credential grant, so a person must approve each outbound command."
+          : "This command can reach outside the run's working copy, so a person decides.",
         ...(deferredSteer === null ? {} : { steer: deferredSteer }),
       });
     }
@@ -407,6 +428,17 @@ class StatefulExecutionGuard implements ExecutionGuard {
       return policyFinding(
         "context-handoff-run-taint",
         "The handoff contains a credential observed earlier in this run.",
+        "high",
+        true,
+      );
+    }
+    if (
+      action.type === "file_change" &&
+      [...this.runTaint.values].some((value) => action.changes.some((change) => (change.diff ?? "").includes(value)))
+    ) {
+      return policyFinding(
+        "vault-secret-file-change",
+        "The proposed file change contains a credential granted from the local vault.",
         "high",
         true,
       );

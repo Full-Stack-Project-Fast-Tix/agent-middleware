@@ -81,6 +81,8 @@ export class TraceWriter {
     private readonly filePath: string,
     /** Keep the newest trace events within this size. */
     private readonly maxBytes = 16 * 1024 * 1024,
+    /** Exact values granted from the local vault are scrubbed before persistence. */
+    private readonly sensitiveValues: readonly string[] = [],
   ) {}
 
   async open(): Promise<void> {
@@ -96,12 +98,13 @@ export class TraceWriter {
     if (!this.opened) return;
     this.seq += 1;
 
+    const safeMessage = this.sensitiveValues.length === 0 ? message : redactExactValues(message, this.sensitiveValues);
     const record: TraceRecord = {
       seq: this.seq,
       at: new Date().toISOString(),
       dir: dir,
       method: readMethodName(message),
-      payload: message,
+      payload: safeMessage,
     };
 
     const line = toJsonLine(record);
@@ -166,4 +169,17 @@ export class TraceWriter {
       truncated: this.truncated,
     };
   }
+}
+
+function redactExactValues(value: unknown, secrets: readonly string[]): unknown {
+  if (typeof value === "string") {
+    let result = value;
+    for (const secret of secrets) if (secret.length >= 4) result = result.replaceAll(secret, "[REDACTED VAULT SECRET]");
+    return result;
+  }
+  if (Array.isArray(value)) return value.map((item) => redactExactValues(item, secrets));
+  if (value !== null && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, redactExactValues(item, secrets)]));
+  }
+  return value;
 }

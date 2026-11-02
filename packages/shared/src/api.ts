@@ -135,6 +135,7 @@ export const apiPaths = {
   workspaces: () => "/api/workspaces",
   workspaceCreate: () => "/api/workspaces",
   workspaceAgents: (workspaceId: string) => `/api/workspaces/${encodeURIComponent(workspaceId)}/agents`,
+  workspaceVaultNames: (workspaceId: string) => `/api/workspaces/${encodeURIComponent(workspaceId)}/vault/secrets`,
   workspaceAudit: (workspaceId: string) => `/api/workspaces/${encodeURIComponent(workspaceId)}/audit`,
   runs: (workspaceId: string) => `/api/workspaces/${encodeURIComponent(workspaceId)}/runs`,
   runSnapshot: (runId: string) => `/api/runs/${encodeURIComponent(runId)}/snapshot`,
@@ -176,6 +177,10 @@ export type WorkspacesResponse = z.infer<typeof workspacesResponseSchema>;
 
 export const agentsResponseSchema = z.object({ agents: z.array(agentSchema) });
 export type AgentsResponse = z.infer<typeof agentsResponseSchema>;
+
+/** Names only: vault values never cross the API boundary. */
+export const localVaultNamesResponseSchema = z.object({ names: z.array(z.string().regex(/^[A-Z][A-Z0-9_]{0,63}$/)) });
+export type LocalVaultNamesResponse = z.infer<typeof localVaultNamesResponseSchema>;
 
 /** A Run as the workspace listing shows it: no results, errors or benchmark labels. */
 export const runSummarySchema = runSchema
@@ -332,6 +337,8 @@ export const createRunRequestSchema = z.object({
   orchestrationMode: orchestrationModeSchema.default("single"),
   /** Agent for `single` mode, or the supervisor for `auto`. Server default when omitted. */
   agentId: idSchema.optional(),
+  /** Locally configured vault entries explicitly granted to this Run. */
+  vaultSecretNames: z.array(z.string().regex(/^[A-Z][A-Z0-9_]{0,63}$/)).max(20).default([]),
 });
 export type CreateRunRequest = z.input<typeof createRunRequestSchema>;
 

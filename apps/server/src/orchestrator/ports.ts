@@ -148,6 +148,8 @@ export interface ExecutionRequest {
   workingDirectory: string;
   /** The task objective plus earlier tasks' results, built by the orchestrator. */
   prompt: string;
+  /** Secret values explicitly granted for this Run; never include these in prompts or audit metadata. */
+  vaultSecrets: Readonly<Record<string, string>>;
   /** Chosen by the middleware, never by the orchestrator (contract decision 3). */
   runtimePolicy: TurnSecurityPolicy;
   gate: ActionGate;

@@ -114,8 +114,10 @@ Findings are acted on through the middleware's [`ActionGate`](apps/server/src/or
 | `info` | recorded only |
 
 When the **egress or semantic guard is on**, the guarded turn runs
-`workspace-write` scoped to `/workspace`, with `approvalPolicy: untrusted` and no network
-([`turn-security-policy.ts`](apps/server/src/turn-security-policy.ts)). Ordinary
+`workspace-write` scoped to `/workspace`, with `approvalPolicy: untrusted`
+([`turn-security-policy.ts`](apps/server/src/turn-security-policy.ts)). Network
+is denied by default and can be enabled separately with `AGENT_NETWORK_ACCESS=true`.
+Ordinary
 known-safe reads (`ls`, `cat`, `rg`) run untouched. Claude can only act by asking
 AgentGuard's agent loop, so commands and file edits reach the gate before they run.
 
@@ -140,10 +142,13 @@ isolation. **There is deliberately no master switch.**
 
 ### Sensitive-egress guard — `GUARDRAIL_EGRESS_ENABLED`
 
-**Invariant: workspace secrets never leave the machine.**
+**Invariant: workspace secrets do not leave the machine without an explicit user grant.**
 
-A guarded turn runs `workspace-write` limited to `/workspace`, with network access **denied** and
-`approvalPolicy: untrusted`. The runtime expects every command except a known-safe
+A guarded turn runs `workspace-write` limited to `/workspace` and
+`approvalPolicy: untrusted`. Network stays denied unless the operator sets
+`AGENT_NETWORK_ACCESS=true`; every command still reaches the gate. If a Run has
+selected local vault credentials, every detected outbound command also waits for
+a person to approve it. The runtime expects every command except a known-safe
 read — and any file-edit proposal — to pause at an approval request. At that step the guard refuses a
 command that carries a workspace secret — one that:
 
@@ -154,6 +159,22 @@ command that carries a workspace secret — one that:
 
 `turn/interrupt` is the backstop if the command is already running. A safe task
 in the same configuration runs untouched.
+
+### Local credentials for a Run
+
+For a local setup, put a credential in the server's private `.env` as
+`AGENTGUARD_VAULT_<NAME>=<value>`. The run form lists only the names. A developer
+selects the credentials to grant to a Run; selected values become environment
+variables in that Run's disposable execution containers, never files in the
+workspace or text in the prompt. In multi-agent mode, the grant is available to
+each task in that Run. The exact values are added to run-scoped secret taint and
+scrubbed from persisted traces and final summaries. Literal-value egress and
+handoffs remain blocked; outbound commands wait for a human approval.
+
+This first version uses the local `.env` file as storage. It is intended for a
+single local operator and is not encrypted vault storage or suitable for a
+shared deployment. Network must also be enabled explicitly with
+`AGENT_NETWORK_ACCESS=true`; a vault selection alone never enables it.
 
 A second, orthogonal check — **outbound-blob**
 ([`check-outbound-blob.ts`](apps/server/src/check-outbound-blob.ts)) — ignores
@@ -645,13 +666,14 @@ Details: [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 | `ANTHROPIC_BASE_URL` | — | For a test double or a gateway only. The key is sent to it. |
 | `APP_AUTH_TOKEN` | empty on loopback | Shared demo bearer token. 24+ random URL-safe chars required for a non-loopback production server. Not user identity. |
 | `CONTAINER_ENGINE` | `docker` | `docker`, `podman`, … Colima exposes the Docker CLI so it uses `docker`. |
-| `AGENT_NETWORK_ACCESS` | `false` | Allow agent tool commands to use the network on unguarded executions. Egress, semantic, and HITL guarded executions always deny network, and a profile can deny it too. Not host-level filtering or provider-only egress. |
-| `GUARDRAIL_EGRESS_ENABLED` | `false` | Run the sensitive-egress + outbound-blob checks against every execution, with network denied. |
+| `AGENT_NETWORK_ACCESS` | `false` | Allow agent tool commands to use the network. A profile can still deny it. Network access is container-wide, not host-level filtering or provider-only egress. |
+| `AGENTGUARD_VAULT_<NAME>` | unset | Optional local credential value listed by name in the Run form. Values are passed only to Runs where selected; see [Local credentials for a Run](#local-credentials-for-a-run). |
+| `GUARDRAIL_EGRESS_ENABLED` | `false` | Run sensitive-egress and outbound-blob checks against every execution. Network is controlled separately by `AGENT_NETWORK_ACCESS`. |
 | `GUARDRAIL_INTENT_ENABLED` | `false` | Run the agent-intent check every turn. Warn-only; needs no sandbox change; independent of the egress flag. |
 | `GUARDRAIL_REFLECTION_ENABLED` | `false` | Carry what a guard caught into this Agent's later runs, as check parameters — exact hosts, derived host families, watched files. Warn-only at any tier; independent of the other flags. |
 | `GUARDRAIL_SENSITIVE_MARKERS` | built-in list | Comma-separated path substrings that mark a file as secret. **Overrides** the default list when set. |
 | `GUARDRAIL_BLOB_MIN_CHARS` | `128` | Minimum base64/hex run the outbound-blob check treats as an encoded blob. |
-| `GUARDRAIL_SEMANTIC_ENABLED` | `false` | Enable task-aware asynchronous review, with network denied. |
+| `GUARDRAIL_SEMANTIC_ENABLED` | `false` | Enable task-aware asynchronous review. Network is controlled separately by `AGENT_NETWORK_ACCESS`. |
 | `GUARDRAIL_SEMANTIC_MODEL` | Configured Agent model | Optional Claude model override for semantic review. |
 | `GUARDRAIL_SEMANTIC_TIMEOUT_MS` | `15000` | Timeout for one semantic assessment. Required action reviews delegate to HITL when available and otherwise fail closed; reasoning-only reviews fail open with a warning. |
 | `HITL_ENABLED` | `false` | Enable one-shot human confirmation for high-consequence commands, semantic uncertainty, and unavailable required semantic reviews. Routine approvals remain automatic. |

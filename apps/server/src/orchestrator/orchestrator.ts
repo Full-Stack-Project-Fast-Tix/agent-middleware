@@ -94,6 +94,8 @@ export interface CreateRunInput {
   orchestrationMode: OrchestrationMode;
   /** The agent for `single`, or the supervisor for `auto`. The workspace default when omitted. */
   agentId?: string;
+  /** Host-resolved values selected from the local vault for this Run only. */
+  vaultSecrets?: Readonly<Record<string, string>>;
 }
 
 /** The middleware ended the execution (block with stop: "execution"). Never retried. */
@@ -114,6 +116,7 @@ interface RunState {
   phase: Phase;
   /** Executions in flight, by task id. */
   inflight: Map<string, Promise<void>>;
+  vaultSecrets: Record<string, string>;
   /** Serialises approval bookkeeping so Run.waiting_approval always matches the pending approvals. */
   lock: Promise<void>;
   done: Promise<void>;
@@ -234,6 +237,7 @@ export class Orchestrator {
       abort: new AbortController(),
       phase: "running",
       inflight: new Map(),
+      vaultSecrets: input.vaultSecrets ?? {},
       lock: Promise.resolve(),
       done: Promise.resolve(),
     };
@@ -241,6 +245,7 @@ export class Orchestrator {
     state.done = this.process(state, run, agentId)
       .catch((error: unknown) => this.onError(error, run.id))
       .finally(() => {
+        state.vaultSecrets = {};
         this.active.delete(run.id);
         if (this.activeWorkspaceRuns.get(run.workspaceId) === run.id) this.activeWorkspaceRuns.delete(run.workspaceId);
       });
@@ -629,6 +634,7 @@ export class Orchestrator {
           ...(continuityContext === undefined ? {} : { continuityContext }),
           nonce: randomUUID().replaceAll("-", "").slice(0, 12),
         }),
+        vaultSecrets: state.vaultSecrets,
         runtimePolicy: policy.runtime,
         gate: launch.gate,
         signal: state.abort.signal,
@@ -780,6 +786,7 @@ export class Orchestrator {
         executionId: created.id,
         agentId,
       });
+      guard.seedSensitiveValues?.(Object.values(state.vaultSecrets));
     } catch (error) {
       await this.moveExecution(created.id, "failed", {
         error: `The security middleware could not open a guard: ${errorMessage(error)}`,

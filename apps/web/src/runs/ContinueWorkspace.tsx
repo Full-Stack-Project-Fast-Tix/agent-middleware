@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { OrchestrationMode } from "@launchpad/shared";
 import { navigate, paths } from "../router";
 import { Button, ErrorState } from "../ui";
@@ -9,6 +9,13 @@ export function ContinueWorkspace({ workspaceId, mode }: { workspaceId: string; 
   const [prompt, setPrompt] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [vaultNames, setVaultNames] = useState<string[]>([]);
+  const [vaultSecretNames, setVaultSecretNames] = useState<string[]>([]);
+
+  useEffect(() => {
+    setVaultSecretNames([]);
+    runsApi.vaultNames(workspaceId).then(setVaultNames).catch(() => setVaultNames([]));
+  }, [workspaceId]);
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -16,7 +23,11 @@ export function ContinueWorkspace({ workspaceId, mode }: { workspaceId: string; 
     setBusy(true);
     setError(null);
     try {
-      const run = await runsApi.createRun(workspaceId, { userPrompt: prompt.trim(), orchestrationMode: mode });
+      const run = await runsApi.createRun(workspaceId, {
+        userPrompt: prompt.trim(),
+        orchestrationMode: mode,
+        ...(vaultSecretNames.length ? { vaultSecretNames } : {}),
+      });
       navigate(paths.run(run.id));
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
@@ -43,6 +54,22 @@ export function ContinueWorkspace({ workspaceId, mode }: { workspaceId: string; 
             required
           />
         </label>
+        {vaultNames.length > 0 && (
+          <fieldset className="mode-choice">
+            <legend>Local credentials for this run</legend>
+            <p className="meta">Selected values are available to agent commands. Outbound commands require human approval.</p>
+            {vaultNames.map((name) => (
+              <label key={name} className="mode-card">
+                <input
+                  type="checkbox"
+                  checked={vaultSecretNames.includes(name)}
+                  onChange={(event) => setVaultSecretNames((current) => event.target.checked ? [...current, name] : current.filter((item) => item !== name))}
+                />
+                <strong>{name}</strong>
+              </label>
+            ))}
+          </fieldset>
+        )}
         <div className="new-run-footer">
           <span>{mode === "auto" ? "Plan and delegate" : "One agent"} · new Run</span>
           <Button type="submit" variant="primary" busy={busy} disabled={!prompt.trim()}>

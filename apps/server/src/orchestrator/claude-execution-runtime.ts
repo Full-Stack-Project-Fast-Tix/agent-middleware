@@ -124,7 +124,11 @@ export class ClaudeExecutionRuntime implements ExecutionRuntime {
     if (request.signal.aborted) throw new RunCancelledError();
 
     // The trace file is named after the execution, so a retry gets its own.
-    const trace = new TraceWriter(traceFilePath(this.options.dataDirectory, request.execution.id));
+    const trace = new TraceWriter(
+      traceFilePath(this.options.dataDirectory, request.execution.id),
+      16 * 1024 * 1024,
+      Object.values(request.vaultSecrets),
+    );
     await trace.open();
 
     let sandbox: ToolSandbox | null = null;
@@ -139,6 +143,7 @@ export class ClaudeExecutionRuntime implements ExecutionRuntime {
         agentId: request.agent.id,
         executionId: request.execution.id,
         workspacePath: request.workingDirectory,
+        vaultSecrets: request.vaultSecrets,
         // Only an explicit false opens the network, and only an explicit true
         // from the middleware's capabilities makes the workspace writable.
         denyNetwork: request.runtimePolicy.denyNetwork !== false,
@@ -154,8 +159,9 @@ export class ClaudeExecutionRuntime implements ExecutionRuntime {
       await turn.finish(result.stopped ? "interrupted" : "completed", null);
       const summary: TraceSummary = await trace.close();
       const disposition = parseTaskDisposition(result.output);
+      const output = redactGrantedSecrets(disposition?.summary ?? result.output, Object.values(request.vaultSecrets));
       return {
-        output: disposition?.summary ?? result.output,
+        output,
         disposition,
         threadId: null,
         usage: turn.usage(),
@@ -174,6 +180,12 @@ export class ClaudeExecutionRuntime implements ExecutionRuntime {
       await sandbox?.stop();
     }
   }
+}
+
+function redactGrantedSecrets(text: string, secrets: readonly string[]): string {
+  let safe = text;
+  for (const secret of secrets) if (secret.length >= 4) safe = safe.replaceAll(secret, "[REDACTED VAULT SECRET]");
+  return safe;
 }
 
 /** The state of one execution's loop. */

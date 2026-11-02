@@ -20,9 +20,10 @@ export function resolveTurnSecurityPolicy(config: AppConfig): TurnSecurityPolicy
   if (config.semanticGuardEnabled || config.egressGuardEnabled || config.hitlEnabled) {
     return {
       sandboxMode: "workspace-write",
-      // Defence in depth after the approval boundary: even an unexpected ungated
-      // network attempt remains inside a networkless container.
-      denyNetwork: true,
+      // The operator's explicit network setting is the platform ceiling. The
+      // action gate still evaluates every command; vault grants never enable
+      // network by themselves.
+      denyNetwork: !config.agentNetworkAccess,
       approvalPolicy: "untrusted",
       semanticEnforcement: config.semanticGuardEnabled,
       effectGating: true,

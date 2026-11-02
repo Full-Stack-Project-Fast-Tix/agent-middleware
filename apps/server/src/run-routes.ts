@@ -104,6 +104,18 @@ export function registerRunRoutes(app: FastifyInstance, options: RunRoutesOption
     return { agents: await options.listAgents(workspaceId) };
   });
 
+  app.get("/api/workspaces/:workspaceId/vault/secrets", async (request) => {
+    const { workspaceId } = workspaceParams.parse(request.params);
+    mayAct(await roleIn(request, workspaceId, "Workspace not found"));
+    const names = Object.keys(process.env)
+      .map((key) => /^AGENTGUARD_VAULT_([A-Z][A-Z0-9_]{0,63})$/.exec(key)?.[1])
+      .filter((name): name is string => {
+        const value = name === undefined ? undefined : process.env[`AGENTGUARD_VAULT_${name}`];
+        return name !== undefined && value !== undefined && value.length >= 4;
+      });
+    return { names: [...new Set(names)].sort() };
+  });
+
   app.get("/api/workspaces/:workspaceId/runs", async (request) => {
     const { workspaceId } = workspaceParams.parse(request.params);
     await roleIn(request, workspaceId, "Workspace not found");
@@ -115,12 +127,19 @@ export function registerRunRoutes(app: FastifyInstance, options: RunRoutesOption
     const userId = options.currentUserId(request);
     mayAct(await roleIn(request, workspaceId, "Workspace not found"));
     const body = createRunRequestSchema.parse(request.body);
+    const vaultSecrets: Record<string, string> = {};
+    for (const name of body.vaultSecretNames) {
+      const value = process.env[`AGENTGUARD_VAULT_${name}`];
+      if (value === undefined || value.length < 4) throw new HttpError(400, `Local vault entry ${name} is unavailable or too short to protect safely`);
+      vaultSecrets[name] = value;
+    }
     const run = await options.orchestrator.createRun({
       workspaceId,
       createdByUserId: userId,
       userPrompt: body.userPrompt,
       orchestrationMode: body.orchestrationMode,
       ...(body.agentId === undefined ? {} : { agentId: body.agentId }),
+      ...(Object.keys(vaultSecrets).length === 0 ? {} : { vaultSecrets }),
     });
     return reply.code(201).send({ run });
   });

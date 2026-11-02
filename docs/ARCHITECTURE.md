@@ -70,6 +70,13 @@ Claude runtime. These parts exist:
   stand-ins for persistence and middleware in its default scenarios; focused
   middleware tests cover the concrete implementation. This is not a full
   production-stack test.
+- **Local credential grants:** the Run API exposes names from
+  `AGENTGUARD_VAULT_<NAME>` environment variables only. Developers select names
+  per Run; the server passes selected values to each container through a
+  short-lived host env file, seeds exact-value taint, and scrubs those values
+  from saved traces and summaries. Outbound commands in a vault-granted Run
+  require approval. This is local `.env` backed storage, not encrypted or
+  suitable for multi-tenant deployment.
 - **Orchestrator**
   ([`apps/server/src/orchestrator`](../apps/server/src/orchestrator/README.md)):
   - starts each follow-up Run from the latest completed Run's working copy,
@@ -273,7 +280,7 @@ refused send after a secret read stops the attempt rather than only the action.
 | | Claude |
 | --- | --- |
 | API key | On the host only |
-| Network denied | No network in the container |
+| Network | Denied unless the operator enables `AGENT_NETWORK_ACCESS`; selected local vault values do not enable it. With a vault grant, each detected outbound command requires human approval. |
 | Reads | Every command reaches the gate, including reads, so the guard's cost and its evidence both rise slightly |
 | Commands the gate sees | The text the model wrote |
 | Read-only agents | Read-only mount as well as the gate |

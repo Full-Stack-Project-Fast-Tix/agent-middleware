@@ -47,6 +47,8 @@ export interface SecurityMiddleware {
 }
 
 export interface ExecutionGuard {
+  /** Add explicitly granted vault values to run-scoped exact-value taint, without marking a workspace secret-file read. */
+  seedSensitiveValues?(values: readonly string[]): void;
   /**
    * Before a gated action runs. The runtime calls this for commands and file
    * changes; the orchestrator calls it for delegation and context_handoff.

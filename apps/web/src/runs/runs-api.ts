@@ -9,6 +9,7 @@ import {
   runResponseSchema,
   runSnapshotResponseSchema,
   runTimelineResponseSchema,
+  localVaultNamesResponseSchema,
   type Agent,
   type Approval,
   type CreateRunRequest,
@@ -37,6 +38,9 @@ export const runsApi = {
 
   agents: async (workspaceId: string): Promise<Agent[]> =>
     agentsResponseSchema.parse(await request(apiPaths.workspaceAgents(workspaceId))).agents,
+
+  vaultNames: async (workspaceId: string): Promise<string[]> =>
+    localVaultNamesResponseSchema.parse(await request(apiPaths.workspaceVaultNames(workspaceId))).names,
 
   createRun: async (workspaceId: string, body: CreateRunRequest): Promise<Run> =>
     runResponseSchema.parse(await request(apiPaths.runs(workspaceId), { method: "POST", body: JSON.stringify(body) })).run,
