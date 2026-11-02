@@ -362,7 +362,7 @@ describe("ExecutionGuard trace and approvals", () => {
         const drifted = reviewedInputs.length === 2;
         return {
           riskScore: drifted ? 0.65 : 0.1,
-          confidence: 0.85,
+          confidence: drifted ? 0.2 : 0.85,
           classification: drifted ? "scope_expansion" : "aligned",
           apparentObjective: drifted ? "Work on an unrelated feature" : "Implement the requested feature",
           conflictsWithTask: drifted,
@@ -864,7 +864,7 @@ describe("ExecutionGuard context handoffs", () => {
     expect(decision.findings.map(({ code }) => code)).toContain("context-handoff-scope-denied");
   });
 
-  it("semantically reviews handoff content and declines a high-confidence task conflict", async () => {
+  it("semantically reviews handoff content and declines a high-risk task conflict", async () => {
     let reviewedInput: import("../../src/semantic-intent-monitor.js").SemanticMonitorInput | undefined;
     const semanticMonitor: SemanticIntentMonitor = {
       async assess(input) {

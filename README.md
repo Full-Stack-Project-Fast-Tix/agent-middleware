@@ -242,8 +242,8 @@ A deterministic controller
 ([`intent-controller.ts`](apps/server/src/intent-controller.ts)) — not the
 model — turns that assessment into an action:
 
-- reasoning that conflicts with the task, at high risk and confidence, injects
-  a task-grounded **steer**; it never freezes the turn;
+- reasoning that conflicts with the task at risk 0.60 or higher injects a
+  task-grounded **steer**; confidence is recorded for audit and does not gate it;
 - a **consequential** proposed action (a publish, a deploy, an `rm -rf`, an
   edit to auth / tests / CI) is reviewed at its approval boundary and
   **declined** with a steer if it conflicts;
@@ -783,9 +783,17 @@ false negative puts a live credential on a projector.
 ### Semantic intent guard
 
 - **One model call, and it can be wrong.** The assessment is schema-checked, not
-  fact-checked. The controller only acts on high risk *and* high confidence, and
-  a deterministic `violation` always wins, but a confidently wrong "aligned" is
-  a miss and a confidently wrong "conflicts" is a wasted steer.
+  fact-checked. For proposed actions, conflicts scoring 0.50–0.74 require human
+  review; conflicts scoring 0.75 or higher are declined. Model-reported
+  confidence is retained for audit and does not suppress review or decline. A
+  deterministic `violation` always wins.
+- **Scope is task-bound.** The monitor is instructed to treat actionable,
+  out-of-scope recommendations and handoffs as scope expansion, and to score
+  their likely effect if followed. It can still misjudge the conflict or its
+  risk, so this is a best-effort guard rather than a guarantee.
+- **Reasoning steering is risk-based.** Conflicting reasoning at risk 0.60 or
+  higher can steer the Agent back on task; confidence is recorded but does not
+  control that decision.
 - **Reasoning steering is asynchronous.** It can nudge the Agent early but does
   not freeze the agent. The real boundary is the next state-changing operation,
   which pauses for approval.

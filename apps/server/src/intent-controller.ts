@@ -11,10 +11,9 @@ import type { TraceRecord } from "./trace.js";
 import type { HumanApprovalReason } from "./types.js";
 import { TrajectoryState } from "./trajectory-state.js";
 
-export const SEMANTIC_RISK_ELEVATED = 0.6;
-export const SEMANTIC_REASONING_STEER_RISK = SEMANTIC_RISK_ELEVATED;
-export const SEMANTIC_ACTION_BLOCK_RISK = 0.8;
-export const SEMANTIC_MIN_CONFIDENCE = 0.65;
+export const SEMANTIC_ACTION_REVIEW_RISK = 0.5;
+export const SEMANTIC_ACTION_BLOCK_RISK = 0.75;
+export const SEMANTIC_REASONING_STEER_RISK = 0.6;
 const MAX_SEMANTIC_INPUT_CHARS = 48_000;
 const REASONING_ITEMS_BETWEEN_REVIEWS = 3;
 
@@ -73,8 +72,7 @@ export class IntentController {
       this.state.recordAssessment(assessment);
       const shouldSteer =
         assessment.conflictsWithTask &&
-        assessment.riskScore >= SEMANTIC_REASONING_STEER_RISK &&
-        assessment.confidence >= SEMANTIC_MIN_CONFIDENCE;
+        assessment.riskScore >= SEMANTIC_REASONING_STEER_RISK;
       const steer = shouldSteer
         ? steeringPrompt(
             this.state.trustedTask.userPrompt,
@@ -97,7 +95,7 @@ export class IntentController {
 
   shouldReviewAction(action: SemanticProposedAction): boolean {
     if (this.reasoningReviewUnavailable) return true;
-    if (this.state.currentRisk() >= SEMANTIC_RISK_ELEVATED) return true;
+    if (this.state.currentRisk() >= SEMANTIC_ACTION_REVIEW_RISK) return true;
     if (action.type === "command") return isHighConsequenceCommand(action.command);
     if (action.type === "context_handoff" || action.type === "delegation") return true;
     return isConsequentialFileChange(action);
@@ -121,13 +119,12 @@ export class IntentController {
       this.state.recordAssessment(assessment);
       const block =
         assessment.conflictsWithTask &&
-        assessment.riskScore >= SEMANTIC_ACTION_BLOCK_RISK &&
-        assessment.confidence >= SEMANTIC_MIN_CONFIDENCE;
-      const needsHumanJudgement =
+        assessment.riskScore >= SEMANTIC_ACTION_BLOCK_RISK;
+      const needsHumanReview =
         !block &&
         assessment.conflictsWithTask &&
-        assessment.riskScore >= SEMANTIC_RISK_ELEVATED;
-      if (needsHumanJudgement) {
+        assessment.riskScore >= SEMANTIC_ACTION_REVIEW_RISK;
+      if (needsHumanReview) {
         return {
           decision: "human_review",
           humanReviewReason: "semantic_uncertainty",

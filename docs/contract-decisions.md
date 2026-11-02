@@ -170,9 +170,9 @@ external middleware", and no action covered it. Results can carry secrets or
 injected instructions from one agent to the next. The middleware validates
 same-run/workspace task identity and blocks detected sensitive values before
 handoff. When the semantic monitor is configured, it also reviews each handoff
-as untrusted evidence against the trusted task; a high-confidence conflict is
-declined and an uncertain conflict requires human approval. This is a best-effort
-semantic safeguard, not a guarantee that all prompt injection is detected.
+as untrusted evidence against the trusted task; outcomes use the risk thresholds
+in decision 7.3. This is a best-effort semantic safeguard, not a guarantee that
+all prompt injection is detected.
 
 ### 7.1 Periodic reasoning reviews check task alignment
 
@@ -180,8 +180,9 @@ semantic safeguard, not a guarantee that all prompt injection is detected.
 reasoning item and then every third completed item. A deterministic intent
 warning triggers an immediate review between checkpoints. Review the bounded
 recent trajectory against the trusted task, not only the current wording. A
-moderate-confidence task conflict may steer the agent back on task; reasoning
-alone does not block an action.
+task conflict at risk 0.60 or higher may steer the agent back on task;
+model-reported confidence is audit information only. Reasoning alone does not
+block an action.
 
 **Why:** Agents can drift from the user's goal without using obviously
 suspicious language. Periodic review catches this while limiting model calls;
@@ -199,6 +200,26 @@ oversized review is treated as unavailable and follows the same approval path.
 **Why:** Reasoning is evidence about intent, not an action to authorize. But a
 failed review should not silently make the next action less scrutinized. The
 action remains the point where enforcement blocks or waits for approval.
+
+### 7.3 Risk-based semantic action outcomes
+
+**Decision:** For semantic action reviews, a task conflict with risk 0.50–0.74
+requires human review. A task conflict with risk 0.75 or higher is declined.
+Below 0.50, the semantic assessment alone allows the action. Model-reported
+confidence remains in assessment evidence but does not affect steering, review,
+or decline decisions. Deterministic findings and policy gates retain their
+precedence.
+
+The monitor prompt separates likely impact if an action is followed
+(`riskScore`) from confidence in its assessment (`confidence`). It treats
+actionable scope expansion as a conflict even when passed as a recommendation
+or handoff, and scores a handoff as if its recipient follows it.
+
+**Why:** A live handoff evaluation identified scope expansion and security
+weakening as conflicts, but assigned scores below the prior review threshold.
+The assessment's self-reported confidence did not make those scores more
+reliable. Risk and conflict now determine the action outcome, with a human-review
+band below the automatic-decline threshold.
 
 ## 8. Lifecycle rules
 
