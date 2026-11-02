@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import pg from "pg";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Agent, AuditEvent, AuditEventType, RunEvent } from "@launchpad/shared";
 import { migrate } from "../../src/db/migrate.js";
 import { PostgresAgentDirectory } from "../../src/db/postgres-agent-directory.js";
@@ -28,7 +28,7 @@ import { AGENTS, SIGNUP_PLAN, ScriptedRuntime, StaticPlanner, USER_ID, WORKSPACE
 // runs in a fresh schema seeded with the harness's user, workspace and agents.
 
 const url = process.env.TEST_DATABASE_URL;
-const schema = `test_${randomUUID().replaceAll("-", "")}`;
+let schema = `test_${randomUUID().replaceAll("-", "")}`;
 const SEEDED_AT = "2026-10-01T00:00:00.000Z";
 const LATER = "2026-10-08T12:00:00.000Z";
 const ROLES = Object.keys(AGENTS) as Array<keyof typeof AGENTS>;
@@ -37,19 +37,17 @@ const seededAgent = (role: keyof typeof AGENTS): Agent => makeAgent(role, { prof
 
 let pool: pg.Pool | undefined;
 
-async function seedWorkspace(db: pg.Pool, workspaceId: string, agents: Array<{ role: keyof typeof AGENTS; agent: Agent }>) {
-  const stamps = { createdAt: SEEDED_AT, updatedAt: SEEDED_AT };
-  await insertRow(db, "workspaces", { id: workspaceId, name: "Workspace", createdByUserId: USER_ID, ...stamps });
-  for (const { role, agent } of agents) {
-    await insertRow(db, "agent_profiles", {
-      id: agent.profileId, workspaceId, name: role, capabilities: CAPABILITIES[role], version: 1, ...stamps,
-    });
-    await insertRow(db, "agents", agent);
-  }
-}
-
-beforeAll(async () => {
+async function resetPostgresFixture() {
   if (!url) return;
+  if (pool) {
+    await pool.end();
+    const admin = new pg.Client({ connectionString: url });
+    await admin.connect();
+    await admin.query(`DROP SCHEMA ${schema} CASCADE`);
+    await admin.end();
+  }
+
+  schema = `test_${randomUUID().replaceAll("-", "")}`;
   const admin = new pg.Client({ connectionString: url });
   await admin.connect();
   await admin.query(`CREATE SCHEMA ${schema}`);
@@ -65,6 +63,21 @@ beforeAll(async () => {
     id: USER_ID, email: "user@example.test", name: "User", authSubject: "user", createdAt: SEEDED_AT, updatedAt: SEEDED_AT,
   });
   await seedWorkspace(pool, WORKSPACE_ID, ROLES.map((role) => ({ role, agent: seededAgent(role) })));
+}
+
+async function seedWorkspace(db: pg.Pool, workspaceId: string, agents: Array<{ role: keyof typeof AGENTS; agent: Agent }>) {
+  const stamps = { createdAt: SEEDED_AT, updatedAt: SEEDED_AT };
+  await insertRow(db, "workspaces", { id: workspaceId, name: "Workspace", createdByUserId: USER_ID, ...stamps });
+  for (const { role, agent } of agents) {
+    await insertRow(db, "agent_profiles", {
+      id: agent.profileId, workspaceId, name: role, capabilities: CAPABILITIES[role], version: 1, ...stamps,
+    });
+    await insertRow(db, "agents", agent);
+  }
+}
+
+beforeAll(async () => {
+  await resetPostgresFixture();
 });
 
 afterAll(async () => {
@@ -95,6 +108,14 @@ function record(hub: RunEventHub, runId: string): RunEvent[] {
 
 for (const target of targets) {
   describe.skipIf(target.skip)(target.name, () => {
+    if (target.name === "PostgresRunStore") {
+      beforeEach(async () => {
+        // Each case gets an isolated migrated schema and seeded workspace.
+        // In particular, queued/running Runs cannot leak into the next case.
+        await resetPostgresFixture();
+      });
+    }
+
     it("records the latest completed workspace Run as the next Run's parent", async () => {
       const store = target.open(new RunEventHub());
       const first = makeRun({ status: "completed", completedAt: LATER });
@@ -137,7 +158,7 @@ for (const target of targets) {
       const at = (minute: number) => `2026-10-09T10:${String(minute).padStart(2, "0")}:00.000Z`;
       // Two runs share a timestamp: the id must keep paging exact.
       const [oldest, tiedA, tiedB, newest] = [at(1), at(2), at(2), at(3)].map((createdAt) =>
-        makeRun({ workspaceId, createdAt, updatedAt: createdAt, userPrompt: "word ".repeat(120) }),
+        makeRun({ workspaceId, status: "completed", createdAt, updatedAt: createdAt, userPrompt: "word ".repeat(120) }),
       );
       for (const run of [oldest!, tiedB!, newest!, tiedA!]) await store.createRun(run);
       const task = makeTask(oldest!.id);
@@ -271,8 +292,8 @@ for (const target of targets) {
 
     it("lists active runs and pending approvals past their expiry", async () => {
       const store = target.open(new RunEventHub());
-      const active = await store.createRun(makeRun({ status: "running" }));
       const finished = await store.createRun(makeRun({ status: "completed" }));
+      const active = await store.createRun(makeRun({ status: "running" }));
       const activeIds = (await store.listActiveRuns()).map((run) => run.id);
       expect(activeIds).toContain(active.id);
       expect(activeIds).not.toContain(finished.id);
@@ -354,6 +375,10 @@ for (const target of targets) {
 }
 
 describe.skipIf(!url)("PostgresRunStore only", () => {
+  beforeEach(async () => {
+    await resetPostgresFixture();
+  });
+
   it("refuses to settle an approval twice, without publishing", async () => {
     const hub = new RunEventHub();
     const store = new PostgresRunStore(pool!, hub);
