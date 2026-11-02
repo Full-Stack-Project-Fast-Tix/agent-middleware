@@ -200,7 +200,7 @@ export function agentIntentCheck(): Check {
     run(trace): Finding[] {
       // Collapse repeated statements of the same intent to one finding whose
       // evidence lists every seq. The finding's key stays (check:code:firstSeq),
-      // so live enforcement (run-turn.ts) dedupes it consistently across the
+      // so live enforcement dedupes it consistently across the
       // reviews it runs as the trace grows.
       const hits = new Map<string, Hit>();
 

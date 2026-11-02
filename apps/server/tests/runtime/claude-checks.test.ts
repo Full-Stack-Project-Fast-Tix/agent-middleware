@@ -5,10 +5,9 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { Agent, AgentExecution, AgentProfile, ProposedAction, Run, SecurityContext, SecurityDecision, SecurityPolicy, Task } from "@launchpad/shared";
 import { declinedCommands, declinedItemIds } from "../../../../benchmark/checkers.js";
 import { readTrace } from "../../../../benchmark/trace-io.js";
-import { toSteps } from "../../../web/src/trace.js";
 import { agentMessagesOf, approvalsOf, commandsOf, fileChangesOf, readsOf, reasoningOf, runChecks } from "../../src/checks.js";
 import { loadConfig } from "../../src/config.js";
-import { buildGuardChecks } from "../../src/container-codex-runner.js";
+import { buildGuardChecks } from "../../src/guard-checks.js";
 import { ClaudeExecutionRuntime } from "../../src/orchestrator/claude-execution-runtime.js";
 import type { ActionGate, ExecutionRequest } from "../../src/orchestrator/ports.js";
 import { DefaultSecurityMiddleware, type SecurityExecutionSource } from "../../src/security-middleware-impl.js";
@@ -70,7 +69,7 @@ class Source implements SecurityExecutionSource {
 }
 
 const CONTEXT: SecurityContext = { workspaceId: WORKSPACE_ID, runId: RUN_ID, taskId: TASK_ID, executionId: EXECUTION_ID, agentId: AGENT_ID };
-const CONFIG = loadConfig({ NODE_ENV: "test", MODEL_PROVIDER: "anthropic", ANTHROPIC_API_KEY: TEST_API_KEY, GUARDRAIL_EGRESS_ENABLED: "true", GUARDRAIL_INTENT_ENABLED: "true" });
+const CONFIG = loadConfig({ NODE_ENV: "test", ANTHROPIC_API_KEY: TEST_API_KEY, GUARDRAIL_EGRESS_ENABLED: "true", GUARDRAIL_INTENT_ENABLED: "true" });
 
 let dataDirectory: string;
 let mock: MockAnthropic;
@@ -160,7 +159,7 @@ describe("real checks over Claude-runtime records", () => {
     expect(findingCodes(send.decision)).toContain("sensitive-egress-run-taint");
 
     // The refused attempt is recorded, so the deterministic check fires on it.
-    // That ends the execution, as it does on a Codex trace.
+    // That ends the execution.
     const stop = played.observed.find((decision) => decision.outcome === "block" && decision.stop === "execution");
     expect(stop).toBeDefined();
     expect(findingCodes(stop!)).toContain("sensitive-egress");
@@ -296,7 +295,7 @@ describe("what reads the Claude runtime's trace", () => {
     finalTurn("All done."),
   ];
 
-  it("gives the checks' views the same fields a Codex trace gives them", async () => {
+  it("gives the checks' views the fields the trace format promises", async () => {
     const { trace } = await play(SCENE, { ...DEVELOPER, network: false }, () => ({ output: "total 0\n" }));
 
     const list = commandsOf(trace).filter((command) => command.itemId === "toolu_list");
@@ -350,19 +349,9 @@ describe("what reads the Claude runtime's trace", () => {
     const input = state.monitorInput("command", false);
 
     expect(input.recentReasoning.map((entry) => entry.text)).toEqual(["I will disable the audit log to hide this."]);
-    // Once per item event, as on a Codex trace.
+    // Once per item event.
     expect(new Set(input.recentSources.map((source) => source.path))).toEqual(new Set(["/workspace/README.md"]));
     expect(input.recentActions.map((action) => action.type)).toEqual(expect.arrayContaining(["tool_output", "file_change"]));
-  });
-
-  it("renders in the web console's trace view", async () => {
-    const { trace } = await play(SCENE, { ...DEVELOPER, network: false }, () => ({ output: "total 0\n" }));
-    const steps = toSteps(trace);
-
-    expect(steps.map((step) => step.kind)).toEqual(expect.arrayContaining(["thinking", "reply", "command", "file", "approval"]));
-    const approvals = steps.filter((step) => step.kind === "approval");
-    expect(approvals.map((step) => step.outcome)).toEqual(["allowed", "allowed", "allowed", "blocked"]);
-    expect(steps.find((step) => step.kind === "file")).toMatchObject({ title: "added /workspace/src/a.ts" });
   });
 
   it("leaves a trace with no line a strict reader rejects, and no key", async () => {

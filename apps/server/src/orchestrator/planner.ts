@@ -33,55 +33,6 @@ export interface Planner {
   plan(request: PlanRequest): Promise<SupervisorPlan>;
 }
 
-export interface ModelPlannerOptions {
-  apiKey: string;
-  baseUrl: string;
-  model: string;
-  timeoutMs: number;
-  fetch?: typeof fetch;
-}
-
-export class ModelPlanner implements Planner {
-  private readonly fetchImpl: typeof fetch;
-
-  constructor(private readonly options: ModelPlannerOptions) {
-    this.fetchImpl = options.fetch ?? fetch;
-  }
-
-  async plan(request: PlanRequest): Promise<SupervisorPlan> {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), this.options.timeoutMs);
-    timeout.unref();
-    const onAbort = () => controller.abort();
-    request.signal?.addEventListener("abort", onAbort, { once: true });
-
-    try {
-      const response = await this.fetchImpl(this.options.baseUrl.replace(/\/+$/, "") + "/responses", {
-        method: "POST",
-        headers: {
-          authorization: "Bearer " + this.options.apiKey,
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({
-          model: this.options.model,
-          input: plannerPrompt(request),
-          max_output_tokens: 2_000,
-        }),
-        signal: controller.signal,
-      });
-      if (!response.ok) {
-        const detail = (await response.text()).slice(0, 500);
-        throw new Error(`supervisor planning request failed (${response.status}): ${detail}`);
-      }
-      const text = responseText((await response.json()) as unknown);
-      return supervisorPlanSchema.parse(parseJsonObject(text));
-    } finally {
-      clearTimeout(timeout);
-      request.signal?.removeEventListener("abort", onAbort);
-    }
-  }
-}
-
 export interface ClaudePlannerOptions {
   client: ClaudeClient;
   model: string;
@@ -89,7 +40,7 @@ export interface ClaudePlannerOptions {
 }
 
 /**
- * The same tool-less call on Claude, using structured outputs for the plan's
+ * One tool-less call, using structured outputs for the plan's
  * shape. Refusals and cut-off responses reject, the plan schema still decides
  * whether the result is valid, and validatePlan and the middleware still stand
  * between the plan and any work.
@@ -125,15 +76,7 @@ export class ClaudePlanner implements Planner {
 }
 
 export function createModelPlanner(config: AppConfig, timeoutMs = 60_000): Planner {
-  if (config.modelProvider === "anthropic") {
-    return new ClaudePlanner({ client: createClaudeClient(config), model: config.modelName, timeoutMs });
-  }
-  return new ModelPlanner({
-    apiKey: config.modelApiKey,
-    baseUrl: config.modelProvider === "openai" ? "https://api.openai.com/v1" : config.arkBaseUrl,
-    model: config.modelName,
-    timeoutMs,
-  });
+  return new ClaudePlanner({ client: createClaudeClient(config), model: config.modelName, timeoutMs });
 }
 
 export function plannerPrompt(request: PlanRequest): string {
@@ -164,30 +107,6 @@ export function plannerPrompt(request: PlanRequest): string {
     "AGENTS:",
     JSON.stringify(request.agents.map(({ id, name, description }) => ({ id, name, description }))),
   ].join("\n");
-}
-
-function responseText(body: unknown): string {
-  if (body === null || typeof body !== "object") throw new Error("supervisor returned no JSON body");
-  const record = body as Record<string, unknown>;
-  if (typeof record.output_text === "string") return record.output_text;
-  if (!Array.isArray(record.output)) throw new Error("supervisor returned no text output");
-
-  const parts: string[] = [];
-  for (const output of record.output) {
-    if (output === null || typeof output !== "object") continue;
-    // Some providers put reasoning text in content, and a brace in it would break the JSON parse.
-    if ((output as Record<string, unknown>).type === "reasoning") continue;
-    const content = (output as Record<string, unknown>).content;
-    if (!Array.isArray(content)) continue;
-    for (const entry of content) {
-      if (entry !== null && typeof entry === "object") {
-        const text = (entry as Record<string, unknown>).text;
-        if (typeof text === "string") parts.push(text);
-      }
-    }
-  }
-  if (parts.length === 0) throw new Error("supervisor returned no text output");
-  return parts.join("\n");
 }
 
 function parseJsonObject(text: string): unknown {

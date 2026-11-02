@@ -580,13 +580,12 @@ describe("ExecutionGuard trace and approvals", () => {
     await nextExecution.close();
   });
 
-  it("does not count output chunks or git hashes as credentials, but still finds real ones", () => {
+  it("does not count git hashes as credentials, but still finds real ones", () => {
     const record = (method: string, params: object): TraceRecord => ({ seq: 1, at: NOW, dir: "in", method, payload: { method, params } });
     const hash = "f011e57fb167bb8d5800f1502f66cae88a723313";
     const other = "d43f66e7b553b1345dea57a0c7705ccaafa69d98";
     const secret = "sk_live_ABCDEFGHIJKLMNOP1234";
 
-    expect(runTaintValues(record("codex/event/exec_command_output_delta", { msg: { chunk: "Cj4gYWdlbnRndWFyZC1kZW1vQDEuMC4wIHRlc3QKPiBub2RlIC0tdGVzdAoK" } })).size).toBe(0);
     expect(runTaintValues(record("turn/diff/updated", { diff: `diff --git a/x b/x\nindex ${hash}..${other}\n--- a/x\n+++ b/x\n` })).size).toBe(0);
     expect(runTaintValues(record("item/commandExecution/outputDelta", { delta: `STRIPE_KEY=${secret}\n` }))).toContain(secret);
     expect(runTaintValues(record("turn/diff/updated", { diff: `index ${hash}..${other}\n+const key = "${secret}";\n` }))).toContain(secret);

@@ -6,7 +6,6 @@
 //        health-checks an unseen a7.* with NO secret in the workspace. The only
 //        thing that can fire is the derived host-family rule.
 //
-// Mirrors scripts/setup-rotation-scenario.sh. Run with: --paired rotation
 
 import { rmSync, writeFileSync } from "node:fs";
 import path from "node:path";

@@ -104,7 +104,7 @@ export interface Reflection {
   /**
    * Threads this was seen in, oldest first.
    *
-   * The Codex thread is the Agent's short-term memory: it is wiped whenever a
+   * The thread is the Agent's short-term memory: it is wiped whenever a
    * conversation is reset, while reflections survive. So the same lesson arising
    * in a second, independent thread is materially stronger evidence than one
    * conversation repeating itself — the second knew nothing of the first.
@@ -430,7 +430,7 @@ export interface LearnInput {
   /** ISO timestamp, passed in so this stays deterministic and replayable. */
   now: string;
   /**
-   * The Codex thread this run belonged to, when the runtime resolved one.
+   * The thread this run belonged to, when the runtime resolved one.
    *
    * Recorded so a lesson corroborated by a second, independent conversation can be
    * told apart from one conversation repeating itself. See `tierOf`.

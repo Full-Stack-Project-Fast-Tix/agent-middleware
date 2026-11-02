@@ -29,7 +29,6 @@ const IGNORED = new Set([
   ".git",
   "dist",
   "build",
-  ".codex",
   ".deleted",
   ".next",
   "coverage",

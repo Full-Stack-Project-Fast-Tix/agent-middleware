@@ -176,7 +176,7 @@ function boundedMonitorInput(input: Parameters<SemanticIntentMonitor["assess"]>[
 /**
  * Removes `rm -rf "$dir"` for a variable this command set once from `mktemp`, so an
  * agent cleaning up its own temp folder does not wait for a person. Nothing else may
- * follow on that rm, and Codex's `'"'` quote splicing is why quotes are matched loosely.
+ * follow on that rm, and shell `'"'` quote splicing is why quotes are matched loosely.
  */
 function withoutTempCleanup(command: string): string {
   let remaining = command;

@@ -4,7 +4,7 @@
 
 AgentGuard is a platform for delegating software-engineering tasks to autonomous coding agents while keeping **security enforcement, human approvals, and execution visibility outside the agents themselves**.
 
-> **Project status:** Active capstone development. The repository now has a multi-agent Run/Task/AgentExecution path, password-authenticated workspaces backed by PostgreSQL, server-side middleware wiring, container-backed Codex execution, and a web console with a Dashboard, Runs, Run Detail and workspace members. The broader governance and operations-console vision below is only partly implemented. This remains a proof of concept, not production-grade tenant isolation.
+> **Project status:** Active capstone development. The repository now has a multi-agent Run/Task/AgentExecution path, password-authenticated workspaces backed by PostgreSQL, server-side middleware wiring, container-backed Claude execution, and a web console with a Dashboard, Runs, Run Detail and workspace members. The broader governance and operations-console vision below is only partly implemented. This remains a proof of concept, not production-grade tenant isolation.
 
 ## Overview
 
@@ -16,9 +16,8 @@ AgentGuard aims to let developers submit engineering tasks, delegate work to spe
 
 The proof of concept currently includes:
 
-- A browser-based coding-agent platform using **Codex CLI**.
+- A browser-based coding-agent platform using **Claude**.
 - A **React + TypeScript** frontend and **Fastify + TypeScript** backend.
-- A single-agent execution lifecycle with workspace interaction, execution traces, and security findings.
 - Multi-agent Runs with task planning, dependency-aware scheduling, isolated working copies, and per-execution container runtimes in password-authenticated mode.
 - Strict specialist completion reports that distinguish a successfully ended model turn from a completed Task.
 - PostgreSQL-backed users, workspaces, workspace roles, and Run persistence for that mode.
@@ -29,7 +28,7 @@ The proof of concept currently includes:
 - **Reflection memory** recording structured lessons from past security incidents.
 - Security findings surfaced in the execution trajectory, with replay/evaluation through an existing benchmark framework.
 
-The multi-agent and password-authenticated paths are implemented foundations, with workspace-role checks and capability ceilings. Password mode exposes only workspace-scoped multi-agent APIs; the legacy global single-agent APIs remain available in token mode. Configurable policy rules, stronger tenant isolation, and web admin for creating users and workspaces remain unfinished. Run copies omit known environment-secret patterns and common credential stores/files by default; this filename-based filter is not general secret detection.
+The multi-agent and password-authenticated paths are implemented foundations, with workspace-role checks and capability ceilings. Password mode exposes only workspace-scoped multi-agent APIs. Configurable policy rules, stronger tenant isolation, and web admin for creating users and workspaces remain unfinished. Run copies omit known environment-secret patterns and common credential stores/files by default; this filename-based filter is not general secret detection.
 
 ## Planned product capabilities
 
@@ -65,7 +64,7 @@ The redesigned React frontend is intended to provide:
 | --- | --- |
 | Dashboard | Active/recent runs, agents, pending approvals, security findings, system status |
 | Agents | Reusable agent definitions, instructions, profiles, effective capabilities |
-| New Run / Playground | User task submission and `single` / `auto` orchestration selection |
+| New Run | User task submission and `single` / `auto` orchestration selection |
 | Run Detail | Task DAG, agent assignments, statuses, timeline, findings, approvals, changed files, trace drill-down |
 | Policies | Platform rules, workspace restrictions, profiles, and effective permissions |
 | Approvals | Pending requests, action context, policy reasons, and decisions |

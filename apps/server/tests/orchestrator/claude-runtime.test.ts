@@ -27,7 +27,7 @@ import { FakeDirectory, SIGNUP_PLAN, StaticPlanner, USER_ID, waitFor, WORKSPACE_
 // place of a scripted one: the Messages API is a local mock and the container a
 // fake, and everything between them is the code that runs for real.
 
-const CONFIG = loadConfig({ NODE_ENV: "test", MODEL_PROVIDER: "anthropic", ANTHROPIC_API_KEY: TEST_API_KEY });
+const CONFIG = loadConfig({ NODE_ENV: "test", ANTHROPIC_API_KEY: TEST_API_KEY });
 
 let dataDirectory: string;
 let mock: MockAnthropic;

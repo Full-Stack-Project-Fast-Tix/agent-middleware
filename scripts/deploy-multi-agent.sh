@@ -25,11 +25,7 @@ env_value() {
 [[ "$(stat -c '%a' "$env_file")" == "600" ]] || fail "$env_file holds secrets: run chmod 600 $env_file"
 [[ "$(env_value APP_AUTH_MODE)" == "password" ]] || fail "set APP_AUTH_MODE=password in $env_file. Multi-agent runs need signed-in users."
 [[ -n "$(env_value POSTGRES_PASSWORD)" ]] || fail "set POSTGRES_PASSWORD in $env_file."
-if [[ "$(env_value MODEL_PROVIDER)" == "openai" ]]; then
-  [[ -n "$(env_value OPENAI_API_KEY)" ]] || fail "set OPENAI_API_KEY in $env_file."
-else
-  [[ -n "$(env_value ARK_API_KEY)" && -n "$(env_value ARK_MODEL)" ]] || fail "set ARK_API_KEY and ARK_MODEL in $env_file."
-fi
+[[ -n "$(env_value ANTHROPIC_API_KEY)" ]] || fail "set ANTHROPIC_API_KEY in $env_file."
 command -v systemctl >/dev/null 2>&1 || fail "this script needs systemd. Use scripts/start-local-poc.sh on a laptop."
 command -v docker >/dev/null 2>&1 || fail "Docker Engine 24 or newer is required."
 docker compose version >/dev/null 2>&1 || fail "the Docker Compose plugin is required."
@@ -41,15 +37,15 @@ command -v node >/dev/null 2>&1 || fail "Node.js 22 or newer is required."
 
 run_user="$(id -un)"
 state_dir="${AGENTGUARD_STATE_DIR:-$repo_dir/.state}"
-mkdir -p "$state_dir/data" "$state_dir/workspaces" "$state_dir/codex-home" backups
+mkdir -p "$state_dir/data" "$state_dir/workspaces" backups
 
 echo "Starting PostgreSQL."
 LAUNCHPAD_ENV_FILE="$env_file" docker compose --env-file "$env_file" up -d --wait postgres
 
 runtime_image="$(env_value CONTAINER_RUNTIME_IMAGE)"
-runtime_image="${runtime_image:-volc-agent-runtime:local}"
+runtime_image="${runtime_image:-agentguard-claude-runtime:local}"
 echo "Building $runtime_image."
-docker build --file Dockerfile.runtime --tag "$runtime_image" \
+docker build --file Dockerfile.claude-runtime --tag "$runtime_image" \
   --build-arg "NODE_IMAGE=$(env_value CONTAINER_RUNTIME_BASE_IMAGE | grep . || echo node:22-bookworm-slim)" \
   --build-arg "DEBIAN_MIRROR=$(env_value CONTAINER_APT_MIRROR)" \
   --build-arg "DEBIAN_SECURITY_MIRROR=$(env_value CONTAINER_APT_SECURITY_MIRROR)" \
@@ -59,16 +55,6 @@ docker build --file Dockerfile.runtime --tag "$runtime_image" \
 echo "Building the app."
 npm ci
 npm run build
-
-sandbox_mode="$(env_value CODEX_SANDBOX_MODE)"
-sandbox_mode="${sandbox_mode:-workspace-write}"
-if [[ "$sandbox_mode" == "danger-full-access" ]]; then
-  fail "CODEX_SANDBOX_MODE=danger-full-access is not supported by the multi-agent deployment."
-fi
-if [[ "$sandbox_mode" == "workspace-write" ]] \
-  && ! docker run --rm "$runtime_image" codex sandbox linux --full-auto -- true >/dev/null 2>&1; then
-  fail "Codex Landlock is unavailable. Refusing to deploy with danger-full-access; install a runtime image/host combination that supports the configured workspace-write sandbox."
-fi
 
 public_port="$(env_value PUBLIC_PORT)"
 public_port="${public_port:-3000}"
@@ -82,15 +68,12 @@ overrides="$state_dir/$service.env"
 NODE_ENV=production
 HOST=0.0.0.0
 PORT=$public_port
-RUNTIME_PROVIDER=container
 CONTAINER_ENGINE=docker
 CONTAINER_RUNTIME_IMAGE=$runtime_image
 CONTAINER_USER=$(id -u):$(id -g)
-CODEX_SANDBOX_MODE=$sandbox_mode
-CODEX_NETWORK_ACCESS=false
+AGENT_NETWORK_ACCESS=false
 APP_DATA_DIR=$state_dir/data
 AGENT_WORKSPACE_ROOT=$state_dir/workspaces
-CODEX_HOME=$state_dir/codex-home
 DATABASE_URL=postgres://${postgres_user:-launchpad}:$(env_value POSTGRES_PASSWORD)@127.0.0.1:${postgres_port:-5433}/${postgres_db:-launchpad}
 EOF
 )

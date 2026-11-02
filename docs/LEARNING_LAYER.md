@@ -155,7 +155,7 @@ interface Finding {
 
 Phase 0 is the only one that blocks anyone else.
 
-Phase 3 is the one that turns detection into prevention. `run-turn.ts` currently
+Phase 3 is the one that turns detection into prevention. The runtime path currently
 reviews on `item/completed`, after a command has run, and auto-accepts every
 approval request. Refusing in `acceptApproval` when a pending action matches a
 learned fact is what makes "the agent does not get a vote" literally true.

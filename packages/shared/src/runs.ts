@@ -73,7 +73,7 @@ export const taskDependencySchema = z
   });
 export type TaskDependency = z.infer<typeof taskDependencySchema>;
 
-/** Token usage, matching what the Codex runtime already reports. */
+/** Token usage, matching what the runtime reports. */
 export const executionUsageSchema = z.object({
   inputTokens: z.number().int().nonnegative().optional(),
   cachedInputTokens: z.number().int().nonnegative().optional(),

@@ -9,8 +9,6 @@ describe("parseRoute", () => {
     expect(parseRoute("/runs")).toEqual({ page: "runs" });
     expect(parseRoute("/runs/new")).toEqual({ page: "new-run" });
     expect(parseRoute(`/runs/${RUN_ID}`)).toEqual({ page: "run", runId: RUN_ID });
-    expect(parseRoute("/playground")).toEqual({ page: "playground" });
-    expect(parseRoute("/safety")).toEqual({ page: "safety" });
     expect(parseRoute("/members")).toEqual({ page: "members" });
   });
 

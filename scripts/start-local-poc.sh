@@ -4,8 +4,8 @@ set -euo pipefail
 repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_dir"
 
-# Pull only the Ark/auth vars out of .env, not the whole file. Local paths
-# (APP_DATA_DIR, AGENT_WORKSPACE_ROOT, CODEX_HOME, CONTAINER_*) are left to
+# Pull only the model/auth vars out of .env, not the whole file. Local paths
+# (APP_DATA_DIR, AGENT_WORKSPACE_ROOT, CONTAINER_*) are left to
 # this script's own defaults below; .env's copies are meant for the Docker
 # deployment path and would break local host mounts if sourced wholesale.
 load_env_var() {
@@ -20,16 +20,9 @@ load_env_var() {
     fi
   fi
 }
-load_env_var MODEL_PROVIDER
 load_env_var ANTHROPIC_API_KEY
-load_env_var OPENAI_API_KEY
-load_env_var OPENAI_MODEL
-load_env_var ARK_API_KEY
-load_env_var ARK_MODEL
-load_env_var ARK_BASE_URL
 load_env_var APP_AUTH_TOKEN
-load_env_var CODEX_SANDBOX_MODE
-load_env_var CODEX_NETWORK_ACCESS
+load_env_var AGENT_NETWORK_ACCESS
 load_env_var GUARDRAIL_EGRESS_ENABLED
 load_env_var GUARDRAIL_INTENT_ENABLED
 load_env_var GUARDRAIL_SEMANTIC_ENABLED
@@ -38,27 +31,17 @@ load_env_var GUARDRAIL_SEMANTIC_TIMEOUT_MS
 load_env_var HITL_ENABLED
 load_env_var HITL_TIMEOUT_MS
 load_env_var GUARDRAIL_SENSITIVE_MARKERS
-load_env_var GUARDRAIL_SANDBOX
 load_env_var GUARDRAIL_BLOB_MIN_CHARS
 load_env_var GUARDRAIL_INTENT_ENABLED
 load_env_var GUARDRAIL_REFLECTION_ENABLED
 
-# Claude runs its tools in an image with no Codex; its agent loop stays on this host.
-is_claude() {
-  [[ "${MODEL_PROVIDER:-ark}" == "anthropic" ]]
-}
-if is_claude; then
-  runtime_image="${CONTAINER_RUNTIME_IMAGE:-agentguard-claude-runtime:local}"
-  runtime_dockerfile="Dockerfile.claude-runtime"
-else
-  runtime_image="${CONTAINER_RUNTIME_IMAGE:-volc-agent-runtime:local}"
-  runtime_dockerfile="Dockerfile.runtime"
-fi
+# Claude runs its tools in this image; its agent loop stays on this host.
+runtime_image="${CONTAINER_RUNTIME_IMAGE:-agentguard-claude-runtime:local}"
+runtime_dockerfile="Dockerfile.claude-runtime"
 runtime_base_image="${CONTAINER_RUNTIME_BASE_IMAGE:-node:22-bookworm-slim}"
 runtime_apt_mirror="${CONTAINER_APT_MIRROR:-}"
 runtime_apt_security_mirror="${CONTAINER_APT_SECURITY_MIRROR:-}"
 runtime_apt_packages="${CONTAINER_RUNTIME_APT_PACKAGES:-ca-certificates curl git ripgrep}"
-codex_sandbox_mode="${CODEX_SANDBOX_MODE:-workspace-write}"
 
 log() {
   printf '[local-poc] %s\n' "$*" >&2
@@ -112,26 +95,14 @@ detect_engine() {
   return 1
 }
 
-# Credentials depend on which model service is selected.
-if is_claude; then
-  if [[ -z "${ANTHROPIC_API_KEY:-}" || "${ANTHROPIC_API_KEY}" == replace-* ]]; then
-    log "MODEL_PROVIDER=anthropic requires ANTHROPIC_API_KEY. Set it in .env."
-    exit 2
-  fi
-  load_env_var APP_AUTH_MODE
-  if [[ "${APP_AUTH_MODE:-}" != "password" ]]; then
-    log "Note: Claude only runs multi-agent Runs, which need APP_AUTH_MODE=password and DATABASE_URL."
-    log "See 'Run on Claude' in README.md. Starting anyway."
-  fi
-elif [[ "${MODEL_PROVIDER:-ark}" == "openai" ]]; then
-  if [[ -z "${OPENAI_API_KEY:-}" ]]; then
-    log "MODEL_PROVIDER=openai requires OPENAI_API_KEY."
-    exit 2
-  fi
-elif [[ -z "${ARK_API_KEY:-}" || -z "${ARK_MODEL:-}" ]]; then
-  log "ARK_API_KEY and ARK_MODEL are required."
-  log "Example: ARK_API_KEY=key ARK_MODEL=ep-id ./scripts/start-local-poc.sh"
+if [[ -z "${ANTHROPIC_API_KEY:-}" || "${ANTHROPIC_API_KEY}" == replace-* ]]; then
+  log "ANTHROPIC_API_KEY is required. Set it in .env."
   exit 2
+fi
+load_env_var APP_AUTH_MODE
+if [[ "${APP_AUTH_MODE:-}" != "password" ]]; then
+  log "Note: Runs need APP_AUTH_MODE=password and DATABASE_URL."
+  log "See 'Run on Claude' in README.md. Starting anyway."
 fi
 
 command -v node >/dev/null 2>&1 || {
@@ -157,22 +128,18 @@ if [[ -n "${LOCAL_POC_DATA_ROOT:-}" ]]; then
   local_state_root="$LOCAL_POC_DATA_ROOT"
   export APP_DATA_DIR="$local_state_root/data"
   export AGENT_WORKSPACE_ROOT="$local_state_root/workspaces"
-  export CODEX_HOME="$local_state_root/codex-home"
 elif [[ "$(uname -s)" == "Darwin" ]]; then
   local_state_root="${HOME}/.volc-agent-launchpad"
   export APP_DATA_DIR="${APP_DATA_DIR:-$local_state_root/data}"
   export AGENT_WORKSPACE_ROOT="${AGENT_WORKSPACE_ROOT:-$local_state_root/workspaces}"
-  export CODEX_HOME="${CODEX_HOME:-$local_state_root/codex-home}"
 else
   local_state_root="$repo_dir/.local"
   export APP_DATA_DIR="${APP_DATA_DIR:-$local_state_root/data}"
   export AGENT_WORKSPACE_ROOT="${AGENT_WORKSPACE_ROOT:-$local_state_root/workspaces}"
-  export CODEX_HOME="${CODEX_HOME:-$local_state_root/codex-home}"
 fi
 export RUNTIME_INSTANCE_ID="${RUNTIME_INSTANCE_ID:-local-$(id -u)-$(printf '%s' "$repo_dir" | cksum | awk '{print $1}')}"
 
 mkdir -p "$APP_DATA_DIR" "$AGENT_WORKSPACE_ROOT"
-is_claude || mkdir -p "$CODEX_HOME"
 log "Persistent state: $local_state_root"
 export CONTAINER_USER="${CONTAINER_USER:-$(id -u):$(id -g)}"
 
@@ -191,44 +158,20 @@ preflight_user_args=(--user "$CONTAINER_USER")
 if [[ "$(basename "$engine")" == "podman" ]]; then
   preflight_user_args+=(--userns keep-id)
 fi
-mount_check_ok() {
-  if is_claude; then
-    # Claude mounts each Run's working copy, kept under the data directory.
-    "$engine" run --rm \
-      "${preflight_user_args[@]}" \
-      --mount "type=bind,src=$APP_DATA_DIR,dst=/workspace" \
-      "$runtime_image" sh -lc \
-        'touch /workspace/.launchpad-write-test && rm /workspace/.launchpad-write-test'
-  else
-    "$engine" run --rm \
-      "${preflight_user_args[@]}" \
-      --mount "type=bind,src=$AGENT_WORKSPACE_ROOT,dst=/workspace" \
-      --mount "type=bind,src=$CODEX_HOME,dst=/codex-home" \
-      "$runtime_image" sh -lc \
-        'touch /workspace/.launchpad-write-test /codex-home/.launchpad-write-test && rm /workspace/.launchpad-write-test /codex-home/.launchpad-write-test'
-  fi
-}
-if ! mount_check_ok; then
+# Each Run's working copy is kept under the data directory.
+if ! "$engine" run --rm \
+  "${preflight_user_args[@]}" \
+  --mount "type=bind,src=$APP_DATA_DIR,dst=/workspace" \
+  "$runtime_image" sh -lc \
+    'touch /workspace/.launchpad-write-test && rm /workspace/.launchpad-write-test'; then
   log "The container engine cannot mount $local_state_root."
   log "Set LOCAL_POC_DATA_ROOT to a directory shared with Docker/Colima/Podman."
   exit 2
 fi
 
-if ! is_claude \
-  && [[ "$codex_sandbox_mode" == "workspace-write" ]] \
-  && ! "$engine" run --rm "$runtime_image" \
-    codex sandbox linux --full-auto -- true >/dev/null 2>&1; then
-  log "Codex Landlock is unavailable in this Linux Runtime."
-  log "Falling back to danger-full-access inside the disposable container boundary."
-  log "Do not mount unrelated secrets or host directories into the Agent Runtime."
-  codex_sandbox_mode=danger-full-access
-fi
-
 export NODE_ENV=production
 export HOST="${HOST:-127.0.0.1}"
 export PORT="${PORT:-3000}"
-export CODEX_SANDBOX_MODE="$codex_sandbox_mode"
-export RUNTIME_PROVIDER=container
 export CONTAINER_ENGINE="$engine"
 export CONTAINER_RUNTIME_IMAGE="$runtime_image"
 

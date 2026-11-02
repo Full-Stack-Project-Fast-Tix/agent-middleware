@@ -27,7 +27,7 @@ import type { TurnSecurityPolicy } from "../turn-security-policy.js";
 //   RunStore          persistence (P3): in memory, or PostgreSQL in db/.
 //   AgentDirectory    agent registry (P3 storage, P1/P2 semantics).
 //   SecurityMiddleware                (P1), in ../security-middleware.ts.
-//   ExecutionRuntime  runs one AgentExecution. Week 9 adapts the Codex
+//   ExecutionRuntime  runs one AgentExecution. Week 9 adapts the Claude
 //                     runners to it; tests use a scripted one.
 //   Planner           the supervisor's planning call, in ./planner.ts.
 

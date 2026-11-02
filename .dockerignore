@@ -5,9 +5,6 @@ node_modules
 .local
 data
 workspaces
-codex-home
-deploy/volcengine/.terraform
-deploy/volcengine/*.tfstate*
 .env
 .env.production
 *.log

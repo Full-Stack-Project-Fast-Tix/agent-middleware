@@ -714,6 +714,19 @@ Run. Steps and costs are in the README, under
 runtime port, retries after a limit, `threadId` null), P3 (the container, the image,
 deployment).
 
+## 31. Claude is the only runtime
+
+BytePlus ModelArk and Codex are removed: the Ark proxy, the Codex runners and
+JSON-RPC client, `MODEL_PROVIDER`, `RUNTIME_PROVIDER`, the single-agent Playground
+and its JSON store, which only ever ran on Codex, and the Volcengine deployment that
+only ran it. Earlier decisions that describe Codex are history; where they disagree
+with this one, this one holds. Saved traces in `benchmark-results/` keep their
+Codex-era shape, and the checks still read that format, because Claude's trace records
+use it too.
+
+`.codex` stays on the working-copy denylist: it can hold a credential in a user's
+repository whichever agent runs.
+
 ## Guidance for P3's schema
 
 These points are implementation guidance, not part of the contract:

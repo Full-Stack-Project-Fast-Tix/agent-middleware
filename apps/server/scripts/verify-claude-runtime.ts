@@ -21,7 +21,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import type { Agent, AgentExecution, ProposedAction, Run, SecurityDecision, Task } from "@launchpad/shared";
 import { DockerToolSandboxProvider } from "../src/claude-tool-sandbox.js";
 import { loadConfig } from "../src/config.js";
-import { containerName } from "../src/container-codex-runner.js";
+import { containerName } from "../src/claude-tool-sandbox.js";
 import { RunCancelledError } from "../src/errors.js";
 import { ClaudeExecutionRuntime } from "../src/orchestrator/claude-execution-runtime.js";
 
@@ -111,7 +111,6 @@ mkdirSync(dataDirectory);
 
 const config = loadConfig({
   NODE_ENV: "test",
-  MODEL_PROVIDER: "anthropic",
   ANTHROPIC_API_KEY: SENTINEL_KEY,
   CONTAINER_RUNTIME_IMAGE: IMAGE,
   CONTAINER_ENGINE: process.env.CONTAINER_ENGINE ?? "docker",
@@ -206,9 +205,6 @@ function firstLine(text: string | undefined): string {
 // -- The scenarios --------------------------------------------------------------
 
 try {
-  const imageHasCodex = spawnSync(config.containerEngine, ["run", "--rm", "--pull", "never", "--entrypoint", "sh", IMAGE, "-c", "command -v codex || echo absent"], { encoding: "utf8" }).stdout.trim();
-  record("the runtime image contains no Codex", imageHasCodex === "absent", { image: IMAGE, whichCodex: imageHasCodex });
-
   // 1. Declining an edit leaves the file absent.
   {
     const scenario = await run([tools(editor("edit", { command: "create", path: "/workspace/declined.txt", file_text: "must not exist\n" })), done], {

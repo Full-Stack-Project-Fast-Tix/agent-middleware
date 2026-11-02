@@ -48,7 +48,7 @@ describe("the tool container's arguments", () => {
     expect(flag(buildToolContainerRunArgs({ ...REQUEST, denyNetwork: false }, CONFIG), "--network")).toBe("bridge");
   });
 
-  it("is disposable, unprivileged and limited, as the Codex container is", () => {
+  it("is disposable, unprivileged and limited", () => {
     const args = buildToolContainerRunArgs(REQUEST, CONFIG);
     expect(args).toContain("--rm");
     expect(args).toContain("--init");
@@ -76,9 +76,9 @@ describe("the tool container's arguments", () => {
     expect(flag(buildToolContainerRunArgs(REQUEST, { ...CONFIG, containerEngine: "/usr/bin/podman" }), "--userns")).toBe("keep-id");
   });
 
-  it("names no credential: nothing about the key or Codex in the arguments", () => {
+  it("names no credential: nothing about the key in the arguments", () => {
     const args = buildToolContainerRunArgs(REQUEST, CONFIG).join(" ");
-    expect(args).not.toMatch(/ANTHROPIC|API_KEY|CODEX|codex-home/);
+    expect(args).not.toMatch(/ANTHROPIC|API_KEY/);
     const env = buildToolContainerRunArgs(REQUEST, CONFIG).filter((_value, index, all) => all[index - 1] === "--env");
     expect(env).toEqual(["HOME=/tmp", "NO_COLOR=1"]);
   });

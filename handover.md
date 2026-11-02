@@ -1,5 +1,9 @@
 # Team handover: current state and next steps
 
+> **Note, 2 November 2026:** Ark and Codex have since been removed, along with the
+> single-agent Playground and the Volcengine deployment ([decision 31](docs/contract-decisions.md#31-claude-is-the-only-runtime)).
+> Mentions of them below are historical.
+
 **Updated:** 1 November 2026
 
 **Repository state reviewed:** `main` after the P1/P2 closure work. This is a

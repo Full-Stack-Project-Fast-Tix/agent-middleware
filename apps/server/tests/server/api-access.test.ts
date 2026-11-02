@@ -3,15 +3,9 @@
 // run the `/api/agents` handler with no credential.
 
 import { afterEach, describe, expect, it } from "vitest";
-import type { AgentService } from "../../src/agent-service.js";
 import { createApp } from "../../src/app.js";
 import type { Identity } from "../../src/auth-routes.js";
 import { loadConfig } from "../../src/config.js";
-
-const service = {
-  listAgents: () => [{ id: "visible-only-with-a-credential" }],
-  systemInfo: async () => ({}),
-} as unknown as AgentService;
 
 const identity = {
   signIn: async () => null,
@@ -20,6 +14,14 @@ const identity = {
 } as unknown as Identity;
 
 const apps: Array<Awaited<ReturnType<typeof createApp>>> = [];
+
+async function appWithRoute(...args: Parameters<typeof createApp>) {
+  const app = await createApp(...args);
+  apps.push(app);
+  app.get("/api/agents", async () => ({ id: "visible-only-with-a-credential" }));
+  return app;
+}
+
 afterEach(async () => {
   for (const app of apps.splice(0)) await app.close();
 });
@@ -28,8 +30,7 @@ const encodedPaths = ["/api/agents", "/%61pi/agents", "/%61%70%69/agents", "/ap%
 
 describe("API access", () => {
   it.each(encodedPaths)("refuses %s without the shared token", async (url) => {
-    const app = await createApp(loadConfig({ NODE_ENV: "test", APP_AUTH_TOKEN: "a-strong-test-token" }), service, {});
-    apps.push(app);
+    const app = await appWithRoute(loadConfig({ NODE_ENV: "test", APP_AUTH_TOKEN: "a-strong-test-token" }));
 
     const refused = await app.inject({ method: "GET", url });
     expect(refused.statusCode).toBe(401);
@@ -39,21 +40,19 @@ describe("API access", () => {
     expect(allowed.statusCode).toBe(200);
   });
 
-  it.each(encodedPaths)("authenticates then hides the legacy route %s in password mode", async (url) => {
-    const app = await createApp(loadConfig({ NODE_ENV: "test" }), service, { identity });
-    apps.push(app);
+  it.each(encodedPaths)("refuses %s without a session in password mode", async (url) => {
+    const app = await appWithRoute(loadConfig({ NODE_ENV: "test" }), { identity });
 
     const refused = await app.inject({ method: "GET", url });
     expect(refused.statusCode).toBe(401);
     expect(refused.body).not.toContain("visible-only");
 
-    const hidden = await app.inject({ method: "GET", url, headers: { authorization: "Bearer good" } });
-    expect(hidden.statusCode).toBe(404);
-    expect(hidden.body).not.toContain("visible-only");
+    const allowed = await app.inject({ method: "GET", url, headers: { authorization: "Bearer good" } });
+    expect(allowed.statusCode).toBe(200);
   });
 
   it("keeps the open routes open and refuses unknown API paths", async () => {
-    const app = await createApp(loadConfig({ NODE_ENV: "test" }), service, { identity });
+    const app = await createApp(loadConfig({ NODE_ENV: "test" }), { identity });
     apps.push(app);
 
     expect((await app.inject({ method: "GET", url: "/api/health" })).statusCode).toBe(200);
@@ -66,7 +65,7 @@ describe("API access", () => {
   });
 
   it("fails the health check when the database cannot answer, without saying why", async () => {
-    const app = await createApp(loadConfig({ NODE_ENV: "test" }), service, {
+    const app = await createApp(loadConfig({ NODE_ENV: "test" }), {
       checkDatabase: async () => {
         throw new Error("password authentication failed for user launchpad");
       },

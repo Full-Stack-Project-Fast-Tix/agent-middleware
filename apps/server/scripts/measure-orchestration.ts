@@ -30,7 +30,6 @@ import {
   runSnapshotResponseSchema,
   type RunEvent,
 } from "@launchpad/shared";
-import type { AgentService } from "../src/agent-service.js";
 import { createApp } from "../src/app.js";
 import { loadConfig } from "../src/config.js";
 import { openDatabase } from "../src/db/pool.js";
@@ -110,7 +109,7 @@ async function timed<T>(work: () => Promise<T>): Promise<[T, number]> {
 async function measureLevel(concurrency: number, backend: Backend) {
   const hub = new RunEventHub({ bufferSize: 10_000 });
   const demo = createDemoRuns(hub, { pauseScale: PAUSE, store: backend.open(hub) });
-  const app = await createApp(loadConfig({ NODE_ENV: "test", LOG_LEVEL: "silent" }), {} as AgentService, {
+  const app = await createApp(loadConfig({ NODE_ENV: "test", LOG_LEVEL: "silent" }), {
     runEvents: { hub, canReadRun: async (runId) => (await demo.store.getRun(runId)) !== null },
     runs: demo.routes,
   });

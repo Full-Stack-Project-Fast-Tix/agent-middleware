@@ -2,7 +2,6 @@ import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { promisify } from "node:util";
 import { z } from "zod";
 import type { AppConfig } from "./config.js";
-import { containerName } from "./container-codex-runner.js";
 
 // The disposable container a Claude execution's tools run in. The agent loop and
 // the API key stay on the host (orchestrator/claude-execution-runtime.ts); this
@@ -10,7 +9,7 @@ import { containerName } from "./container-codex-runner.js";
 // removes it. It decides nothing: by the time a call gets here the ActionGate has
 // allowed it.
 //
-// What is different from the Codex container, and why it matters:
+// What matters about it:
 //
 //   * Nothing in the container talks to the model, so a policy that denies
 //     network gets `--network none` rather than a bridge.
@@ -19,6 +18,13 @@ import { containerName } from "./container-codex-runner.js";
 //   * The workspace is mounted read-only unless the execution may write.
 
 const execFileAsync = promisify(execFile);
+
+/** One container per execution, so one Agent can run several Tasks at once. */
+export function containerName(executionId: string, instanceId = "default"): string {
+  const safeInstance = instanceId.replace(/[^a-zA-Z0-9_.-]/g, "-").slice(0, 32);
+  const safeExecution = executionId.replace(/[^a-zA-Z0-9_.-]/g, "-").slice(0, 48);
+  return "launchpad-" + safeInstance + "-" + safeExecution;
+}
 
 export type SandboxConfig = Pick<
   AppConfig,

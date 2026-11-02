@@ -2,7 +2,6 @@ import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import type { User } from "@launchpad/shared";
 import { api, hasSavedSession, setAuthToken } from "./api";
 import { AccountMenu } from "./AccountMenu";
-import { Admin } from "./Admin";
 import { AgentsPage } from "./workspace/AgentsPage";
 import { ApprovalsPage } from "./workspace/ApprovalsPage";
 import { BenchmarksPage } from "./workspace/BenchmarksPage";
@@ -11,15 +10,13 @@ import { SecurityPage } from "./workspace/SecurityPage";
 import { AuthScreen, ConnectingScreen } from "./AuthScreen";
 import { Members, MembersUnavailable } from "./members/Members";
 import { membersApi } from "./members/members-api";
-import { Playground } from "./Playground";
 import { navigate, paths, useRoute, type Route } from "./router";
 import { Dashboard } from "./runs/Dashboard";
 import { RunsPage } from "./runs/RunsPage";
 import { useHeldCount } from "./runs/useRunList";
 import { signOut } from "./sign-out";
-import { AppShell, Button, ButtonLink, Loading, type NavItem } from "./ui";
+import { AppShell, ButtonLink, Loading, type NavItem } from "./ui";
 import { CurrentWorkspaceProvider, useCurrentWorkspace } from "./useCurrentWorkspace";
-import { usePlayground, type PlaygroundState } from "./usePlayground";
 import { WorkspaceSwitcher } from "./WorkspaceSwitcher";
 
 // The primitives gallery is a development aid, left out of production builds.
@@ -31,12 +28,9 @@ function navItems(route: Route, authMethod: "token" | "password"): NavItem[] {
   return [
     { to: paths.dashboard, label: "Dashboard", current: route.page === "dashboard" },
     { to: paths.runs, label: "Runs", current: route.page === "runs" || route.page === "new-run" || route.page === "run" },
-    // The single-agent routes exist only in token mode, and the member routes only in password mode.
+    // These read Postgres, which the shared-token mode does not have.
     ...(authMethod === "token"
-      ? [
-          { to: paths.playground, label: "Playground", current: route.page === "playground" },
-          { to: paths.safety, label: "Safety", current: route.page === "safety" },
-        ]
+      ? []
       : [
           { to: paths.approvals, label: "Approvals", current: route.page === "approvals" },
           { to: paths.agents, label: "Agents", current: route.page === "agents" },
@@ -60,13 +54,11 @@ function NotFound() {
   );
 }
 
-function CurrentPage({ route, playground, authMethod, viewer }: {
+function CurrentPage({ route, authMethod, viewer }: {
   route: Route;
-  playground: PlaygroundState;
   authMethod: "token" | "password";
   viewer: User | null;
 }) {
-  if (authMethod === "password" && (route.page === "playground" || route.page === "safety")) return <NotFound />;
   // These read Postgres, which the shared-token mode does not have.
   if (authMethod === "token" && ["agents", "policies", "approvals", "security", "benchmarks"].includes(route.page)) return <NotFound />;
   switch (route.page) {
@@ -76,40 +68,6 @@ function CurrentPage({ route, playground, authMethod, viewer }: {
     case "new-run":
     case "run":
       return <RunsPage route={route} />;
-    case "playground":
-      return <Playground state={playground} />;
-    case "safety":
-      return (
-        <>
-          {playground.system?.modelProvider === "anthropic" && (
-            <div className="notice notice-held page-banner" role="status">
-              <span>This page reports on Playground runs, which need Codex and cannot run with MODEL_PROVIDER=anthropic. Findings from Claude Runs are on each Run.</span>
-            </div>
-          )}
-          {playground.error && (
-            <div className="notice notice-blocked page-banner" role="alert">
-              <span>{playground.error}</span>
-              <Button variant="ghost" onClick={() => playground.setError(null)}>Dismiss</Button>
-            </div>
-          )}
-          <Admin
-            overview={playground.adminOverview}
-            agents={playground.agents}
-            agentId={playground.adminAgentId}
-            onSelectAgent={playground.setAdminAgentId}
-            onReturnToChat={(agentId) => {
-              playground.setSelectedId(agentId);
-              playground.setAdminAgentId(null);
-              navigate(paths.playground);
-            }}
-            onViewRun={(agentId, runId) => {
-              playground.setSelectedId(agentId);
-              void api.run(runId).then(({ run }) => playground.setActiveRun(run));
-              navigate(paths.playground);
-            }}
-          />
-        </>
-      );
     case "agents":
       return <AgentsPage />;
     case "policies":
@@ -142,7 +100,7 @@ function Shell({ nav, account, children }: { nav: NavItem[]; account?: React.Rea
 
 /**
  * Signing out remounts the session, so nothing held for the signed-in person
- * survives: playground state, polling and open event streams all go with it.
+ * survives: polling and open event streams all go with it.
  */
 export default function App() {
   const [session, setSession] = useState<{ id: number; notice: string | null }>({ id: 0, notice: null });
@@ -155,8 +113,6 @@ export default function App() {
 
 function AppSession({ notice, onSignedOut }: { notice: string | null; onSignedOut: (notice: string | null) => void }) {
   const route = useRoute();
-  const playground = usePlayground();
-  const { bootstrap, openAdmin } = playground;
   const [error, setError] = useState<string | null>(null);
   const [authRequired, setAuthRequired] = useState<boolean | null>(null);
   const [authMethod, setAuthMethod] = useState<"token" | "password">("token");
@@ -179,18 +135,12 @@ function AppSession({ notice, onSignedOut }: { notice: string | null; onSignedOu
           setAuthToken("");
         }
         setAuthRequired(required);
-        if (!required) await bootstrap();
       })
       .catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)));
     return () => {
       mounted = false;
     };
-  }, [bootstrap]);
-
-  const onSafetyPage = route.page === "safety" && authRequired === false && authMethod === "token";
-  useEffect(() => {
-    if (onSafetyPage) openAdmin();
-  }, [onSafetyPage, openAdmin]);
+  }, []);
 
   const signedIn = authRequired === false && authMethod === "password";
   useEffect(() => {
@@ -214,7 +164,7 @@ function AppSession({ notice, onSignedOut }: { notice: string | null; onSignedOu
       setAuthToken((await api.signIn(email, secret)).token, { remember: true });
     } else {
       setAuthToken(secret);
-      await bootstrap();
+      await api.checkToken();
     }
     setAuthRequired(false);
   };
@@ -230,7 +180,7 @@ function AppSession({ notice, onSignedOut }: { notice: string | null; onSignedOu
           ? <AccountMenu user={viewer} onSignOut={async () => onSignedOut(await signOut())} />
           : undefined}
       >
-        <CurrentPage route={route} playground={playground} authMethod={authMethod} viewer={viewer} />
+        <CurrentPage route={route} authMethod={authMethod} viewer={viewer} />
       </Shell>
     </CurrentWorkspaceProvider>
   );

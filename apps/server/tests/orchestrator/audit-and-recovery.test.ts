@@ -126,7 +126,7 @@ describe("audit trail", () => {
   it("redacts credentials quoted in error messages", async () => {
     harness = startHarness({ script: { [PROMPT]: { failAttempts: Infinity } } });
     harness.runtime.execute = async () => {
-      throw new Error("Codex turn failed: (stderr: OPENAI_API_KEY=sk-proj-abcdefghijklmnopqrstuvwxyz0123456789ABCD)");
+      throw new Error("Claude turn failed: (stderr: OPENAI_API_KEY=sk-proj-abcdefghijklmnopqrstuvwxyz0123456789ABCD)");
     };
     const run = await harness.orchestrator.createRun({
       workspaceId: WORKSPACE_ID,
@@ -136,7 +136,7 @@ describe("audit trail", () => {
     });
     await harness.orchestrator.whenSettled(run.id);
     const audit = JSON.stringify(harness.store.auditEvents(run.id));
-    expect(audit).toContain("Codex turn failed");
+    expect(audit).toContain("Claude turn failed");
     expect(audit).not.toContain("abcdefghijklmnopqrstuvwxyz0123456789ABCD");
   });
 });

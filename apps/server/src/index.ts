@@ -1,10 +1,7 @@
-import path from "node:path";
-import { AgentService } from "./agent-service.js";
-import { startArkProxy, type ArkProxy } from "./ark-proxy.js";
 import { createApp } from "./app.js";
 import { signedInUser } from "./auth-routes.js";
 import { createDemoRuns, seedDemo, type DemoRuns, type DemoStore } from "./dev/demo-runs.js";
-import { assertModelProviderReady, loadConfig, writeCodexConfig } from "./config.js";
+import { assertModelProviderReady, loadConfig } from "./config.js";
 import { openDatabase } from "./db/pool.js";
 import { PostgresIdentity } from "./db/postgres-identity.js";
 import { PostgresRunStore } from "./db/postgres-run-store.js";
@@ -12,9 +9,6 @@ import { startApprovalSweep } from "./orchestrator/orchestrator.js";
 import { createPostgresRuns } from "./postgres-runs.js";
 import { RunEventHub } from "./run-events.js";
 import { startRunFileSweep } from "./run-retention.js";
-import { createRunner } from "./runner-factory.js";
-import { JsonStore } from "./store.js";
-import { WorkspaceManager } from "./workspace.js";
 
 const config = loadConfig();
 
@@ -30,30 +24,13 @@ if (runsDemo && config.nodeEnv === "production") {
 // The simulated demo calls no model, so it needs no key.
 if (!runsDemo) assertModelProviderReady(config);
 
-// Start the provider adapter before writing config.toml, so Codex is pointed at
-// it rather than at Ark directly. Without this, only the first turn of a thread
-// succeeds. See ark-proxy.ts. Claude uses neither Codex nor its home.
-let arkProxy: ArkProxy | null = null;
-if (config.arkProxyEnabled) {
-  arkProxy = await startArkProxy(config);
-}
-if (config.modelProvider !== "anthropic") {
-  await writeCodexConfig(config, arkProxy?.baseUrlForCodex ?? config.arkBaseUrl);
-}
-
-const store = new JsonStore(path.join(config.dataDirectory, "launchpad.json"));
-const workspaces = new WorkspaceManager(config.workspaceRoot);
-const runner = createRunner(config);
-const service = new AgentService(config, store, workspaces, runner);
-await service.initialize();
-
 // The orchestrator publishes RunEvents here; browsers follow them over SSE.
 const runEvents = new RunEventHub();
 
 // With DATABASE_URL set, the schema is migrated here and Runs are kept in
 // Postgres. With APP_AUTH_MODE=password as well, users sign in (db:admin adds
-// them) and Runs are real: P1's middleware, the model planner and one disposable
-// container per execution, on Claude or Codex depending on MODEL_PROVIDER.
+// them) and Runs are real: P1's middleware, the model planner and Claude, with
+// one disposable container per execution for its tools.
 if (config.authMode === "password" && (runsDemo || !process.env.DATABASE_URL)) {
   throw new Error("APP_AUTH_MODE=password needs DATABASE_URL, and does not combine with RUNS_DEMO.");
 }
@@ -66,11 +43,11 @@ if (runsDemo && database !== null) {
   runs = createDemoRuns(runEvents, { store: new PostgresRunStore(database, runEvents) });
 } else if (runsDemo) {
   runs = createDemoRuns(runEvents);
-} else if (identity !== null && config.runtimeProvider === "container") {
+} else if (identity !== null) {
   runs = createPostgresRuns(config, database!, runEvents, identity);
 }
 
-const app = await createApp(config, service, {
+const app = await createApp(config, {
   runEvents: {
     hub: runEvents,
     canReadRun: async (runId, request) => {
@@ -85,13 +62,8 @@ const app = await createApp(config, service, {
   ...(identity === null ? {} : { identity, memberDatabase: database! }),
   ...(database === null ? {} : { checkDatabase: () => database.query("SELECT 1") }),
 });
-if (identity !== null && runs === null) {
-  app.log.warn("Multi-agent runs need RUNTIME_PROVIDER=container, so their routes are off.");
-}
-if (config.modelProvider === "anthropic" && runs === null) {
-  app.log.warn(
-    "MODEL_PROVIDER=anthropic only runs multi-agent Runs, which need APP_AUTH_MODE=password, DATABASE_URL and RUNTIME_PROVIDER=container. Nothing here can run an agent as configured.",
-  );
+if (runs === null) {
+  app.log.warn("Runs need APP_AUTH_MODE=password and DATABASE_URL, or RUNS_DEMO. Nothing here can run an agent as configured.");
 }
 let stopApprovalSweep = () => {};
 let stopRunFileSweep = () => {};
@@ -112,19 +84,11 @@ if (runs !== null) {
   }
 }
 
-if (arkProxy) {
-  app.log.info(
-    { port: arkProxy.port, upstream: config.arkBaseUrl },
-    "Ark provider adapter listening",
-  );
-}
-
 const shutdown = async (signal: string) => {
   app.log.info({ signal }, "Shutting down");
   stopApprovalSweep();
   stopRunFileSweep();
   await app.close();
-  await arkProxy?.close();
   await database?.end();
   process.exit(0);
 };

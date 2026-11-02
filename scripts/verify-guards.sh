@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Verify the guardrails without an API key, a model, or a container.
 #
-# Also called by run-benchmark.sh to score a live run - do not delete.
+
 #
 # Runs the unit suite, then re-derives the committed benchmark results straight
 # from the raw recorded traces. No model calls, nothing spent.
@@ -36,7 +36,7 @@ npx vitest run --config benchmark/vitest.config.ts --reporter=dot
 
 echo
 echo "==> 3/3  Re-deriving the results from $(ls "$SLICE"/traces/*.jsonl | wc -l | tr -d ' ') recorded live runs"
-npx tsx benchmark/run.ts --mode replay --faithful --from "$SLICE" \
+npx tsx benchmark/run.ts --faithful --from "$SLICE" \
   --configs off,egress,egress+reflection --out "$OUT" >/dev/null
 sed -n '/^## Verdict/,/^## What actually happened/p' "$OUT/report.md" | sed '$d'
 

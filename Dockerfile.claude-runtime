@@ -2,7 +2,7 @@
 # operations, as a non-root user, with the Run's working copy at /workspace.
 #
 # No agent runs in here. The agent loop and the API key stay on the host, so this
-# image has no Codex and no credentials, and needs no route to the model.
+# image has no credentials, and needs no route to the model.
 #
 # Build it with: npm run build:claude-runtime
 ARG NODE_IMAGE=node:22-bookworm-slim

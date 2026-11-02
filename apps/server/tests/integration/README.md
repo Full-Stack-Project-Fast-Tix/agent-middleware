@@ -9,7 +9,7 @@ stored snapshot.
 | --- | --- |
 | `harness/client.ts` | `HarnessClient` validates every response (error bodies too) against `@launchpad/shared`. `RunRecorder` keeps the full event log and the view a UI would build from it. |
 | `harness/invariants.ts` | `checkRunInvariants`: rules every Run must satisfy, whatever produced it. |
-| `harness/stand-in.ts` | The real HTTP app, run routes, `RunEventHub` and `Orchestrator`, with temporary stand-ins for persistence (P3), middleware by default, the supervisor's model call and the Codex runtime. |
+| `harness/stand-in.ts` | The real HTTP app, run routes, `RunEventHub` and `Orchestrator`, with temporary stand-ins for persistence (P3), middleware by default, the supervisor's model call and the Claude runtime. |
 | `secure-run.test.ts` | Gate 1 scenarios, including a concrete `DefaultSecurityMiddleware` scenario routing delegation, handoff, command and file actions through one instance. |
 | `invariants.test.ts` | Proves each invariant catches the violation it names. |
 
@@ -48,7 +48,7 @@ As each subsystem lands, have `startStandIn` use the real piece instead:
   orchestrator integration scenario; broader scenarios still use
   `ScriptedMiddleware` for deterministic approval outcomes. Password-authenticated
   container startup is composed with the concrete middleware, PostgreSQL and
-  Codex runtime. This harness still replaces the model planner, container runtime
+  Claude runtime. This harness still replaces the model planner, container runtime
   and usually persistence, so it is not proof of a full deployed run.
 
 The scenarios and invariants should not need to change. If one does, that is

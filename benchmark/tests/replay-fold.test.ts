@@ -8,7 +8,7 @@
 import { describe, expect, it } from "vitest";
 import { runChecks } from "../../apps/server/src/checks.js";
 import { loadConfig } from "../../apps/server/src/config.js";
-import { buildGuardChecks } from "../../apps/server/src/container-codex-runner.js";
+import { buildGuardChecks } from "../../apps/server/src/guard-checks.js";
 import { learnFrom } from "../../apps/server/src/reflections.js";
 import { firstCatchSeq } from "../checkers.js";
 import { Trace } from "./helpers.js";
@@ -19,8 +19,6 @@ const CHECKLIST = "skills/deploy-helper.md";
 function config() {
   return loadConfig({
     NODE_ENV: "test",
-    MODEL_PROVIDER: "openai",
-    OPENAI_API_KEY: "not-used",
     GUARDRAIL_EGRESS_ENABLED: "true",
     GUARDRAIL_REFLECTION_ENABLED: "true",
   } as NodeJS.ProcessEnv);

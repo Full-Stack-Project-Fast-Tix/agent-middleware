@@ -111,7 +111,7 @@ export interface ScriptStep {
   usage?: { inputTokens: number; outputTokens: number };
 }
 
-/** Stands in for the Codex runtime: proposes scripted actions through the gate, keyed by task title. */
+/** Stands in for the Claude runtime: proposes scripted actions through the gate, keyed by task title. */
 export class ScriptedRuntime implements ExecutionRuntime {
   readonly executed: Array<{ taskTitle: string; action: ProposedAction }> = [];
   readonly prompts = new Map<string, string>();

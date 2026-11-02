@@ -3,26 +3,16 @@ import fastifyStatic from "@fastify/static";
 import type pg from "pg";
 import Fastify, { type FastifyInstance } from "fastify";
 import { timingSafeEqual } from "node:crypto";
-import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import type { AppConfig } from "./config.js";
 import { HttpError } from "./errors.js";
 import { redactText } from "./redaction/index.js";
-import { traceFilePath } from "./trace.js";
-import {
-  listWorkspaceFiles,
-  readWorkspaceFile,
-  writeWorkspaceFile,
-  WorkspacePathError,
-} from "./workspace-files.js";
-import type { AgentService } from "./agent-service.js";
 import { registerRunEventStream, type RunEventStreamOptions } from "./run-events-route.js";
 import { isOpenRequest } from "./api-access.js";
 import { registerMemberRoutes } from "./member-routes.js";
 import { registerRunRoutes, type RunRoutesOptions } from "./run-routes.js";
 import { registerWorkspaceConfigRoutes } from "./workspace-config-routes.js";
-import { PLAYGROUND_NEEDS_CODEX } from "./runner-factory.js";
 import { registerSessionAuth, type Identity } from "./auth-routes.js";
 
 /**
@@ -30,51 +20,6 @@ import { registerSessionAuth, type Identity } from "./auth-routes.js";
  * assets above all — is served byte-for-byte as written.
  */
 const REDACTED_CONTENT_TYPES = ["application/json", "application/x-ndjson"];
-
-/**
- * These routes expose the original single-operator JsonStore and have no
- * workspace identity to authorise against. Password mode is workspace scoped,
- * so it must not make the global compatibility API reachable by any session.
- */
-const LEGACY_ROUTE_PATTERNS = new Set([
-  "/api/system",
-  "/api/admin/overview",
-  "/api/agents",
-  "/api/agents/:id",
-  "/api/agents/:id/start",
-  "/api/agents/:id/stop",
-  "/api/agents/:id/messages",
-  "/api/agents/:id/runs",
-  "/api/agents/:id/workspace",
-  "/api/agents/:id/workspace/file",
-  "/api/runs/:id",
-  "/api/runs/:id/approval",
-  "/api/runs/:id/trace",
-]);
-
-const agentIdParams = z.object({ id: z.string().uuid() });
-const runIdParams = z.object({ id: z.string().uuid() });
-const createAgentBody = z.object({
-  name: z.string().trim().min(1).max(80),
-  description: z.string().max(500).optional(),
-  instructions: z.string().max(10_000).optional(),
-});
-const updateAgentBody = createAgentBody.partial().refine(
-  (value) => Object.keys(value).length > 0,
-  "At least one field is required",
-);
-const messageBody = z.object({
-  content: z.string().trim().min(1).max(50_000),
-});
-const approvalBody = z.object({
-  approvalId: z.string().uuid(),
-  decision: z.enum(["approve", "deny"]),
-});
-const workspacePathQuery = z.object({ path: z.string().min(1).max(1_024) });
-const workspaceFileBody = z.object({
-  path: z.string().min(1).max(1_024),
-  content: z.string().max(1_048_576),
-});
 
 export interface AppExtensions {
   /** Live RunEvent stream. Omitted, the route is not registered. */
@@ -91,7 +36,6 @@ export interface AppExtensions {
 
 export async function createApp(
   config: AppConfig,
-  service: AgentService,
   extensions: AppExtensions = {},
 ): Promise<FastifyInstance> {
   const app = Fastify({
@@ -136,11 +80,6 @@ export async function createApp(
 
   // Signed-in sessions replace the shared token when the server has identity.
   if (extensions.identity) registerSessionAuth(app, extensions.identity);
-  app.addHook("onRequest", async (request, reply) => {
-    if (extensions.identity !== undefined && LEGACY_ROUTE_PATTERNS.has(request.routeOptions.url ?? "")) {
-      return reply.code(404).send({ error: "API route not found" });
-    }
-  });
   app.addHook("onRequest", async (request, reply) => {
     if (extensions.identity !== undefined || !config.authToken || isOpenRequest(request)) {
       return;
@@ -217,144 +156,6 @@ export async function createApp(
       ? { required: true, method: "password" }
       : { required: config.authToken.length > 0, method: "token" },
   );
-
-  app.get("/api/system", async () => service.systemInfo());
-
-  app.get("/api/admin/overview", async () => service.adminOverview());
-
-  app.get("/api/agents", async () => ({ agents: service.listAgents() }));
-
-  app.post("/api/agents", async (request, reply) => {
-    const body = createAgentBody.parse(request.body);
-    const agent = await service.createAgent(body);
-    return reply.code(201).send({ agent });
-  });
-
-  app.get("/api/agents/:id", async (request) => {
-    const { id } = agentIdParams.parse(request.params);
-    return { agent: service.getAgent(id) };
-  });
-
-  app.patch("/api/agents/:id", async (request) => {
-    const { id } = agentIdParams.parse(request.params);
-    const body = updateAgentBody.parse(request.body);
-    return { agent: await service.updateAgent(id, body) };
-  });
-
-  app.delete("/api/agents/:id", async (request) => {
-    const { id } = agentIdParams.parse(request.params);
-    return service.deleteAgent(id);
-  });
-
-  app.post("/api/agents/:id/start", async (request) => {
-    const { id } = agentIdParams.parse(request.params);
-    return { agent: await service.startAgent(id) };
-  });
-
-  app.post("/api/agents/:id/stop", async (request) => {
-    const { id } = agentIdParams.parse(request.params);
-    return { agent: await service.stopAgent(id) };
-  });
-
-  app.get("/api/agents/:id/messages", async (request) => {
-    const { id } = agentIdParams.parse(request.params);
-    return { messages: service.getMessages(id) };
-  });
-
-  app.get("/api/agents/:id/runs", async (request) => {
-    const { id } = agentIdParams.parse(request.params);
-    return { runs: service.getRuns(id) };
-  });
-
-  app.post("/api/agents/:id/messages", async (request, reply) => {
-    const { id } = agentIdParams.parse(request.params);
-    const body = messageBody.parse(request.body);
-    // Before a run record exists, so the answer is the reason rather than a failed run.
-    if (config.modelProvider === "anthropic") throw new HttpError(503, PLAYGROUND_NEEDS_CODEX);
-    const result = await service.sendMessage(id, body.content);
-    return reply.code(202).send(result);
-  });
-
-  // ---------------------------------------------------------------------
-  // Workspace files
-  // ---------------------------------------------------------------------
-  //
-  // Everything this project guards against begins with a file somebody placed
-  // in a workspace. Until these routes existed the only way to put one there,
-  // or to look at one, was a terminal — which meant the most important input to
-  // the system lived outside the product entirely.
-  //
-  // Path containment is enforced in workspace-files.ts against the Agent's own
-  // workspace root, and a rejected path is a 400 rather than a 500 because it
-  // is bad input, not a broken server.
-
-  app.get("/api/agents/:id/workspace", async (request) => {
-    const { id } = agentIdParams.parse(request.params);
-    const agent = service.getAgent(id);
-    return { files: await listWorkspaceFiles(agent.workspacePath) };
-  });
-
-  app.get("/api/agents/:id/workspace/file", async (request) => {
-    const { id } = agentIdParams.parse(request.params);
-    const { path: relative } = workspacePathQuery.parse(request.query);
-    const agent = service.getAgent(id);
-
-    try {
-      return { file: await readWorkspaceFile(agent.workspacePath, relative) };
-    } catch (error) {
-      if (error instanceof WorkspacePathError) throw new HttpError(400, error.message);
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-        throw new HttpError(404, "No such file in this workspace");
-      }
-      throw error;
-    }
-  });
-
-  app.put("/api/agents/:id/workspace/file", async (request) => {
-    const { id } = agentIdParams.parse(request.params);
-    const body = workspaceFileBody.parse(request.body);
-    const agent = service.getAgent(id);
-
-    try {
-      return { file: await writeWorkspaceFile(agent.workspacePath, body.path, body.content) };
-    } catch (error) {
-      if (error instanceof WorkspacePathError) throw new HttpError(400, error.message);
-      throw error;
-    }
-  });
-
-  app.get("/api/runs/:id", async (request) => {
-    const { id } = runIdParams.parse(request.params);
-    return { run: service.getRun(id) };
-  });
-
-  app.post("/api/runs/:id/approval", async (request) => {
-    const { id } = runIdParams.parse(request.params);
-    const body = approvalBody.parse(request.body);
-    return { run: await service.resolveApproval(id, body.approvalId, body.decision) };
-  });
-
-  /**
-   * The raw trace of a run, as JSON Lines: one protocol message per line, in
-   * the order they crossed the wire. Served as text rather than JSON because
-   * the whole point is that it is a log, not a document.
-   */
-  app.get("/api/runs/:id/trace", async (request, reply) => {
-    const { id } = runIdParams.parse(request.params);
-    service.getRun(id); // 404s if the run does not exist
-
-    // The path is derived from the run id rather than read from the run
-    // record, so a trace can be read while the run is still going. The file is
-    // appended as events arrive, so polling this shows steps appearing live.
-    const path = traceFilePath(config.dataDirectory, id);
-    const contents = await readFile(path, "utf8").catch(() => null);
-
-    if (contents === null) {
-      return reply.code(404).send({ error: "No trace for this run yet" });
-    }
-
-    return reply.type("application/x-ndjson").send(contents);
-  });
 
   if (extensions.runEvents) {
     registerRunEventStream(app, extensions.runEvents);

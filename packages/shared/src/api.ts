@@ -103,9 +103,7 @@ export const meResponseSchema = z.object({ user: userSchema });
 export type MeResponse = z.infer<typeof meResponseSchema>;
 
 /**
- * Routes for the Run -> Task -> AgentExecution model. The legacy single-agent
- * routes (`/api/agents/...`, `GET /api/runs/:id`) keep working alongside these
- * until the new model replaces them.
+ * Routes for the Run -> Task -> AgentExecution model.
  *
  *   GET  /api/workspaces                                        -> { workspaces }
  *   GET  /api/workspaces/:workspaceId/agents                    -> { agents }

@@ -1,5 +1,5 @@
 /* What pages share beyond the primitives: labels, tabs and form layout. Page rules
-   live beside their page: auth.css, playground.css, safety.css, runs/runs.css and
+   live beside their page: auth.css, runs/runs.css and
    members/members.css. */
 
 label {
@@ -67,4 +67,83 @@ label > textarea {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+/* MessageContent */
+.message-body {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.message-body-rich {
+  display: grid;
+  gap: 10px;
+  max-width: 84ch;
+  white-space: normal;
+}
+
+.message-body-rich h3,
+.message-body-rich h4 {
+  font-size: var(--text-foreign);
+  font-weight: 700;
+}
+
+.message-list {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.message-list-depth-1 {
+  margin-left: 16px;
+}
+
+.message-list-depth-2 {
+  margin-left: 32px;
+}
+
+.message-body-rich strong {
+  font-weight: 650;
+}
+
+.message-body-rich code {
+  padding: 1px 4px;
+  border-radius: var(--radius-inline);
+  background: var(--foreign-tile);
+}
+
+.message-code {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: var(--radius-control);
+  background: var(--foreign-tile);
+  overflow-x: auto;
+}
+
+.message-code code {
+  padding: 0;
+  background: none;
+}
+
+.message-body-rich blockquote {
+  margin: 0;
+  padding-left: 12px;
+  border-left: 2px solid var(--line-strong);
+}
+
+.message-table {
+  overflow-x: auto;
+}
+
+.message-table table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.message-table th,
+.message-table td {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--line-strong);
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: normal;
 }

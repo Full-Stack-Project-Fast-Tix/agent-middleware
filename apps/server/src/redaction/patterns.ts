@@ -91,10 +91,10 @@ export const JSON_SECRET_PROPERTY_PATTERN =
 // ---------------------------------------------------------------------------
 
 /**
- * Codex protocol identifiers, which `LONG_BASE64_PATTERN` and
+ * Trace protocol identifiers, which `LONG_BASE64_PATTERN` and
  * `LONG_HEX_PATTERN` would otherwise swallow wholesale.
  *
- * Measured on a real 794-event trace: of 462 redactions, **458 were Codex
+ * Measured on a real 794-event trace: of 462 redactions, **458 were protocol
  * reasoning-item ids** and only 4 were the actual credential. Six unique ids,
  * repeated across nearly every record. Left alone, the Raw trajectory view —
  * the one that gets projected during a demo — becomes a wall of fingerprints

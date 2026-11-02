@@ -3,12 +3,10 @@ import { parseEnv } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
 import { describeClaudeError, refusalMessage, servedBlocks, structuredText, tokenUseOf } from "../../src/anthropic-client.js";
 import { assertModelProviderReady, isModelConfigured, loadConfig } from "../../src/config.js";
-import { ClaudePlanner, createModelPlanner, ModelPlanner } from "../../src/orchestrator/planner.js";
-import { CodexUnavailableRunner, createRunner } from "../../src/runner-factory.js";
+import { ClaudePlanner, createModelPlanner } from "../../src/orchestrator/planner.js";
 import {
   ClaudeSemanticIntentMonitor,
   createSemanticIntentMonitor,
-  ModelSemanticIntentMonitor,
   type SemanticMonitorInput,
 } from "../../src/semantic-intent-monitor.js";
 import { AGENTS, SIGNUP_PLAN } from "../orchestrator/fixtures.js";
@@ -144,27 +142,18 @@ describe("ClaudeSemanticIntentMonitor", () => {
 });
 
 describe("selecting Claude", () => {
-  const anthropic = loadConfig({ NODE_ENV: "test", MODEL_PROVIDER: "anthropic", ANTHROPIC_API_KEY: TEST_API_KEY });
-  const openai = loadConfig({ NODE_ENV: "test", MODEL_PROVIDER: "openai", OPENAI_API_KEY: "x" });
+  const anthropic = loadConfig({ NODE_ENV: "test", ANTHROPIC_API_KEY: TEST_API_KEY });
 
-  it("uses Claude for the planner and the monitor under anthropic, and nothing else", () => {
+  it("uses Claude for the planner and the monitor", () => {
     expect(createModelPlanner(anthropic)).toBeInstanceOf(ClaudePlanner);
     expect(createSemanticIntentMonitor(anthropic)).toBeInstanceOf(ClaudeSemanticIntentMonitor);
-    expect(createModelPlanner(openai)).toBeInstanceOf(ModelPlanner);
-    expect(createSemanticIntentMonitor(openai)).toBeInstanceOf(ModelSemanticIntentMonitor);
   });
 
-  it("gives the legacy path a runner that says it needs Codex, and cannot be handed the key", async () => {
-    const runner = createRunner(anthropic);
-    expect(runner).toBeInstanceOf(CodexUnavailableRunner);
-    await expect(runner.isAvailable()).resolves.toBe(false);
-    await expect(runner.run({} as never)).rejects.toThrow("Codex");
-  });
 });
 
-describe("anthropic configuration", () => {
-  it("defaults the model to Claude Opus 5.5, and the image to the one without Codex", () => {
-    const config = loadConfig({ NODE_ENV: "test", MODEL_PROVIDER: "anthropic", ANTHROPIC_API_KEY: TEST_API_KEY });
+describe("Claude configuration", () => {
+  it("defaults the model to Claude Opus 5.5, and the image to the tool runtime", () => {
+    const config = loadConfig({ NODE_ENV: "test", ANTHROPIC_API_KEY: TEST_API_KEY });
     expect(config.modelName).toBe("claude-opus-5-5");
     expect(config.modelApiKey).toBe(TEST_API_KEY);
     expect(config.containerRuntimeImage).toBe("agentguard-claude-runtime:local");
@@ -174,7 +163,6 @@ describe("anthropic configuration", () => {
   it("takes overrides for the model, the semantic model and the limits", () => {
     const config = loadConfig({
       NODE_ENV: "test",
-      MODEL_PROVIDER: "anthropic",
       ANTHROPIC_MODEL: "claude-sonnet-5-5",
       GUARDRAIL_SEMANTIC_MODEL: "claude-haiku-5-5",
       CLAUDE_EFFORT: "medium",
@@ -186,35 +174,22 @@ describe("anthropic configuration", () => {
     expect(config.claude).toMatchObject({ effort: "medium", maxIterations: 5, toolOutputMaxBytes: 4_096 });
   });
 
-  it("leaves the other providers' defaults alone", () => {
-    const config = loadConfig({ NODE_ENV: "test" });
-    expect(config.modelProvider).toBe("ark");
-    expect(config.containerRuntimeImage).toBe("volc-agent-runtime:local");
-  });
-
   it("refuses to start with no key, or the placeholder from .env.example", () => {
-    const missing = loadConfig({ NODE_ENV: "test", MODEL_PROVIDER: "anthropic" });
-    expect(() => assertModelProviderReady(missing)).toThrow("MODEL_PROVIDER=anthropic needs ANTHROPIC_API_KEY");
-    const placeholder = loadConfig({ NODE_ENV: "test", MODEL_PROVIDER: "anthropic", ANTHROPIC_API_KEY: "replace-with-your-anthropic-api-key" });
+    const missing = loadConfig({ NODE_ENV: "test" });
+    expect(() => assertModelProviderReady(missing)).toThrow("needs ANTHROPIC_API_KEY");
+    const placeholder = loadConfig({ NODE_ENV: "test", ANTHROPIC_API_KEY: "replace-with-your-anthropic-api-key" });
     expect(() => assertModelProviderReady(placeholder)).toThrow("ANTHROPIC_API_KEY");
-    expect(() => assertModelProviderReady(loadConfig({ NODE_ENV: "test", MODEL_PROVIDER: "anthropic", ANTHROPIC_API_KEY: TEST_API_KEY }))).not.toThrow();
+    expect(() => assertModelProviderReady(loadConfig({ NODE_ENV: "test", ANTHROPIC_API_KEY: TEST_API_KEY }))).not.toThrow();
   });
 
-  it("does not ask the other providers for it", () => {
-    expect(() => assertModelProviderReady(loadConfig({ NODE_ENV: "test" }))).not.toThrow();
-  });
-
-  it("documents anthropic in .env.example, with placeholders and working values", () => {
+  it("documents Claude in .env.example, with placeholders and working values", () => {
     const template = parseEnv(readFileSync(new URL("../../../../.env.example", import.meta.url), "utf8"));
     const config = loadConfig({ ...template, NODE_ENV: "test" });
 
-    expect(config.modelProvider).toBe("anthropic");
     expect(config.modelName).toBe("claude-haiku-5-5");
     expect(config.authMode).toBe("password");
-    expect(config.runtimeProvider).toBe("container");
     expect(config.containerRuntimeImage).toBe("agentguard-claude-runtime:local");
     expect(template.ANTHROPIC_API_KEY).toMatch(/^replace-/);
-    expect(template.OPENAI_API_KEY).toMatch(/^replace-/);
     expect(() => assertModelProviderReady(config)).toThrow("ANTHROPIC_API_KEY");
     // The bounded defaults the docs' cost table is written against.
     expect(config.claude).toEqual({

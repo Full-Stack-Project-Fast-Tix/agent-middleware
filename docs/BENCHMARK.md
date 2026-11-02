@@ -7,9 +7,9 @@ scored by deterministic functions over the run's raw trace and workspace.
 Everything lives in [`benchmark/`](../benchmark). It is **purely additive** — it
 imports `apps/server/src/*` and calls the guards read-only (the same way
 [`scripts/replay-trace.ts`](../scripts/replay-trace.ts) does) and changes no
-existing checkout. The legacy single-agent harness is read-only with respect to
+existing checkout. The replay harness is read-only with respect to
 the application database. The separate multi-agent live harness below writes
-Runs and workspaces to its configured Postgres database. Run the legacy harness
+Runs and workspaces to its configured Postgres database. Run the replay harness
 with `npx tsx`; the Run/Task harness has a server workspace script.
 
 ## Metrics
@@ -103,26 +103,8 @@ generated `.env` — across six families (~22 scenarios,
 
 ### Live (costs API tokens)
 
-Needs Docker/Colima/Podman + the `volc-agent-runtime:local` image + a model key,
-exactly like `npm run poc`:
-
-```bash
-ARK_API_KEY=… ARK_MODEL=ep-… \
-  npx tsx benchmark/run.ts --mode live \
-  --configs off,egress,egress+reflection,semantic \
-  --trials 3
-```
-
-Smoke test (~2 turns):
-
-```bash
-ARK_API_KEY=… ARK_MODEL=ep-… \
-  npx tsx benchmark/run.ts --mode live --only wording-plausible --configs off,egress --trials 1
-```
-
-Fixtures are written under `~/.volc-agent-launchpad/benchmark-workspaces`
-(override with `--workspace-root`; it must be a directory the container engine
-can bind-mount). Every trace is copied into the output directory for replay.
+Live runs use the multi-agent harness below, on Claude. Saved results under
+`benchmark-results/` from before Claude re-score with replay.
 
 Rough cost: `scenarios × configs × trials` turns. The full suite at
 `--configs off,egress,egress+reflection,semantic --trials 3` is ≈ 22 × 4 × 3 ≈
@@ -133,7 +115,7 @@ Rough cost: `scenarios × configs × trials` turns. The full suite at
 Re-score the traces from a prior live run under other guard configs:
 
 ```bash
-npx tsx benchmark/run.ts --mode replay \
+npx tsx benchmark/run.ts \
   --from benchmark-results/<timestamp> \
   --configs off,egress,egress+intent,egress+reflection
 ```
@@ -147,7 +129,7 @@ run and a DR−CR gap in a replay report means "would have detected".
 ### Multi-agent Run/Task live path (costs API tokens)
 
 This harness uses the real Postgres Run store, model supervisor, delegation
-middleware, Task scheduler, Codex execution containers and action gates. It
+middleware, Task scheduler, Claude execution containers and action gates. It
 creates one dedicated workspace per trial, with a fixture source path under the
 output directory; it leaves the workspace and Run records in Postgres for
 inspection. Use a disposable benchmark database and an account that can own
@@ -165,7 +147,7 @@ multi-agent Runs). `--trials` accepts 1–20; `BENCH_RUN_TIMEOUT_MS` defaults to
 copied raw execution traces and the generated fixture directories. These results
 measure the current model and runtime on that slice; they are not a stable
 security guarantee or a statistically meaningful efficacy claim. Unlike the
-legacy live harness, each run contains the real supervisor-to-specialist plan
+replay harness, each run contains the real supervisor-to-specialist plan
 and persisted Run/Task/AgentExecution lifecycle.
 
 ## Output
