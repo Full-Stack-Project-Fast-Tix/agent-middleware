@@ -135,7 +135,9 @@ export const apiPaths = {
   workspaces: () => "/api/workspaces",
   workspaceCreate: () => "/api/workspaces",
   workspaceAgents: (workspaceId: string) => `/api/workspaces/${encodeURIComponent(workspaceId)}/agents`,
-  workspaceVaultNames: (workspaceId: string) => `/api/workspaces/${encodeURIComponent(workspaceId)}/vault/secrets`,
+  workspaceVault: (workspaceId: string) => `/api/workspaces/${encodeURIComponent(workspaceId)}/vault/secrets`,
+  workspaceVaultSecret: (workspaceId: string, name: string) =>
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/vault/secrets/${encodeURIComponent(name)}`,
   workspaceAudit: (workspaceId: string) => `/api/workspaces/${encodeURIComponent(workspaceId)}/audit`,
   runs: (workspaceId: string) => `/api/workspaces/${encodeURIComponent(workspaceId)}/runs`,
   runSnapshot: (runId: string) => `/api/runs/${encodeURIComponent(runId)}/snapshot`,
@@ -178,9 +180,23 @@ export type WorkspacesResponse = z.infer<typeof workspacesResponseSchema>;
 export const agentsResponseSchema = z.object({ agents: z.array(agentSchema) });
 export type AgentsResponse = z.infer<typeof agentsResponseSchema>;
 
-/** Names only: vault values never cross the API boundary. */
-export const localVaultNamesResponseSchema = z.object({ names: z.array(z.string().regex(/^[A-Z][A-Z0-9_]{0,63}$/)) });
-export type LocalVaultNamesResponse = z.infer<typeof localVaultNamesResponseSchema>;
+/** Secret metadata only: encrypted values never cross the API boundary. */
+export const workspaceVaultSecretInfoSchema = z.object({
+  name: z.string().regex(/^[A-Z][A-Z0-9_]{0,63}$/),
+  allowedHosts: z.array(z.string()),
+  authHeader: z.string(),
+  authPrefix: z.string(),
+});
+export const workspaceVaultResponseSchema = z.object({ secrets: z.array(workspaceVaultSecretInfoSchema) });
+export type WorkspaceVaultSecretInfo = z.infer<typeof workspaceVaultSecretInfoSchema>;
+export const putWorkspaceVaultSecretSchema = z.object({
+  name: z.string().regex(/^[A-Z][A-Z0-9_]{0,63}$/),
+  value: z.string().min(4).max(16_384),
+  allowedHosts: z.array(z.string().min(1).max(253)).min(1).max(20),
+  authHeader: z.string().min(1).max(64).default("Authorization"),
+  authPrefix: z.string().regex(/^[\x20-\x7e]{0,80}$/).default("Bearer "),
+});
+export type PutWorkspaceVaultSecret = z.input<typeof putWorkspaceVaultSecretSchema>;
 
 /** A Run as the workspace listing shows it: no results, errors or benchmark labels. */
 export const runSummarySchema = runSchema
@@ -337,8 +353,11 @@ export const createRunRequestSchema = z.object({
   orchestrationMode: orchestrationModeSchema.default("single"),
   /** Agent for `single` mode, or the supervisor for `auto`. Server default when omitted. */
   agentId: idSchema.optional(),
-  /** Locally configured vault entries explicitly granted to this Run. */
-  vaultSecretNames: z.array(z.string().regex(/^[A-Z][A-Z0-9_]{0,63}$/)).max(20).default([]),
+  /** Secrets granted to selected agents for this Run. The server resolves values from that workspace's vault. */
+  vaultGrants: z.array(z.object({
+    secretName: z.string().regex(/^[A-Z][A-Z0-9_]{0,63}$/),
+    agentIds: z.array(idSchema).min(1).max(20),
+  })).max(100).default([]),
 });
 export type CreateRunRequest = z.input<typeof createRunRequestSchema>;
 

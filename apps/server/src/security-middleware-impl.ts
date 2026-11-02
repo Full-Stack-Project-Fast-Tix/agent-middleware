@@ -27,6 +27,7 @@ import type { SemanticIntentMonitor } from "./semantic-intent-monitor.js";
 import { resolveTurnSecurityPolicy } from "./turn-security-policy.js";
 import type { LearnInput, Reflection } from "./reflections.js";
 import { redactSensitiveText } from "./redaction/index.js";
+import { parseVaultRequestCommand } from "./vault-broker.js";
 import type { TraceRecord } from "./trace.js";
 
 /** Trusted execution facts loaded by IDs; callers cannot supply goal or policy text. */
@@ -59,7 +60,7 @@ interface RunTaintState {
   readonly values: Set<string>;
   activeExecutions: number;
   sensitiveSourceRead: boolean;
-  vaultSecretGranted: boolean;
+  vaultHostsByAgent: Map<string, Set<string>>;
   taintIncomplete: boolean;
   expiresAt: number;
   touchedAt: number;
@@ -152,7 +153,7 @@ export class DefaultSecurityMiddleware implements SecurityMiddleware {
         values: new Set(),
         activeExecutions: 0,
         sensitiveSourceRead: false,
-        vaultSecretGranted: false,
+        vaultHostsByAgent: new Map(),
         taintIncomplete: false,
         expiresAt: now + RUN_TAINT_TTL_MS,
         touchedAt: now,
@@ -177,10 +178,12 @@ class StatefulExecutionGuard implements ExecutionGuard {
   private closed = false;
   private reflectionFolded = false;
 
-  seedSensitiveValues(values: readonly string[]): void {
+  seedVaultGrants(grants: readonly { value: string; allowedHosts: readonly string[] }[]): void {
     if (this.runTaint === undefined) return;
-    if (values.some((value) => value.length >= 4)) this.runTaint.vaultSecretGranted = true;
-    for (const value of values) {
+    const hosts = this.runTaint.vaultHostsByAgent.get(this.context.agentId) ?? new Set<string>();
+    for (const grant of grants) {
+      for (const host of grant.allowedHosts) hosts.add(host.toLowerCase());
+      const value = grant.value;
       if (value.length < 4) continue;
       if (value.length > MAX_TAINT_VALUE_CHARS || this.runTaint.values.size >= MAX_TAINT_VALUES_PER_RUN) {
         this.runTaint.taintIncomplete = true;
@@ -188,6 +191,7 @@ class StatefulExecutionGuard implements ExecutionGuard {
       }
       this.runTaint.values.add(value);
     }
+    if (grants.length > 0) this.runTaint.vaultHostsByAgent.set(this.context.agentId, hosts);
   }
 
   constructor(
@@ -290,14 +294,15 @@ class StatefulExecutionGuard implements ExecutionGuard {
     if (
       parsed.type === "command" &&
       (isHighConsequenceCommand(parsed.command) ||
-        (this.runTaint?.vaultSecretGranted === true && classifyEgress(parsed.command, false).egress))
+        (this.runTaint?.vaultHostsByAgent.has(this.context.agentId) === true &&
+          classifyEgress(parsed.command, false).egress && parseVaultRequestCommand(parsed.command) === null))
     ) {
       this.pending.set(parsed.actionId, parsed);
       return this.decision("require_approval", warnings, {
         approvalReason: "high_consequence",
         // Not the first warning: an aligned semantic note would read as the reason it is held.
-        reason: this.runTaint?.vaultSecretGranted === true && classifyEgress(parsed.command, false).egress
-          ? "This run has a local vault credential grant, so a person must approve each outbound command."
+        reason: this.runTaint?.vaultHostsByAgent.has(this.context.agentId) === true && classifyEgress(parsed.command, false).egress
+          ? "This agent has a local vault grant; direct outbound commands require a person to approve them."
           : "This command can reach outside the run's working copy, so a person decides.",
         ...(deferredSteer === null ? {} : { steer: deferredSteer }),
       });
@@ -412,7 +417,13 @@ class StatefulExecutionGuard implements ExecutionGuard {
     if (action.type === "command") {
       const egress = classifyEgress(action.command, this.runTaint.sensitiveSourceRead).egress;
       const carriesValue = [...this.runTaint.values].some((value) => action.command.includes(value));
-      if (egress && (this.runTaint.sensitiveSourceRead || this.runTaint.taintIncomplete || carriesValue)) {
+      const brokerRequest = parseVaultRequestCommand(action.command);
+      const allowedHosts = this.runTaint.vaultHostsByAgent.get(this.context.agentId);
+      const approvedBroker = brokerRequest !== null && allowedHosts?.has(brokerRequest.url.hostname.toLowerCase()) === true;
+      if (brokerRequest !== null && !approvedBroker) {
+        return policyFinding("vault-destination-denied", "This API host is not approved for the granted vault secret.", "high", true);
+      }
+      if (egress && !approvedBroker && (this.runTaint.sensitiveSourceRead || this.runTaint.taintIncomplete || carriesValue)) {
         return policyFinding(
           "sensitive-egress-run-taint",
           "The outbound command is linked to sensitive material observed earlier in this run.",
@@ -459,7 +470,10 @@ class StatefulExecutionGuard implements ExecutionGuard {
         return policyFinding("capability-write-denied", "This agent profile does not permit commands outside the read-only command set.", "high", true);
       }
       // Assuming a secret was read whenever a trace exists refused every inline script (`node -e`).
-      if (!capabilities.network && classifyEgress(action.command, this.runTaint?.sensitiveSourceRead ?? false).egress) {
+      const brokerRequest = parseVaultRequestCommand(action.command);
+      const brokerHostAllowed = brokerRequest !== null &&
+        this.runTaint?.vaultHostsByAgent.get(this.context.agentId)?.has(brokerRequest.url.hostname.toLowerCase()) === true;
+      if (!capabilities.network && classifyEgress(action.command, this.runTaint?.sensitiveSourceRead ?? false).egress && !brokerHostAllowed) {
         return policyFinding("capability-network-denied", "This agent profile does not permit network access.", "high", true);
       }
     }

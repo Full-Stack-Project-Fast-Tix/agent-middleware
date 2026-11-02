@@ -5,6 +5,7 @@ import { z } from "zod";
 import {
   createRunRequestSchema,
   mayAnswerApproval,
+  putWorkspaceVaultSecretSchema,
   resolveApprovalRequestSchema,
   RUN_TIMELINE_MAX_ENTRIES,
   runListQuerySchema,
@@ -19,10 +20,11 @@ import {
 } from "@launchpad/shared";
 import { HttpError } from "./errors.js";
 import type { Orchestrator } from "./orchestrator/orchestrator.js";
-import type { RunAudit } from "./orchestrator/ports.js";
+import type { RunAudit, VaultGrant } from "./orchestrator/ports.js";
 import { buildRunTimeline } from "./run-timeline.js";
 import { traceFilePath } from "./trace.js";
 import { listWorkspaceFiles, readWorkspaceFile, WorkspacePathError } from "./workspace-files.js";
+import type { WorkspaceVault } from "./workspace-vault.js";
 
 // HTTP routes for the Run -> Task -> AgentExecution model, as specified in
 // packages/shared/src/api.ts:
@@ -46,6 +48,7 @@ import { listWorkspaceFiles, readWorkspaceFile, WorkspacePathError } from "./wor
 
 export interface RunRoutesOptions {
   orchestrator: Pick<Orchestrator, "createRun" | "cancel" | "resolveApproval">;
+  vault?: WorkspaceVault;
   /** The snapshot and its lastEventSeq, read together (contract decision 9). */
   snapshot(runId: string): Promise<RunSnapshot | null>;
   /** One page of the workspace's runs, newest first. */
@@ -74,6 +77,7 @@ const runParams = z.object({ runId: z.guid() });
 const approvalParams = z.object({ approvalId: z.guid() });
 const runFileQuery = z.object({ path: z.string().min(1).max(4_096) });
 const executionParams = z.object({ runId: z.guid(), executionId: z.guid() });
+const vaultParams = z.object({ workspaceId: z.guid(), name: z.string().regex(/^[A-Z][A-Z0-9_]{0,63}$/) });
 
 export function registerRunRoutes(app: FastifyInstance, options: RunRoutesOptions, dataDirectory: string): void {
   /** A workspace the caller may not see is reported exactly like one that does not exist. */
@@ -107,13 +111,37 @@ export function registerRunRoutes(app: FastifyInstance, options: RunRoutesOption
   app.get("/api/workspaces/:workspaceId/vault/secrets", async (request) => {
     const { workspaceId } = workspaceParams.parse(request.params);
     mayAct(await roleIn(request, workspaceId, "Workspace not found"));
-    const names = Object.keys(process.env)
-      .map((key) => /^AGENTGUARD_VAULT_([A-Z][A-Z0-9_]{0,63})$/.exec(key)?.[1])
-      .filter((name): name is string => {
-        const value = name === undefined ? undefined : process.env[`AGENTGUARD_VAULT_${name}`];
-        return name !== undefined && value !== undefined && value.length >= 4;
-      });
-    return { names: [...new Set(names)].sort() };
+    if (options.vault === undefined) throw new HttpError(503, "Workspace vault is unavailable");
+    return { secrets: (await options.vault.list(workspaceId)).map(publicVaultSecretInfo) };
+  });
+
+  app.put("/api/workspaces/:workspaceId/vault/secrets", async (request) => {
+    const { workspaceId } = workspaceParams.parse(request.params);
+    const userId = options.currentUserId(request);
+    mayAct(await roleIn(request, workspaceId, "Workspace not found"));
+    if (options.vault === undefined) throw new HttpError(503, "Workspace vault is unavailable");
+    const body = putWorkspaceVaultSecretSchema.parse(request.body);
+    const old = await options.vault.get(workspaceId, body.name);
+    const now = new Date().toISOString();
+    await options.vault.put(workspaceId, {
+      ...body,
+      createdAt: old?.createdAt ?? now,
+      updatedAt: now,
+      createdByUserId: old?.createdByUserId ?? userId,
+      updatedByUserId: userId,
+    });
+    const stored = (await options.vault.list(workspaceId)).find((item) => item.name === body.name);
+    const secret = stored === undefined ? undefined : publicVaultSecretInfo(stored);
+    return { secret };
+  });
+
+  app.delete("/api/workspaces/:workspaceId/vault/secrets/:name", async (request, reply) => {
+    const { workspaceId, name } = vaultParams.parse(request.params);
+    const userId = options.currentUserId(request);
+    mayAct(await roleIn(request, workspaceId, "Workspace not found"));
+    if (options.vault === undefined) throw new HttpError(503, "Workspace vault is unavailable");
+    if (!(await options.vault.delete(workspaceId, name, userId))) throw new HttpError(404, "Vault secret not found");
+    return reply.code(204).send();
   });
 
   app.get("/api/workspaces/:workspaceId/runs", async (request) => {
@@ -127,11 +155,29 @@ export function registerRunRoutes(app: FastifyInstance, options: RunRoutesOption
     const userId = options.currentUserId(request);
     mayAct(await roleIn(request, workspaceId, "Workspace not found"));
     const body = createRunRequestSchema.parse(request.body);
-    const vaultSecrets: Record<string, string> = {};
-    for (const name of body.vaultSecretNames) {
-      const value = process.env[`AGENTGUARD_VAULT_${name}`];
-      if (value === undefined || value.length < 4) throw new HttpError(400, `Local vault entry ${name} is unavailable or too short to protect safely`);
-      vaultSecrets[name] = value;
+    const vaultGrantsByAgent: Record<string, VaultGrant[]> = {};
+    if (body.vaultGrants.length > 0) {
+      if (options.vault === undefined) throw new HttpError(503, "Workspace vault is unavailable");
+      const agents = await options.listAgents(workspaceId);
+      const usable = new Set(agents.filter((agent) => agent.enabled && agent.archivedAt === null).map((agent) => agent.id));
+      const seen = new Set<string>();
+      for (const grant of body.vaultGrants) {
+        const secret = await options.vault.get(workspaceId, grant.secretName);
+        if (secret === null) throw new HttpError(400, `Vault secret ${grant.secretName} is not in this workspace`);
+        for (const agentId of grant.agentIds) {
+          if (!usable.has(agentId)) throw new HttpError(400, "A vault grant names an unavailable agent in this workspace");
+          const key = `${grant.secretName}:${agentId}`;
+          if (seen.has(key)) throw new HttpError(400, "A vault secret can be granted only once per agent");
+          seen.add(key);
+          (vaultGrantsByAgent[agentId] ??= []).push({
+            name: secret.name,
+            value: secret.value,
+            allowedHosts: secret.allowedHosts,
+            authHeader: secret.authHeader,
+            authPrefix: secret.authPrefix,
+          });
+        }
+      }
     }
     const run = await options.orchestrator.createRun({
       workspaceId,
@@ -139,7 +185,7 @@ export function registerRunRoutes(app: FastifyInstance, options: RunRoutesOption
       userPrompt: body.userPrompt,
       orchestrationMode: body.orchestrationMode,
       ...(body.agentId === undefined ? {} : { agentId: body.agentId }),
-      ...(Object.keys(vaultSecrets).length === 0 ? {} : { vaultSecrets }),
+      ...(Object.keys(vaultGrantsByAgent).length === 0 ? {} : { vaultGrantsByAgent }),
     });
     return reply.code(201).send({ run });
   });
@@ -246,4 +292,13 @@ export function registerRunRoutes(app: FastifyInstance, options: RunRoutesOption
     const approval = await options.orchestrator.resolveApproval(approvalId, decision, userId);
     return { approval };
   });
+}
+
+function publicVaultSecretInfo(secret: Awaited<ReturnType<WorkspaceVault["list"]>>[number]) {
+  return {
+    name: secret.name,
+    allowedHosts: secret.allowedHosts,
+    authHeader: secret.authHeader,
+    authPrefix: secret.authPrefix,
+  };
 }

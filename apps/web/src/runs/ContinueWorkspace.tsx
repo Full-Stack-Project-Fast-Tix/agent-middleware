@@ -1,20 +1,21 @@
 import { useEffect, useState } from "react";
-import type { OrchestrationMode } from "@launchpad/shared";
+import type { Agent, OrchestrationMode } from "@launchpad/shared";
 import { navigate, paths } from "../router";
 import { Button, ErrorState } from "../ui";
 import { runsApi } from "./runs-api";
+import { WorkspaceVaultPicker } from "./WorkspaceVaultPicker";
 
 /** A follow-up prompt starts a new audited Run from the workspace's latest successful files. */
 export function ContinueWorkspace({ workspaceId, mode }: { workspaceId: string; mode: OrchestrationMode }) {
   const [prompt, setPrompt] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [vaultNames, setVaultNames] = useState<string[]>([]);
-  const [vaultSecretNames, setVaultSecretNames] = useState<string[]>([]);
+  const [agents, setAgents] = useState<Agent[]>([]);
+  const [vaultGrants, setVaultGrants] = useState<Array<{ secretName: string; agentIds: string[] }>>([]);
 
   useEffect(() => {
-    setVaultSecretNames([]);
-    runsApi.vaultNames(workspaceId).then(setVaultNames).catch(() => setVaultNames([]));
+    setVaultGrants([]);
+    runsApi.agents(workspaceId).then(setAgents).catch(() => setAgents([]));
   }, [workspaceId]);
 
   const submit = async (event: React.FormEvent) => {
@@ -26,7 +27,7 @@ export function ContinueWorkspace({ workspaceId, mode }: { workspaceId: string; 
       const run = await runsApi.createRun(workspaceId, {
         userPrompt: prompt.trim(),
         orchestrationMode: mode,
-        ...(vaultSecretNames.length ? { vaultSecretNames } : {}),
+        ...(vaultGrants.length ? { vaultGrants } : {}),
       });
       navigate(paths.run(run.id));
     } catch (reason) {
@@ -54,22 +55,7 @@ export function ContinueWorkspace({ workspaceId, mode }: { workspaceId: string; 
             required
           />
         </label>
-        {vaultNames.length > 0 && (
-          <fieldset className="mode-choice">
-            <legend>Local credentials for this run</legend>
-            <p className="meta">Selected values are available to agent commands. Outbound commands require human approval.</p>
-            {vaultNames.map((name) => (
-              <label key={name} className="mode-card">
-                <input
-                  type="checkbox"
-                  checked={vaultSecretNames.includes(name)}
-                  onChange={(event) => setVaultSecretNames((current) => event.target.checked ? [...current, name] : current.filter((item) => item !== name))}
-                />
-                <strong>{name}</strong>
-              </label>
-            ))}
-          </fieldset>
-        )}
+        <WorkspaceVaultPicker workspaceId={workspaceId} agents={agents} value={vaultGrants} onChange={setVaultGrants} />
         <div className="new-run-footer">
           <span>{mode === "auto" ? "Plan and delegate" : "One agent"} · new Run</span>
           <Button type="submit" variant="primary" busy={busy} disabled={!prompt.trim()}>

@@ -4,6 +4,7 @@ import { navigate, paths } from "../router";
 import { Button, ButtonLink, EmptyState, ErrorState, PageHeader, Select } from "../ui";
 import { useCurrentWorkspace } from "../useCurrentWorkspace";
 import { runsApi } from "./runs-api";
+import { WorkspaceVaultPicker } from "./WorkspaceVaultPicker";
 
 const EXAMPLES = [
   "Add input validation to the checkout endpoint and return 400 on bad input.",
@@ -15,8 +16,7 @@ export function NewRun() {
   const { workspaces, current, error: workspacesError, reload } = useCurrentWorkspace();
   const workspaceId = current?.id ?? "";
   const [agents, setAgents] = useState<Agent[]>([]);
-  const [vaultNames, setVaultNames] = useState<string[]>([]);
-  const [vaultSecretNames, setVaultSecretNames] = useState<string[]>([]);
+  const [vaultGrants, setVaultGrants] = useState<Array<{ secretName: string; agentIds: string[] }>>([]);
   const [mode, setMode] = useState<OrchestrationMode>("auto");
   const [agentId, setAgentId] = useState("");
   const [prompt, setPrompt] = useState("");
@@ -26,11 +26,9 @@ export function NewRun() {
   useEffect(() => {
     setAgents([]);
     setAgentId("");
-    setVaultNames([]);
-    setVaultSecretNames([]);
+    setVaultGrants([]);
     if (!workspaceId) return;
     runsApi.agents(workspaceId).then(setAgents).catch(() => setAgents([]));
-    runsApi.vaultNames(workspaceId).then(setVaultNames).catch(() => setVaultNames([]));
   }, [workspaceId]);
 
   const usable = agents.filter((agent) => agent.enabled && agent.archivedAt === null);
@@ -45,7 +43,7 @@ export function NewRun() {
         userPrompt: prompt.trim(),
         orchestrationMode: mode,
         ...(agentId ? { agentId } : {}),
-        ...(vaultSecretNames.length ? { vaultSecretNames } : {}),
+        ...(vaultGrants.length ? { vaultGrants } : {}),
       });
       navigate(paths.run(run.id));
     } catch (reason) {
@@ -117,22 +115,7 @@ export function NewRun() {
           ]}
         />
 
-        {vaultNames.length > 0 && (
-          <fieldset className="mode-choice">
-            <legend>Local credentials for this run</legend>
-            <p className="meta">Selected values are available to agent commands as environment variables. They are not copied into the workspace or prompt.</p>
-            {vaultNames.map((name) => (
-              <label key={name} className="mode-card">
-                <input
-                  type="checkbox"
-                  checked={vaultSecretNames.includes(name)}
-                  onChange={(event) => setVaultSecretNames((current) => event.target.checked ? [...current, name] : current.filter((item) => item !== name))}
-                />
-                <strong>{name}</strong>
-              </label>
-            ))}
-          </fieldset>
-        )}
+        {workspaceId && <WorkspaceVaultPicker workspaceId={workspaceId} agents={usable} value={vaultGrants} onChange={setVaultGrants} />}
 
         <div className="new-run-task">
           <label>

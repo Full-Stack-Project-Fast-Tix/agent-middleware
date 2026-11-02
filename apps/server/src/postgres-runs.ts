@@ -16,6 +16,7 @@ import type { RunEventHub } from "./run-events.js";
 import type { RunRoutesOptions } from "./run-routes.js";
 import { createSecurityMiddleware } from "./security-middleware-impl.js";
 import { createSemanticIntentMonitor } from "./semantic-intent-monitor.js";
+import { WorkspaceVault } from "./workspace-vault.js";
 
 /**
  * Multi-agent Runs for signed-in users, kept in PostgreSQL: P1's middleware
@@ -25,6 +26,7 @@ import { createSemanticIntentMonitor } from "./semantic-intent-monitor.js";
 export function createPostgresRuns(config: AppConfig, pool: pg.Pool, hub: RunEventHub, identity: PostgresIdentity) {
   const store = new PostgresRunStore(pool, hub);
   const agents = new PostgresAgentDirectory(pool);
+  const vault = new WorkspaceVault(path.join(config.dataDirectory, "vault"), config.vaultMasterKey);
   const orchestrator = new Orchestrator({
     store,
     agents,
@@ -58,6 +60,7 @@ export function createPostgresRuns(config: AppConfig, pool: pg.Pool, hub: RunEve
   });
   const routes: RunRoutesOptions = {
     orchestrator,
+    vault,
     snapshot: (runId) => store.snapshot(runId),
     listRuns: (workspaceId, query) => store.listRuns(workspaceId, query),
     runAudit: (runId, eventType, limit) => store.runAudit(runId, eventType, limit),

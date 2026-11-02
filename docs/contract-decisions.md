@@ -786,7 +786,7 @@ These points are implementation guidance, not part of the contract:
 - **Legacy migration:** seed a legacy user, one workspace per legacy agent,
   and one task plus one execution per legacy run.
 
-## 14. Local vault grants are explicit per Run
+## 14. Local vault grants are explicit per Run (superseded by decision 15)
 
 **Decision (2 November 2026):** The first local credential broker reads values
 from the server's private `.env` using the `AGENTGUARD_VAULT_<NAME>` prefix.
@@ -804,3 +804,29 @@ single-local-operator convenience, not encrypted OS-keychain storage or a
 multi-tenant vault. If deployment changes, storage, unlock, user/workspace
 ownership, and restart behavior must be decided before exposing this to remote
 users.
+
+## 15. Workspace vault entries stay behind a constrained host broker
+
+**Decision (2 November 2026):** Replace decision 14's environment-backed
+delivery. Credentials are entered for a workspace and stored in an
+AES-256-GCM-encrypted file under `APP_DATA_DIR/vault`, encrypted with the
+operator-configured `AGENTGUARD_VAULT_MASTER_KEY`. The key is not stored in the
+vault directory. Vault API responses expose metadata only.
+
+A Run grant names both a secret and the specific agent IDs allowed to use it.
+The trusted route resolves values from the Run's workspace and the execution
+receives only its own grants. Values are never copied into the container,
+workspace, prompt, audit metadata, or persisted trace. Exact-value taint still
+protects handoffs, proposed file changes, and other outbound commands.
+
+An agent can ask the host broker to make an HTTPS GET or POST using one granted
+secret. The broker accepts only exact preconfigured DNS hostnames, HTTPS port
+443, pinned public IPv4 DNS results, no redirects, bounded JSON request bodies,
+and bounded responses. It attaches the secret only in its configured auth
+header. Direct agent egress remains subject to the ordinary network capability
+and approval gate; a vault grant does not change container networking.
+
+This remains a local proof-of-concept vault. It has no OS keychain integration,
+external secret manager, shared-host tenant hardening, or automatic `.env`
+import. The operator must protect and back up the master key separately; loss
+of that key makes the encrypted entries unrecoverable.

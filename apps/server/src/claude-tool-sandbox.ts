@@ -1,7 +1,4 @@
 import { execFile, spawn, type ChildProcess } from "node:child_process";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import os from "node:os";
-import path from "node:path";
 import { promisify } from "node:util";
 import { z } from "zod";
 import type { AppConfig } from "./config.js";
@@ -49,8 +46,6 @@ export interface ToolSandboxRequest {
   denyNetwork: boolean;
   /** False mounts /workspace read-only. */
   writable: boolean;
-  /** Explicitly granted run-scoped secrets, passed through a short-lived env file. */
-  vaultSecrets?: Readonly<Record<string, string>>;
 }
 
 export interface CommandResult {
@@ -99,7 +94,7 @@ export interface ToolSandboxProvider {
 
 const READY_LINE = "agentguard-sandbox-ready";
 
-export function buildToolContainerRunArgs(request: ToolSandboxRequest, config: SandboxConfig, envFile?: string): string[] {
+export function buildToolContainerRunArgs(request: ToolSandboxRequest, config: SandboxConfig): string[] {
   const name = containerName(request.executionId, config.runtimeInstanceId);
   const engineName = config.containerEngine.split(/[\\/]/).at(-1)?.toLowerCase();
   return [
@@ -140,7 +135,6 @@ export function buildToolContainerRunArgs(request: ToolSandboxRequest, config: S
     "HOME=/tmp",
     "--env",
     "NO_COLOR=1",
-    ...(envFile === undefined ? [] : ["--env-file", envFile]),
     "--mount",
     "type=bind,src=" + request.workspacePath + ",dst=/workspace" + (request.writable ? "" : ",readonly"),
     "--workdir",
@@ -504,25 +498,7 @@ export class DockerToolSandboxProvider implements ToolSandboxProvider {
       throw new Error("The Claude runtime will not run tools as root. Set CONTAINER_USER to a non-root uid:gid.");
     }
     const name = containerName(request.executionId, this.config.runtimeInstanceId);
-    let envDirectory: string | null = null;
-    let envFile: string | undefined;
-    const secrets = Object.entries(request.vaultSecrets ?? {});
-    if (secrets.length > 0) {
-      for (const [key, value] of secrets) {
-        if (!/^[A-Z][A-Z0-9_]{0,63}$/.test(key) || /[\0\r\n]/.test(value)) {
-          throw new Error("A selected local vault entry cannot be passed safely to the tool container");
-        }
-      }
-      envDirectory = await mkdtemp(path.join(os.tmpdir(), "agentguard-vault-"));
-      envFile = path.join(envDirectory, "runtime.env");
-      try {
-        await writeFile(envFile, secrets.map(([key, value]) => `${key}=${value}`).join("\n") + "\n", { encoding: "utf8", mode: 0o600 });
-      } catch (error) {
-        await rm(envDirectory, { recursive: true, force: true }).catch(() => undefined);
-        throw error;
-      }
-    }
-    const child = spawn(this.config.containerEngine, buildToolContainerRunArgs(request, this.config, envFile), {
+    const child = spawn(this.config.containerEngine, buildToolContainerRunArgs(request, this.config), {
       env: sandboxClientEnvironment(),
       stdio: ["pipe", "pipe", "pipe"],
     });
@@ -564,16 +540,7 @@ export class DockerToolSandboxProvider implements ToolSandboxProvider {
       });
     } catch (error) {
       await sandbox.stop();
-      if (envDirectory !== null) await rm(envDirectory, { recursive: true, force: true }).catch(() => undefined);
       throw error;
-    }
-    if (envDirectory !== null) {
-      try {
-        await rm(envDirectory, { recursive: true, force: true });
-      } catch {
-        await sandbox.stop();
-        throw new Error("The temporary vault credential file could not be removed; the tool container was stopped.");
-      }
     }
     return sandbox;
   }

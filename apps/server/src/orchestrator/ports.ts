@@ -20,6 +20,9 @@ import type {
 import type { TraceRecord } from "../trace.js";
 import type { TaskDisposition } from "./task-disposition.js";
 import type { TurnSecurityPolicy } from "../turn-security-policy.js";
+import type { WorkspaceVaultSecret } from "../workspace-vault.js";
+
+export type VaultGrant = Pick<WorkspaceVaultSecret, "name" | "value" | "allowedHosts" | "authHeader" | "authPrefix">;
 
 // What the orchestrator needs from the subsystems around it. Each one is owned
 // by someone else; the orchestrator only depends on these shapes:
@@ -148,8 +151,8 @@ export interface ExecutionRequest {
   workingDirectory: string;
   /** The task objective plus earlier tasks' results, built by the orchestrator. */
   prompt: string;
-  /** Secret values explicitly granted for this Run; never include these in prompts or audit metadata. */
-  vaultSecrets: Readonly<Record<string, string>>;
+  /** Secret entries granted to this agent's executions; never include values in prompts or audit metadata. */
+  vaultGrants: readonly VaultGrant[];
   /** Chosen by the middleware, never by the orchestrator (contract decision 3). */
   runtimePolicy: TurnSecurityPolicy;
   gate: ActionGate;

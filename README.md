@@ -162,19 +162,29 @@ in the same configuration runs untouched.
 
 ### Local credentials for a Run
 
-For a local setup, put a credential in the server's private `.env` as
-`AGENTGUARD_VAULT_<NAME>=<value>`. The run form lists only the names. A developer
-selects the credentials to grant to a Run; selected values become environment
-variables in that Run's disposable execution containers, never files in the
-workspace or text in the prompt. In multi-agent mode, the grant is available to
-each task in that Run. The exact values are added to run-scoped secret taint and
-scrubbed from persisted traces and final summaries. Literal-value egress and
-handoffs remain blocked; outbound commands wait for a human approval.
+Configure a 32-byte encryption key as `AGENTGUARD_VAULT_MASTER_KEY` (64 hex
+characters) in the server's private `.env`. Generate one locally with
+`node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"`.
+The server stores each workspace's encrypted vault under `APP_DATA_DIR/vault/`;
+the key is not stored beside the encrypted entries. Back up the key securely:
+without it, vault entries cannot be decrypted after a restart or migration.
 
-This first version uses the local `.env` file as storage. It is intended for a
-single local operator and is not encrypted vault storage or suitable for a
-shared deployment. Network must also be enabled explicitly with
-`AGENT_NETWORK_ACCESS=true`; a vault selection alone never enables it.
+Add a credential in the Run form by entering its name, value, and exact allowed
+HTTPS hostnames. Existing project `.env` files are not read automatically; add
+only the credentials needed. The UI receives metadata, never stored values.
+For each Run, grant a credential to specific agents. Those agents can request
+GET or POST through the host-side broker using the `agentguard-vault request`
+operation described in their task. The broker attaches the credential only to
+the configured auth header and only for an exact approved host; it rejects
+redirects and non-public DNS destinations. Values are not placed in the
+container, prompt, audit metadata, or saved traces, and exact-value matches are
+redacted from broker responses and final summaries. Direct network commands
+remain subject to the network capability and approval gate. A vault grant does
+not enable container network access.
+
+This is encrypted local POC storage, not an OS keychain or production multi-
+tenant vault. Protect the master key and server data directory, and avoid using
+it as a shared hosted secrets service.
 
 A second, orthogonal check — **outbound-blob**
 ([`check-outbound-blob.ts`](apps/server/src/check-outbound-blob.ts)) — ignores
@@ -667,7 +677,7 @@ Details: [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 | `APP_AUTH_TOKEN` | empty on loopback | Shared demo bearer token. 24+ random URL-safe chars required for a non-loopback production server. Not user identity. |
 | `CONTAINER_ENGINE` | `docker` | `docker`, `podman`, … Colima exposes the Docker CLI so it uses `docker`. |
 | `AGENT_NETWORK_ACCESS` | `false` | Allow agent tool commands to use the network. A profile can still deny it. Network access is container-wide, not host-level filtering or provider-only egress. |
-| `AGENTGUARD_VAULT_<NAME>` | unset | Optional local credential value listed by name in the Run form. Values are passed only to Runs where selected; see [Local credentials for a Run](#local-credentials-for-a-run). |
+| `AGENTGUARD_VAULT_MASTER_KEY` | unset | Optional 32-byte hex key for encrypted workspace vault entries. Required to use the vault; see [Local credentials for a Run](#local-credentials-for-a-run). |
 | `GUARDRAIL_EGRESS_ENABLED` | `false` | Run sensitive-egress and outbound-blob checks against every execution. Network is controlled separately by `AGENT_NETWORK_ACCESS`. |
 | `GUARDRAIL_INTENT_ENABLED` | `false` | Run the agent-intent check every turn. Warn-only; needs no sandbox change; independent of the egress flag. |
 | `GUARDRAIL_REFLECTION_ENABLED` | `false` | Carry what a guard caught into this Agent's later runs, as check parameters — exact hosts, derived host families, watched files. Warn-only at any tier; independent of the other flags. |

@@ -40,6 +40,8 @@ const envSchema = z.object({
     .string()
     .default("false")
     .transform((value) => value === "true" || value === "1"),
+  /** 32-byte key (64 hex chars) for encrypting per-workspace vault files at rest. */
+  AGENTGUARD_VAULT_MASTER_KEY: z.string().regex(/^[a-fA-F0-9]{64}$/).optional(),
   CONTAINER_ENGINE: z.string().min(1).default("docker"),
   CONTAINER_RUNTIME_IMAGE: z.string().min(1).default("agentguard-claude-runtime:local"),
   CONTAINER_CPU_LIMIT: z.coerce.number().positive().default(2),
@@ -185,6 +187,7 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env) {
       .filter((value) => value !== "")
       .map((value) => path.resolve(expandHome(value))),
     agentNetworkAccess: env.AGENT_NETWORK_ACCESS,
+    vaultMasterKey: env.AGENTGUARD_VAULT_MASTER_KEY,
     runArtifactRetentionDays: env.RUN_ARTIFACT_RETENTION_DAYS,
     runTokenBudget: env.RUN_TOKEN_BUDGET,
     containerEngine: env.CONTAINER_ENGINE,

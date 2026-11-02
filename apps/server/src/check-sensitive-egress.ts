@@ -63,6 +63,7 @@ import {
   KEYVAL_PATTERN,
   LONG_BASE64_PATTERN,
 } from "./redaction/index.js";
+import { parseVaultRequestCommand } from "./vault-broker.js";
 
 export interface SensitiveEgressOptions {
   /**
@@ -204,6 +205,7 @@ function withoutFileBodies(command: string): string {
  * is high.
  */
 export function classifyEgress(fullCommand: string, secretWasRead: boolean): EgressVerdict {
+  if (parseVaultRequestCommand(fullCommand) !== null) return { egress: true, channel: "http" };
   const command = withoutFileBodies(fullCommand);
   if (CHANNEL_RAW_SOCKET.test(command)) return { egress: true, channel: "raw-socket" };
   if (CHANNEL_DNS.test(command)) return { egress: true, channel: "dns" };
@@ -586,6 +588,9 @@ export function sensitiveEgressCheck(options: Partial<SensitiveEgressOptions> = 
       const handled = new Set<string>();
 
       for (const command of commandsOf(trace)) {
+        // The trusted runtime broker holds the secret server-side and enforces
+        // its host allowlist. Authorization is checked by the execution gate.
+        if (parseVaultRequestCommand(command.command) !== null) continue;
         const secretWasReadBefore = sensitiveReads.some((entry) => entry.seq < command.seq);
         const inlineMarker = mentionsSensitive(command.command, markers);
         const verdict = classifyEgress(command.command, secretWasReadBefore);

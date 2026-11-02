@@ -70,13 +70,17 @@ Claude runtime. These parts exist:
   stand-ins for persistence and middleware in its default scenarios; focused
   middleware tests cover the concrete implementation. This is not a full
   production-stack test.
-- **Local credential grants:** the Run API exposes names from
-  `AGENTGUARD_VAULT_<NAME>` environment variables only. Developers select names
-  per Run; the server passes selected values to each container through a
-  short-lived host env file, seeds exact-value taint, and scrubs those values
-  from saved traces and summaries. Outbound commands in a vault-granted Run
-  require approval. This is local `.env` backed storage, not encrypted or
-  suitable for multi-tenant deployment.
+- **Workspace vault:** workspace entries are AES-256-GCM encrypted under
+  `APP_DATA_DIR/vault`, using the operator-provided
+  `AGENTGUARD_VAULT_MASTER_KEY`. The API returns metadata only. A Run grants
+  named entries to specific agents; the values stay in server memory and are
+  passed only to the host-side HTTPS broker, never into the container or
+  workspace. The broker limits requests to exact per-entry hostnames, GET/POST,
+  port 443, public IPv4 destinations, no redirects, and bounded request and
+  response sizes. Exact values seed run-scoped taint and are redacted from
+  traces, broker output, and summaries. Direct egress remains subject to the
+  normal network capability and approval gate. This is local POC storage, not a
+  production multi-tenant vault.
 - **Orchestrator**
   ([`apps/server/src/orchestrator`](../apps/server/src/orchestrator/README.md)):
   - starts each follow-up Run from the latest completed Run's working copy,
