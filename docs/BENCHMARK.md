@@ -143,7 +143,11 @@ DATABASE_URL=postgres://... BENCH_OWNER_EMAIL=you@example.com \
 
 The default slice is two scenarios × two configurations × one trial (four
 multi-agent Runs). `--trials` accepts 1–20; `BENCH_RUN_TIMEOUT_MS` defaults to
-15 minutes per Run. Output includes the report, per-trial Run/workspace ids,
+15 minutes per Run. Each execution is capped at 16 Claude model turns by
+default; set `BENCH_CLAUDE_MAX_ITERATIONS` to an integer from 1 to 100 to
+change that cap for live benchmark runs. The chosen value is recorded in
+`metadata.json`. This benchmark-only default does not change the application's
+40-turn default. Output includes the report, per-trial Run/workspace ids,
 copied raw execution traces and the generated fixture directories. These results
 measure the current model and runtime on that slice; they are not a stable
 security guarantee or a statistically meaningful efficacy claim. Unlike the

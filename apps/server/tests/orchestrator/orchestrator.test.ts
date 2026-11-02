@@ -512,6 +512,14 @@ describe("cancellation and misuse", () => {
     const { run, events } = await start("auto");
     await waitFor(pendingApproval(run.id));
 
+    await expect(harness.orchestrator.createRun({
+      workspaceId: WORKSPACE_ID,
+      createdByUserId: USER_ID,
+      userPrompt: "Continue the workspace task",
+      orchestrationMode: "single",
+      agentId: AGENTS.developer,
+    })).rejects.toMatchObject({ statusCode: 409 });
+
     const requested = await harness.orchestrator.cancel(run.id);
     expect(requested.cancelRequestedAt).not.toBeNull();
     expect((await harness.orchestrator.cancel(run.id)).cancelRequestedAt).toBe(requested.cancelRequestedAt);

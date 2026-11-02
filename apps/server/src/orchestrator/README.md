@@ -24,7 +24,7 @@ always the middleware's decision
 | `ports.ts` | The interfaces the orchestrator depends on: `RunStore`, `AgentDirectory`, `ExecutionRuntime`, `WorkingCopies` and `ActionGate`. |
 | `in-memory-run-store.ts` | `RunStore` in memory, publishing RunEvents with per-run seqs. Used by tests and by `dev:demo` without `DATABASE_URL`; real Runs use `PostgresRunStore`. |
 | `claude-execution-runtime.ts` | `ClaudeExecutionRuntime`, an agent loop on this host over the Messages API, with tools in one disposable container per execution. Writes JSON-RPC-shaped trace records. |
-| `working-copies.ts` | `DirectoryWorkingCopies`: copies the workspace to `<root>/<runId>/workspace` once per Run. Skips dependencies, local tool/credential stores, environment secrets, and common private-key files; keeps example environment templates and copies other symlinks as links. |
+| `working-copies.ts` | `DirectoryWorkingCopies`: copies the configured source for the first Run and the latest successful Run's copy for each follow-up to `<root>/<runId>/workspace`. Skips dependencies, local tool/credential stores, environment secrets, and common private-key files; keeps example environment templates and copies other symlinks as links. |
 
 Outside this folder: `../claude-tool-sandbox.ts` is Claude's container and
 `../claude-editor.ts` turns its file edits into the diffs the gate evaluates.

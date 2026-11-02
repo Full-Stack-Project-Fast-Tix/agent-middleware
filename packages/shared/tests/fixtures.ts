@@ -27,6 +27,7 @@ export const now = "2026-09-29T06:00:00.000Z";
 export const run: Run = {
   id: ids.run,
   workspaceId: ids.workspace,
+  parentRunId: null,
   createdByUserId: ids.user,
   supervisorAgentId: ids.supervisor,
   userPrompt: "Add input validation to the signup endpoint",

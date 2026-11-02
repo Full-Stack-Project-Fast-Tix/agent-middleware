@@ -72,6 +72,10 @@ Claude runtime. These parts exist:
   production-stack test.
 - **Orchestrator**
   ([`apps/server/src/orchestrator`](../apps/server/src/orchestrator/README.md)):
+  - starts each follow-up Run from the latest completed Run's working copy,
+    while keeping a separate Run, task graph, security context and audit history;
+  - serializes Runs per workspace and supplies bounded prior prompts/reports
+    as untrusted context, with the current prompt remaining authoritative;
   - plans with a tool-less supervisor call, validates the plan, and delegates
     each task through the middleware;
   - schedules tasks in dependency order, with limited parallelism and one
@@ -169,10 +173,9 @@ profiles and policies is decision 21. `npm run db:admin -w
 it also lists users/workspaces and can create empty workspaces. A
 `security_admin` can create accounts attached to their workspace, manage its
 members, and create additional workspaces, with a project folder only inside the
-operator's `WORKSPACE_SOURCE_ROOTS` (contract decisions 15 and 32). Failed sign-ins
-are limited by shared PostgreSQL counters: five attempts per account and 30 per
-source address within 15 minutes. Authentication limits are consistent across
-restarts and replicas. Run streams detect commits made by another instance and
+operator's `WORKSPACE_SOURCE_ROOTS` (contract decisions 15 and 32). Password
+sign-in currently has no failed-attempt rate limit (contract decision 27 records
+the removed design). Run streams detect commits made by another instance and
 ask the client to reload its snapshot, but orchestration waiters, cancellation,
 approval coordination and run-scoped taint remain process-local. Keep the app
 single-instance. The
@@ -181,9 +184,11 @@ demo. For the two acting roles, an attempt's bounded, redacted raw trace is read
 `GET /api/runs/:runId/executions/:executionId/trace`, under the same workspace
 check as the other run routes.
 
-Each Run has a token budget (`RUN_TOKEN_BUDGET`). Files of a finished Run
-are removed after `RUN_ARTIFACT_RETENTION_DAYS` (contract decision 18), while its rows
-stay, and reading such a trace answers 410 rather than a plain 404.
+Each Run has a token budget (`RUN_TOKEN_BUDGET`). Expired Run files and traces
+are removed after `RUN_ARTIFACT_RETENTION_DAYS` (contract decision 18), except
+the latest successfully completed workspace copy, which remains available as
+the starting point for its next Run. Rows stay, and reading an expired trace
+answers 410 rather than a plain 404.
 
 Not built yet, by owner:
 - **P1:** multi-agent reflection memory now loads and folds structured findings
@@ -196,7 +201,7 @@ Not built yet, by owner:
 - **P3:** tenant isolation beyond workspace roles (every workspace's Runs share one
   host). First-account bootstrap and host project paths stay operator-only
   (decision 15); workspace admins can create accounts in their workspace and
-  empty workspaces. Sign-in has no limit on failed attempts.
+  empty workspaces. Sign-in has no limit on failed attempts (contract decision 27).
   Migrating token-mode JSON records
   was decided against (decision 23). The
   integration harness still runs on `InMemoryRunStore`; the fuzz suite and the

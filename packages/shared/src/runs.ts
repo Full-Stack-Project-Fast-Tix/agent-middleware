@@ -23,6 +23,8 @@ export type RunEvaluation = z.infer<typeof runEvaluationSchema>;
 export const runSchema = z.object({
   id: idSchema,
   workspaceId: idSchema,
+  /** Most recent completed Run whose files this Run starts from; null for the first Run. */
+  parentRunId: idSchema.nullable(),
   createdByUserId: idSchema,
   supervisorAgentId: idSchema.nullable(),
   userPrompt: nonEmptyStringSchema,

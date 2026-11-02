@@ -8,6 +8,7 @@ import { runsApi } from "./runs-api";
 import { focusTaskId, isRunActive, isWrittenByPlan, pendingApprovals } from "./run-view";
 import { GateTimeline, ProposedFiles } from "./RunTimeline";
 import { RunFiles } from "./RunFiles";
+import { ContinueWorkspace } from "./ContinueWorkspace";
 import { TaskDrilldown } from "./TaskDrilldown";
 import { TaskGraph } from "./TaskGraph";
 import { heldProposals, type Names } from "./timeline-view";
@@ -278,6 +279,9 @@ export function RunDetail({ runId }: { runId: string }) {
           />
         )}
       </div>
+      {!active && mayAct && workspaceId !== null && (
+        <ContinueWorkspace key={run.id} workspaceId={workspaceId} mode={run.orchestrationMode} />
+      )}
     </div>
   );
 }

@@ -170,9 +170,9 @@ external middleware", and no action covered it. Results can carry secrets or
 injected instructions from one agent to the next. The middleware validates
 same-run/workspace task identity and blocks detected sensitive values before
 handoff. When the semantic monitor is configured, it also reviews each handoff
-as untrusted evidence against the trusted task; a high-confidence conflict is
-declined and an uncertain conflict requires human approval. This is a best-effort
-semantic safeguard, not a guarantee that all prompt injection is detected.
+as untrusted evidence against the trusted task; outcomes use the risk thresholds
+in decision 7.3. This is a best-effort semantic safeguard, not a guarantee that
+all prompt injection is detected.
 
 ### 7.1 Periodic reasoning reviews check task alignment
 
@@ -180,8 +180,9 @@ semantic safeguard, not a guarantee that all prompt injection is detected.
 reasoning item and then every third completed item. A deterministic intent
 warning triggers an immediate review between checkpoints. Review the bounded
 recent trajectory against the trusted task, not only the current wording. A
-moderate-confidence task conflict may steer the agent back on task; reasoning
-alone does not block an action.
+task conflict at risk 0.60 or higher may steer the agent back on task;
+model-reported confidence is audit information only. Reasoning alone does not
+block an action.
 
 **Why:** Agents can drift from the user's goal without using obviously
 suspicious language. Periodic review catches this while limiting model calls;
@@ -199,6 +200,26 @@ oversized review is treated as unavailable and follows the same approval path.
 **Why:** Reasoning is evidence about intent, not an action to authorize. But a
 failed review should not silently make the next action less scrutinized. The
 action remains the point where enforcement blocks or waits for approval.
+
+### 7.3 Risk-based semantic action outcomes
+
+**Decision:** For semantic action reviews, a task conflict with risk 0.50–0.74
+requires human review. A task conflict with risk 0.75 or higher is declined.
+Below 0.50, the semantic assessment alone allows the action. Model-reported
+confidence remains in assessment evidence but does not affect steering, review,
+or decline decisions. Deterministic findings and policy gates retain their
+precedence.
+
+The monitor prompt separates likely impact if an action is followed
+(`riskScore`) from confidence in its assessment (`confidence`). It treats
+actionable scope expansion as a conflict even when passed as a recommendation
+or handoff, and scores a handoff as if its recipient follows it.
+
+**Why:** A live handoff evaluation identified scope expansion and security
+weakening as conflicts, but assigned scores below the prior review threshold.
+The assessment's self-reported confidence did not make those scores more
+reliable. Risk and conflict now determine the action outcome, with a human-review
+band below the automatic-decline threshold.
 
 ## 8. Lifecycle rules
 
@@ -439,14 +460,52 @@ review and the security middleware remain separate evidence. The existing Task
 status and error fields express the result; no new shared lifecycle status is
 needed.
 
+## 21. Follow-up prompts continue a workspace through new Runs
+
+**Decision (1 November 2026):** Every submitted prompt creates a new Run, with
+its own task graph, executions, security context and audit trail. A Run records
+`parentRunId`, the most recent successfully completed Run in the same
+workspace, or null for the first Run. PostgreSQL selects that parent and
+creates the Run while holding a workspace advisory lock and rejects creation
+while another Run is active. The orchestrator also serializes Runs in process,
+which covers the in-memory demo and gives a quick local refusal; the database
+lock coordinates separately running service processes.
+
+The first Run copies the configured workspace source. A later Run copies its
+parent's working copy into a fresh isolated directory. Only `completed` Runs
+become parents: failed and cancelled Runs remain in history, while the next
+prompt starts from the most recent successful copy. The latest successful copy
+is exempt from working-copy retention so the workspace can continue after an
+idle period. Other Run artifacts still follow normal retention.
+
+The supervisor and specialists may receive at most 8,000 characters of recent
+successful Run prompts and reports across up to three ancestors. This context
+is explicitly untrusted; the current prompt and task remain authoritative, and
+no prior approval or policy decision carries over. The middleware continues to
+load the current Run's prompt as its trusted goal. The UI offers a follow-up
+composer on a finished Run page; submitting it creates a new Run in the same
+workspace and preserves chronological history in the Runs list.
+
+**Why:** Users expect a later prompt such as “add tests for that” to see the
+files produced by the prior request. Reopening a completed Run would mix two
+requests and obscure their audit boundaries. Copy-forward keeps the project
+continuous while keeping each request independently inspectable.
+
+**Limit:** The workspace is serialized, including Runs that could otherwise be
+read-only, to give a simple ordering for which successful file state is the
+starting point. A failed Run's partial files are deliberately not promoted;
+there is no recovery-from-partial-output control yet.
+
 ## 18. Terminal execution artifacts expire after 30 days
 
 **Decision (31 October 2026):** Run working copies and raw execution traces are
 retained for 30 days after a Run reaches a terminal state. Cleanup must never
-remove artifacts for a queued, planning, running or approval-waiting Run. Audit
-rows, statuses, bounded findings and saved task results remain after artifact
-expiry. A missing expired artifact is reported as expired rather than as proof
-that no execution occurred.
+remove artifacts for a queued, planning, running or approval-waiting Run. The
+latest successfully completed working copy in each workspace is retained as
+the starting point for follow-up Runs; that Run's raw traces still expire on
+schedule. Audit rows, statuses, bounded findings and saved task results remain
+after artifact expiry. A missing expired artifact is reported as expired
+rather than as proof that no execution occurred.
 
 P2 owns these lifecycle semantics. P3 owns the cleanup job, storage operations
 and any schema needed to distinguish expiry from an unexpected missing file.
@@ -584,15 +643,18 @@ credentials or session state. Stronger OS, database, and network isolation
 requires a separate threat model and deployment design before production
 multi-tenant claims.
 
-## 27. Password sign-in limits are shared through PostgreSQL
+## 27. Password sign-in currently has no failed-attempt limit
 
-**Decision (1 November 2026, P3):** Keep the existing limits (five attempts per
-account and 30 per source address in a 15-minute fixed window), but store them
-in PostgreSQL and update counters transactionally under row locks. Account and
-source keys are SHA-256 digests; raw passwords are never involved. Successful
-authentication clears that account's failures and gives the successful attempt
-back to the source-address budget. This makes authentication limits consistent
-across restarts and app replicas.
+**Current behavior (1 November 2026):** Password sign-in does not throttle failed
+attempts. The PostgreSQL-backed design below was removed before release, along
+with its migration, implementation and tests. It is historical context, not an
+active security control. Do not describe sign-in as rate-limited until an
+implementation is restored and verified.
+
+The removed design proposed five attempts per account and 30 per source address
+in a 15-minute fixed window, stored transactionally in PostgreSQL. Account and
+source keys were to be SHA-256 digests; raw passwords were never involved. This
+would have made limits consistent across restarts and app replicas.
 
 ## 28. Multi-agent reflections reuse the deterministic memory contract
 

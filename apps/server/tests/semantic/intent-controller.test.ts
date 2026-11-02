@@ -43,9 +43,9 @@ function monitorReturning(value: SemanticAssessment): SemanticIntentMonitor {
 
 describe("semantic action decision thresholds", () => {
   it.each([
-    [0.72, 0.9],
-    [0.88, 0.52],
-  ])("delegates conflict at risk %s and confidence %s", async (risk, confidence) => {
+    [0.5, 0.9],
+    [0.74, 0.2],
+  ])("requires human review for a conflict at risk %s and confidence %s", async (risk, confidence) => {
     const controller = new IntentController(
       monitorReturning(assessment(true, risk, confidence)),
       task,
@@ -61,9 +61,9 @@ describe("semantic action decision thresholds", () => {
     );
   });
 
-  it("keeps a high-risk, high-confidence conflict as an automatic decline", async () => {
+  it("declines a high-risk conflict regardless of self-reported confidence", async () => {
     const controller = new IntentController(
-      monitorReturning(assessment(true, 0.92, 0.95)),
+      monitorReturning(assessment(true, 0.75, 0.2)),
       task,
     );
 

@@ -3,13 +3,13 @@ import path from "node:path";
 import type { Run } from "@launchpad/shared";
 import type { WorkingCopies } from "./ports.js";
 
-// One isolated copy of the project per Run (plan section 3.2):
+// One isolated copy of the project per Run:
 //
 //   <root>/<runId>/workspace
 //
-// A Workspace is the logical project; its files live at a source path. Each
-// Run copies them, so Runs never overwrite each other and the source is never
-// edited by an agent. Git is not required: this is a plain copy.
+// The first Run copies the configured source. Later Runs copy the latest
+// successful Run's files, so prompts continue the project while the configured
+// source and completed Run artifacts remain untouched.
 //
 // Symbolic links are copied as links, verbatim, never followed. Following one
 // could pull a file from outside the project (a key in ~/.ssh) into the copy.
@@ -129,7 +129,9 @@ export class DirectoryWorkingCopies implements WorkingCopies {
     if (await exists(target)) return target;
     await mkdir(path.dirname(target), { recursive: true });
 
-    const source = await this.sources.sourcePath(run.workspaceId);
+    const source = run.parentRunId === null
+      ? await this.sources.sourcePath(run.workspaceId)
+      : this.pathFor(run.parentRunId);
     if (source === null) {
       await mkdir(target);
       return target;
@@ -139,9 +141,12 @@ export class DirectoryWorkingCopies implements WorkingCopies {
     if (info === null || !info.isDirectory()) {
       throw new Error(`The workspace source is not a directory: ${resolvedSource}`);
     }
-    if (isInside(this.root, resolvedSource) || isInside(resolvedSource, this.root)) {
+    if (run.parentRunId === null && (isInside(this.root, resolvedSource) || isInside(resolvedSource, this.root))) {
       // Copying a tree into itself, or the run copies into each new copy.
       throw new Error("The workspace source and the working-copy root must not contain each other");
+    }
+    if (run.parentRunId !== null && (!isInside(this.root, resolvedSource) || isInside(resolvedSource, target))) {
+      throw new Error("The parent Run working copy is outside the configured working-copy root");
     }
 
     await cp(resolvedSource, target, {

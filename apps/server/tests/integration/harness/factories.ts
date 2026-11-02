@@ -23,6 +23,7 @@ export function makeRun(overrides: Partial<Run> = {}): Run {
   return {
     id: randomUUID(),
     workspaceId: WORKSPACE_ID,
+    parentRunId: null,
     createdByUserId: USER_ID,
     supervisorAgentId: null,
     userPrompt: "Add input validation to the signup endpoint",
