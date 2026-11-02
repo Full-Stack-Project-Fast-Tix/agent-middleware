@@ -32,7 +32,7 @@ describe("attributeSources", () => {
     ]);
   });
 
-  // The regression for what showed up in the Playground: innocent files the
+  // The regression for what showed up in a real run: innocent files the
   // Agent happened to read were being watched for the life of the Agent.
   it("does not blame files the Agent merely read", () => {
     const t = traceBuilder();

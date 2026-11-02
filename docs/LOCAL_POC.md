@@ -1,8 +1,8 @@
 # Local POC
 
 The local profile runs the React/Fastify control plane on macOS or Linux and
-starts every Codex turn in a disposable Docker, Colima, or Podman container.
-Only the configured OpenAI model API is remote.
+runs Claude's tools for every execution in a disposable Docker, Colima, or Podman
+container. Only the Anthropic API is remote.
 
 ## Start
 
@@ -10,10 +10,11 @@ Requirements:
 
 - Node.js 22+
 - Docker, Colima, or Podman
-- An OpenAI API key
+- An Anthropic API key in `.env`, and the rest of
+  [Run on Claude](../README.md#run-on-claude)
 
 ```bash
-OPENAI_API_KEY=your-openai-api-key npm run poc
+npm run poc
 ```
 
 Open <http://localhost:3000>. Press `Ctrl+C` to stop the server and remove this
@@ -31,27 +32,21 @@ Persistent state defaults to:
 
 Set `LOCAL_POC_DATA_ROOT` to use another directory.
 
-Each turn mounts only the selected Agent workspace and Codex session directory.
+Each execution mounts only the Run's working copy.
 The container image filesystem is read-only; `/tmp` is a 256 MiB writable
-tmpfs, while the workspace and Codex session directory remain writable mounts.
+tmpfs, while the working copy remains a writable mount for an agent that may write.
 Each run's raw trace keeps a rolling 16 MiB window of the newest events. Once
 older events are evicted, the trace begins with a `trace/rolled` marker and
 the run continues. This bounds trace-file storage, but a rolled trace is not a
-complete audit history. Live security checks continue to observe the protocol
-stream independently of the retained trace window.
+complete audit history. Live security checks continue to observe tool calls
+independently of the retained trace window.
 Default limits are 2 CPUs, 2 GiB memory, 256 processes, dropped capabilities,
 and `no-new-privileges`.
 
-Codex requests `workspace-write`. If the Linux kernel lacks Landlock, startup
-warns and disables only the inner Codex sandbox. The outer container limits
-remain active, but this fallback is not tenant isolation.
-
-Agent tool commands and built-in web search have network access denied by
-default. Set `CODEX_NETWORK_ACCESS=true` for unguarded container tasks that
-require network access. Egress, semantic, and HITL guarded turns continue to
-deny it. This uses Codex's inner sandbox and tool configuration; the outer
-container still uses bridged networking, and the setting does not replace
-host-level egress filtering.
+Agent tool commands have network access denied by default, with a container that
+has no network. Set `AGENT_NETWORK_ACCESS=true` for unguarded tasks that require
+network access. Egress, semantic, and HITL guarded executions continue to deny it.
+This setting does not replace host-level egress filtering.
 
 ## Rootless Podman on Linux
 
@@ -100,9 +95,7 @@ podman run --rm docker.io/library/alpine:3.20 echo PODMAN_OK
 `podman info` must report `rootless: true`. Start the POC:
 
 ```bash
-CONTAINER_ENGINE=podman \
-OPENAI_API_KEY=your-openai-api-key \
-npm run poc
+CONTAINER_ENGINE=podman npm run poc
 ```
 
 This flow was verified on veLinux 2 with rootless Podman 4.3.1. A `vfs` storage
@@ -113,7 +106,6 @@ build.
 
 ```bash
 CONTAINER_RUNTIME_APT_PACKAGES='ca-certificates curl git ripgrep python3 build-essential' \
-OPENAI_API_KEY=your-openai-api-key \
 npm run poc
 ```
 
@@ -132,8 +124,8 @@ Check Runtime readiness:
 
 ```bash
 docker info                       # Or: podman info
-docker image inspect volc-agent-runtime:local
-curl http://localhost:3000/api/system
+docker image inspect agentguard-claude-runtime:local
+curl http://localhost:3000/api/health
 ```
 
 If a bind mount is rejected, set `LOCAL_POC_DATA_ROOT` to a directory shared
@@ -143,5 +135,5 @@ UID/GID and validates workspace write access.
 Remove only the default Runtime image:
 
 ```bash
-podman image rm volc-agent-runtime:local
+podman image rm agentguard-claude-runtime:local
 ```

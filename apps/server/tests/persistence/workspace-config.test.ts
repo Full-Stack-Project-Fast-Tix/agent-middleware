@@ -14,7 +14,6 @@ import {
   profileResponseSchema,
   profilesResponseSchema,
 } from "@launchpad/shared";
-import type { AgentService } from "../../src/agent-service.js";
 import { createApp } from "../../src/app.js";
 import { loadConfig } from "../../src/config.js";
 import { addUser, addWorkspace, setMember } from "../../src/db/admin.js";
@@ -39,7 +38,7 @@ beforeAll(async () => {
   await admin.query(`CREATE SCHEMA ${schema}`);
   await admin.end();
   pool = await openDatabase({ connectionString: url, options: `-c search_path=${schema}`, max: 8 });
-  app = await createApp(loadConfig({ NODE_ENV: "test" }), {} as unknown as AgentService, {
+  app = await createApp(loadConfig({ NODE_ENV: "test" }), {
     identity: new PostgresIdentity(pool),
     memberDatabase: pool,
   });

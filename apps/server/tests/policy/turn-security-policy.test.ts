@@ -3,17 +3,16 @@ import { loadConfig } from "../../src/config.js";
 import { resolveTurnSecurityPolicy } from "../../src/turn-security-policy.js";
 
 describe("turn security policy", () => {
-  it("leaves an unguarded turn at the configured sandbox default", () => {
+  it("leaves an unguarded turn on the network setting it was given", () => {
     const policy = resolveTurnSecurityPolicy(
       loadConfig({
         NODE_ENV: "test",
-        CODEX_SANDBOX_MODE: "danger-full-access",
-        CODEX_NETWORK_ACCESS: "true",
+        AGENT_NETWORK_ACCESS: "true",
       }),
     );
 
     expect(policy).toEqual({
-      sandboxMode: "danger-full-access",
+      sandboxMode: "workspace-write",
       denyNetwork: false,
       semanticEnforcement: false,
       effectGating: false,
@@ -25,7 +24,6 @@ describe("turn security policy", () => {
       loadConfig({
         NODE_ENV: "test",
         GUARDRAIL_EGRESS_ENABLED: "true",
-        GUARDRAIL_SANDBOX: "workspace-write",
       }),
     );
 
@@ -44,7 +42,6 @@ describe("turn security policy", () => {
         NODE_ENV: "test",
         GUARDRAIL_SEMANTIC_ENABLED: "true",
         GUARDRAIL_EGRESS_ENABLED: "true",
-        GUARDRAIL_SANDBOX: "danger-full-access",
       }),
     );
 

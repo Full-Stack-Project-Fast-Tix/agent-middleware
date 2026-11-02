@@ -202,7 +202,7 @@ function assessmentSummary(value: unknown): HandoffEvaluationRow["assessment"] {
 async function main(): Promise<void> {
   const config = loadConfig(process.env);
   if (!config.modelApiKey) {
-    throw new Error(`Set ${config.modelApiKeyEnvName} before running the live handoff evaluation.`);
+    throw new Error("Set ANTHROPIC_API_KEY before running the live handoff evaluation.");
   }
   const report = await evaluateContextHandoffs(createSemanticIntentMonitor(config));
   process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);

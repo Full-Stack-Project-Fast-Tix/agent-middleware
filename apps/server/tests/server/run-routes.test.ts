@@ -5,7 +5,6 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
 import type { Approval, RunSnapshot, WorkspaceRole } from "@launchpad/shared";
 import { apiPaths } from "@launchpad/shared";
-import type { AgentService } from "../../src/agent-service.js";
 import { createApp } from "../../src/app.js";
 import { loadConfig } from "../../src/config.js";
 import type { RunRoutesOptions } from "../../src/run-routes.js";
@@ -64,7 +63,7 @@ async function start(
     listWorkspaces: async () => [{ id: MINE, name: "Mine", role }],
     listAgents: async () => [],
   };
-  app = await createApp(loadConfig({ NODE_ENV: "test" }), {} as AgentService, { runs: options });
+  app = await createApp(loadConfig({ NODE_ENV: "test" }), { runs: options });
   return calls;
 }
 
@@ -95,7 +94,7 @@ describe("a run's working copy", () => {
       currentUserId: () => "00000000-0000-4000-8000-0000000000ee",
       workspaceRole: async (workspaceId: string) => (workspaceId === MINE ? role : null),
     } as unknown as RunRoutesOptions;
-    app = await createApp(config, {} as AgentService, { runs: options });
+    app = await createApp(config, { runs: options });
   }
 
   it("lists and serves what the agents wrote, leaving out symlinks", async () => {
@@ -141,7 +140,7 @@ describe("an attempt's trace", () => {
   async function startWithTrace(runWorkspace: string, role: WorkspaceRole = "developer") {
     directory = await mkdtemp(path.join(tmpdir(), "run-trace-"));
     const config = loadConfig({ NODE_ENV: "test", APP_DATA_DIR: directory });
-    const line = JSON.stringify({ seq: 1, dir: "in", method: "codex/event", payload: { stdout: `STRIPE_KEY=${SECRET}` } });
+    const line = JSON.stringify({ seq: 1, dir: "in", method: "item/completed", payload: { stdout: `STRIPE_KEY=${SECRET}` } });
     await mkdir(path.dirname(traceFilePath(config.dataDirectory, EXECUTION)), { recursive: true });
     await writeFile(traceFilePath(config.dataDirectory, EXECUTION), `${line}\n`, "utf8");
     await writeFile(traceFilePath(config.dataDirectory, OTHER_RUNS), `${line}\n`, "utf8");
@@ -151,7 +150,7 @@ describe("an attempt's trace", () => {
       currentUserId: () => "00000000-0000-4000-8000-0000000000ee",
       workspaceRole: async (workspaceId: string) => (workspaceId === MINE ? role : null),
     } as unknown as RunRoutesOptions;
-    app = await createApp(config, {} as AgentService, { runs: options });
+    app = await createApp(config, { runs: options });
   }
 
   it("serves the attempt's trace redacted, as JSON Lines, to an acting role", async () => {
@@ -202,7 +201,7 @@ describe("an attempt's trace", () => {
         currentUserId: () => VIEWER,
         workspaceRole: async () => "developer",
       } as unknown as RunRoutesOptions;
-      app = await createApp(config, {} as AgentService, { runs: options });
+      app = await createApp(config, { runs: options });
       const { statusCode } = await inject("GET", apiPaths.executionTrace(RUN, UNTRACED));
       await app.close();
       return statusCode;
@@ -212,7 +211,7 @@ describe("an attempt's trace", () => {
     expect(await answer(new Date().toISOString(), 30)).toBe(404);
     expect(await answer(null, 30)).toBe(404);
     expect(await answer(longAgo, 0)).toBe(404);
-    app = await createApp(config, {} as AgentService);
+    app = await createApp(config);
   });
 
   it("answers 404 for an execution with no trace file", async () => {

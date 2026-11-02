@@ -18,7 +18,6 @@ For container-based Agent execution, follow
 
 ```bash
 npm run check
-terraform fmt -check -recursive deploy/volcengine
 docker compose config
 ```
 
@@ -28,6 +27,6 @@ docker compose config
 - Add tests for API, lifecycle, persistence, or Runtime changes.
 - Update English documentation and `.env.example` when configuration changes.
 - Use GitHub Flavored Markdown and relative repository links.
-- Never commit credentials, local state, workspaces, build output, or Terraform
+- Never commit credentials, local state, workspaces, build output, or infrastructure
   state.
 - Report security issues according to [SECURITY.md](SECURITY.md).

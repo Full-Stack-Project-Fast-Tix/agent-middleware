@@ -28,7 +28,7 @@ import {
 import { SandboxFileError, type SandboxFile, type ToolSandbox, type ToolSandboxProvider } from "../claude-tool-sandbox.js";
 import type { AppConfig } from "../config.js";
 import { attachTrace, RunCancelledError } from "../errors.js";
-import { assertGatedPolicy } from "../gated-turn.js";
+import { assertGatedPolicy } from "../turn-security-policy.js";
 import { traceFilePath, TraceWriter, type TraceDirection, type TraceRecord, type TraceSummary } from "../trace.js";
 import type { ExecutionOutcome, ExecutionRequest, ExecutionRuntime } from "./ports.js";
 import { parseTaskDisposition } from "./task-disposition.js";
@@ -49,8 +49,8 @@ import { parseTaskDisposition } from "./task-disposition.js";
 //     block, execution       -> refuse and end the loop; no more model calls
 //   every trace record       -> gate.observe(record), in order
 //
-// Stop semantics and the records it writes match the Codex path (gated-turn.ts).
-// The records use the same shapes a real Codex app-server trace has, including
+// Stop semantics and the records it writes are fixed by the checks and the benchmark scorers.
+// The records use the JSON-RPC trace shapes those readers expect, including
 // the `declined` item a refused action leaves, so the deterministic checks, the
 // trajectory state, the trace download and benchmark replay read them unchanged.
 //
@@ -198,7 +198,7 @@ class ClaudeTurn {
   }
 
   usage(): ExecutionUsage {
-    // Totals as Codex reports them: inputTokens includes the cached part.
+    // Running totals: inputTokens includes the cached part.
     return {
       inputTokens: this.inputTotal(),
       cachedInputTokens: this.totals.cacheRead,
@@ -578,7 +578,7 @@ class ClaudeTurn {
       type: "fileChange",
       changes: [{ path: target, kind: kind === "add" ? { type: "add" } : { type: "update", move_path: null }, diff: plan.diff }],
     };
-    // A file change is announced first and then waits at its approval, as in a Codex trace.
+    // A file change is announced first and then waits at its approval.
     await this.emitItem("item/started", { ...item, status: "inProgress" });
     if (this.stopped) return toolError(toolUse, REFUSED_RESULT);
 
@@ -608,8 +608,8 @@ class ClaudeTurn {
   /**
    * One action at the gate, recorded as an approval request and our reply. "run"
    * is the only answer that lets it go ahead. A refusal leaves the `declined`
-   * item a Codex trace has, which the checks and the benchmark scorers read, and
-   * re-running the checks over it can stop the execution, as it does in Codex.
+   * item the trace format has, which the checks and the benchmark scorers read, and
+   * re-running the checks over it can stop the execution.
    */
   private async gate(action: Extract<ProposedAction, { type: "command" | "file_change" }>, item: Record<string, unknown>): Promise<"run" | "refused"> {
     const requestId = this.requestId();

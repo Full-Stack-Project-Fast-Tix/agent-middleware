@@ -7,8 +7,8 @@
 //                        SecurityMiddleware interface instead of policy
 //                        evaluation, guards and semantic review
 //   StandInPlanner       the supervisor's model call: always returns PLAN
-//   StandInRuntime       the Codex runtime: each agent proposes PLAN's actions
-//                        through the real ActionGate instead of running Codex
+//   StandInRuntime       the Claude runtime: each agent proposes PLAN's actions
+//                        through the real ActionGate instead of running Claude
 //
 // Everything else is real: createApp (auth, error handling, the run routes,
 // the SSE route and its redaction), RunEventHub and the Orchestrator. Replace
@@ -30,7 +30,6 @@ import {
   type SecurityContext,
   type SecurityDecision,
 } from "@launchpad/shared";
-import type { AgentService } from "../../../src/agent-service.js";
 import { createApp } from "../../../src/app.js";
 import { loadConfig } from "../../../src/config.js";
 import { InMemoryRunStore } from "../../../src/orchestrator/in-memory-run-store.js";
@@ -269,7 +268,7 @@ class StandInAgents implements AgentDirectory {
   }
 }
 
-/** Instead of Codex: each task's agent proposes its PLAN actions through the gate. */
+/** Instead of Claude: each task's agent proposes its PLAN actions through the gate. */
 export class StandInRuntime implements ExecutionRuntime {
   /** Actions the middleware let through, i.e. what would really have run. */
   readonly executed: Array<{ executionId: string; action: ProposedAction }> = [];
@@ -327,7 +326,7 @@ export async function startStandIn(options: StandInOptions = {}): Promise<StandI
     onError: (error) => failures.push(error),
   });
 
-  const app = await createApp(loadConfig({ NODE_ENV: "test", APP_AUTH_TOKEN: AUTH_TOKEN }), {} as AgentService, {
+  const app = await createApp(loadConfig({ NODE_ENV: "test", APP_AUTH_TOKEN: AUTH_TOKEN }), {
     runEvents: { hub, canReadRun: (runId) => store.snapshot(runId) !== null },
     runs: {
       orchestrator,

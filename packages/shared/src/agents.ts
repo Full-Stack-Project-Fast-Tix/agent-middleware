@@ -57,7 +57,7 @@ export type AgentProfile = z.infer<typeof agentProfileSchema>;
 
 /**
  * Reusable configuration for a specialist. Runtime state (working directory,
- * Codex thread, current status) belongs to AgentExecution, not here.
+ * thread, current status) belongs to AgentExecution, not here.
  */
 export const agentSchema = z.object({
   id: idSchema,

@@ -3,7 +3,6 @@ import type { FastifyInstance } from "fastify";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { workspaceMemberResponseSchema, workspaceMembersResponseSchema } from "@launchpad/shared";
-import type { AgentService } from "../../src/agent-service.js";
 import { createApp } from "../../src/app.js";
 import { loadConfig } from "../../src/config.js";
 import { addUser, addWorkspace, setMember } from "../../src/db/admin.js";
@@ -16,7 +15,6 @@ import { PostgresIdentity } from "../../src/db/postgres-identity.js";
 const url = process.env.TEST_DATABASE_URL;
 const schema = `test_${randomUUID().replaceAll("-", "")}`;
 const PASSWORD = "correct horse battery";
-const service = {} as unknown as AgentService;
 const config = loadConfig({ NODE_ENV: "test" });
 
 let pool: pg.Pool | undefined;
@@ -29,7 +27,7 @@ beforeAll(async () => {
   await admin.query(`CREATE SCHEMA ${schema}`);
   await admin.end();
   pool = await openDatabase({ connectionString: url, options: `-c search_path=${schema}`, max: 8 });
-  app = await createApp(config, service, { identity: new PostgresIdentity(pool), memberDatabase: pool });
+  app = await createApp(config, { identity: new PostgresIdentity(pool), memberDatabase: pool });
 });
 
 afterAll(async () => {
@@ -90,7 +88,7 @@ async function roleIn(workspaceId: string, userId: string) {
 
 describe("member routes in token mode", () => {
   it("do not exist without signed-in users", async () => {
-    const tokenApp = await createApp(config, service);
+    const tokenApp = await createApp(config);
     const response = await tokenApp.inject({ url: membersUrl(randomUUID()) });
     expect(response.statusCode).toBe(404);
     await tokenApp.close();

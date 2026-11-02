@@ -30,8 +30,6 @@ RUN if [ -n "$DEBIAN_SECURITY_MIRROR" ]; then \
     fi \
     && apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates git ripgrep \
-    && npm install --global @openai/codex@0.111.0 \
-    && codex --version \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=build /app/node_modules ./node_modules
@@ -42,7 +40,7 @@ COPY --from=build /app/apps/web/dist ./apps/web/dist
 COPY --from=build /app/packages/shared/package.json ./packages/shared/package.json
 COPY --from=build /app/packages/shared/dist ./packages/shared/dist
 
-RUN mkdir -p /app/data /app/workspaces /app/codex-home \
+RUN mkdir -p /app/data /app/workspaces \
     && chown -R node:node /app
 
 USER node

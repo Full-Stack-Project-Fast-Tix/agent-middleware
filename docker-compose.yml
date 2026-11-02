@@ -20,15 +20,12 @@ services:
       PORT: 3000
       APP_DATA_DIR: /app/data
       AGENT_WORKSPACE_ROOT: /app/workspaces
-      CODEX_HOME: /app/codex-home
-      CODEX_SANDBOX_MODE: ${CODEX_SANDBOX_MODE:-workspace-write}
       DATABASE_URL: postgres://${POSTGRES_USER:-launchpad}:${POSTGRES_PASSWORD:-launchpad}@postgres:5432/${POSTGRES_DB:-launchpad}
     ports:
       - "${PUBLIC_PORT:-3000}:3000"
     volumes:
       - ./data:/app/data
       - ./workspaces:/app/workspaces
-      - ./codex-home:/app/codex-home
     init: true
     security_opt:
       - no-new-privileges:true

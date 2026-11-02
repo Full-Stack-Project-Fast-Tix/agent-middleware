@@ -56,7 +56,7 @@ export function CurrentWorkspaceProvider({ children }: { children: ReactNode }) 
         setWorkspaces([]);
         setError(
           reason instanceof ApiError && reason.status === 404
-            ? "This server does not offer multi-agent runs. Start it with RUNS_DEMO=1 for the local demo, or in password mode with RUNTIME_PROVIDER=container."
+            ? "This server does not offer multi-agent runs. Start it with RUNS_DEMO=1 for the local demo, or in password mode."
             : reason instanceof Error
               ? reason.message
               : String(reason),

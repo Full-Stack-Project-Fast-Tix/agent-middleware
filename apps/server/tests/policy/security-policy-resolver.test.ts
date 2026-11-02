@@ -283,8 +283,7 @@ describe("DefaultSecurityMiddleware.resolvePolicy", () => {
     const middleware = new DefaultSecurityMiddleware({
       config: loadConfig({
         NODE_ENV: "test",
-        CODEX_SANDBOX_MODE: "danger-full-access",
-        CODEX_NETWORK_ACCESS: "true",
+        AGENT_NETWORK_ACCESS: "true",
       }),
       source: source(),
     });
@@ -311,7 +310,7 @@ describe("DefaultSecurityMiddleware.resolvePolicy", () => {
     const middleware = new DefaultSecurityMiddleware({
       config: loadConfig({
         NODE_ENV: "test",
-        CODEX_NETWORK_ACCESS: "true",
+        AGENT_NETWORK_ACCESS: "true",
       }),
       source: sourceWithNetworkDenied,
     });

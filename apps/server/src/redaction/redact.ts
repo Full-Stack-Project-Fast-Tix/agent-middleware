@@ -51,7 +51,7 @@ export interface RedactionResult {
 export function redactText(text: string): RedactionResult {
   if (text === "") return { text: text, redactions: 0 };
 
-  // Character offsets occupied by Codex protocol identifiers. The two
+  // Character offsets occupied by trace protocol identifiers. The two
   // low-confidence patterns skip anything overlapping these; every real
   // credential shape ignores the set entirely, so a key named "id" cannot be
   // used to smuggle an `sk_live_` past the redactor. See PROTOCOL_ID_PATTERN.
@@ -92,7 +92,7 @@ export function redactText(text: string): RedactionResult {
   return { text: result, redactions: redactions };
 }
 
-/** Half-open `[start, end)` ranges holding a Codex protocol identifier. */
+/** Half-open `[start, end)` ranges holding a trace protocol identifier. */
 function protocolIdSpans(text: string): Array<[number, number]> {
   const spans: Array<[number, number]> = [];
   const global = new RegExp(PROTOCOL_ID_PATTERN.source, "g");

@@ -114,7 +114,7 @@ describe("the redaction tier is a superset of the detection tier", () => {
 // The exclusion, and its limits
 // ---------------------------------------------------------------------------
 
-describe("Codex protocol identifiers", () => {
+describe("Protocol identifiers", () => {
   // Measured on a real trace: 458 of 462 redactions were reasoning-item ids.
   // Redacting those makes the Raw trajectory view unreadable without removing
   // any secret, so they are excluded — but only in identifier position.
@@ -192,10 +192,10 @@ describe("redaction preserves document structure", () => {
         seq: 2,
         at: "2026-08-30T10:00:01.000Z",
         dir: "in",
-        method: "codex/event",
+        method: "item/completed",
         payload: { stdout: "STRIPE_KEY=sk_live_ABCDEFGHIJKLMNOP1234" },
       },
-      { seq: 3, at: "2026-08-30T10:00:02.000Z", dir: "in", method: "codex/event", payload: { done: true } },
+      { seq: 3, at: "2026-08-30T10:00:02.000Z", dir: "in", method: "item/completed", payload: { done: true } },
     ];
     const ndjson = records.map((record) => JSON.stringify(record)).join("\n") + "\n";
 

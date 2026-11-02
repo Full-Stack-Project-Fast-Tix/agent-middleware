@@ -11,7 +11,6 @@ import {
   type Task,
 } from "@launchpad/shared";
 import type { FastifyInstance } from "fastify";
-import type { AgentService } from "../../src/agent-service.js";
 import { createApp } from "../../src/app.js";
 import { loadConfig } from "../../src/config.js";
 import { RunEventHub } from "../../src/run-events.js";
@@ -239,7 +238,6 @@ describe("GET /api/runs/:id/events", () => {
     const hub = new RunEventHub();
     const app = await createApp(
       loadConfig({ NODE_ENV: "test", ...(options.authToken ? { APP_AUTH_TOKEN: options.authToken } : {}) }),
-      {} as AgentService,
       {
         runEvents: {
           hub,

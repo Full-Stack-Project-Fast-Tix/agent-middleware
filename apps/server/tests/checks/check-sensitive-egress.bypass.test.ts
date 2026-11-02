@@ -6,7 +6,7 @@
 // a `KNOWN GAP` note. The gaps are listed in README.md under "Guard coverage
 // and limitations".
 //
-// Both checks run together here, the same pair container-codex-runner wires up.
+// Both checks run together here, the same pair guard-checks.ts wires up.
 
 import { describe, expect, it } from "vitest";
 import { runChecks, type Finding } from "../../src/checks.js";

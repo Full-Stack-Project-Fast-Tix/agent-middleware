@@ -1,6 +1,5 @@
 #!/usr/bin/env -S npx tsx
 // Live, PostgreSQL-backed Run -> supervisor plan -> delegated Task benchmark.
-// This is separate from run-live.ts, which measures the legacy single-agent runner.
 
 import { execFileSync } from "node:child_process";
 import { appendFileSync, cpSync, mkdirSync, writeFileSync } from "node:fs";
@@ -12,8 +11,7 @@ import { openDatabase } from "../apps/server/src/db/pool.js";
 import { PostgresIdentity } from "../apps/server/src/db/postgres-identity.js";
 import { createPostgresRuns } from "../apps/server/src/postgres-runs.js";
 import { startApprovalSweep } from "../apps/server/src/orchestrator/orchestrator.js";
-import { loadConfig, writeCodexConfig } from "../apps/server/src/config.js";
-import { startArkProxy, type ArkProxy } from "../apps/server/src/ark-proxy.js";
+import { loadConfig } from "../apps/server/src/config.js";
 import { RunEventHub } from "../apps/server/src/run-events.js";
 import { readTrace } from "./trace-io.js";
 import { buildTrialResult } from "./metrics.js";
@@ -91,16 +89,13 @@ async function main() {
   mkdirSync(fixtureRoot, { recursive: true });
   mkdirSync(path.join(outDir, "traces"), { recursive: true });
 
-  const config = loadConfig({ ...process.env, RUNTIME_PROVIDER: "container", APP_AUTH_MODE: "password", CODEX_NETWORK_ACCESS: "false" });
+  const config = loadConfig({ ...process.env, APP_AUTH_MODE: "password", AGENT_NETWORK_ACCESS: "false" });
   execFileSync(config.containerEngine, ["version"], { stdio: "ignore" });
   execFileSync(config.containerEngine, ["image", "inspect", config.containerRuntimeImage], { stdio: "ignore" });
   const pool = await openDatabase({ connectionString: databaseUrl });
-  let proxy: ArkProxy | null = null;
   const results: TrialResult[] = [];
   const provenance: Array<{ scenarioId: string; guardConfig: string; trial: number; workspaceId: string; runId: string }> = [];
   try {
-    if (config.arkProxyEnabled) proxy = await startArkProxy(config);
-    await writeCodexConfig(config, proxy?.baseUrlForCodex ?? config.arkBaseUrl);
     const { rows } = await pool.query<{ id: string }>("SELECT id FROM users WHERE lower(email) = lower($1)", [ownerEmail]);
     const ownerId = rows[0]?.id;
     if (!ownerId) throw new Error("BENCH_OWNER_EMAIL does not match an account in DATABASE_URL");
@@ -124,9 +119,8 @@ async function main() {
 
           const trialConfig = loadConfig({
             ...process.env,
-            RUNTIME_PROVIDER: "container",
             APP_AUTH_MODE: "password",
-            CODEX_NETWORK_ACCESS: "false",
+            AGENT_NETWORK_ACCESS: "false",
             ...guardConfig.env,
           });
           const hub = new RunEventHub();
@@ -221,11 +215,10 @@ async function main() {
       scenarios: options.scenarios,
       guardConfigs: guardConfigs.map(({ name }) => name),
       trials: options.trials,
-      note: "Real PostgreSQL-backed supervisor, delegation middleware, Task scheduler, and gated Codex runtime.",
+      note: "Real PostgreSQL-backed supervisor, delegation middleware, Task scheduler, and gated Claude runtime.",
     }, null, 2));
     console.log(`\n${report}\nSaved multi-agent Run/Task evidence in ${outDir}`);
   } finally {
-    await proxy?.close();
     await pool.end();
   }
 }

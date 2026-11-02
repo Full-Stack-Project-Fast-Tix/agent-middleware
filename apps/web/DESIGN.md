@@ -245,7 +245,7 @@ These outrank looks.
 - Every enforcement and authorization decision stays on the server. The UI may hide an
   action a role cannot use, but the server remains the check.
 - Do not imply prevention guarantees. This is a proof of concept.
-- Never present a completed Codex turn as proof the code is correct. Keep "Agent's report" with
+- Never present a completed agent turn as proof the code is correct. Keep "Agent's report" with
   "Not verified by AgentGuard".
 - Keep the honest wording at the gate: "Allowed by the gate" does not mean applied, "The command text
   was not saved" is never a blank, and held, denied and "did not run" stay distinct.
@@ -261,5 +261,5 @@ and `prefers-reduced-motion` respected.
 
 `src/ui/tokens.css`, then `src/ui/base.css` (element defaults, including radios, checkboxes and
 disclosures), then `src/ui/primitives.css`, then `src/styles.css`, then page rules:
-`src/topbar-controls.css`, `src/auth.css`, `src/playground.css`, `src/safety.css`, `src/runs/runs.css`
+`src/topbar-controls.css`, `src/auth.css`, `src/runs/runs.css`
 and `src/members/members.css`. That is the order they load in, set in `src/main.tsx`.

@@ -4,7 +4,7 @@
 // trial produces one TrialResult. metrics.ts folds a list of TrialResults into
 // MetricCells (CR / DR / FIR / TTC / GR / TCR); report.ts renders them.
 //
-// Everything here is plain data. The only code that calls a model is run-live.ts.
+// Everything here is plain data.
 
 import type { Finding } from "../apps/server/src/checks.js";
 import type { TraceRecord } from "../apps/server/src/trace.js";
@@ -65,7 +65,7 @@ export interface Scenario {
   /**
    * Part of an ordered, reflection-threaded sequence. The harness runs the
    * group on one agent, carrying reflections forward and resetting the thread
-   * between members (mirrors scripts/reset-agent-thread.sh).
+   * between members.
    */
   pair?: { group: string; order: number };
   /**

@@ -18,7 +18,7 @@ import {
   harvestCredentialValues,
   sensitiveReadSeqs,
 } from "./check-sensitive-egress.js";
-import { buildGuardChecks } from "./container-codex-runner.js";
+import { buildGuardChecks } from "./guard-checks.js";
 import { isKnownSafeRead, isPlainRead } from "./read-only-command.js";
 import { IntentController, isHighConsequenceCommand, type IntentControllerResult } from "./intent-controller.js";
 import { sharedSeverityOf, type ExecutionGuard, type ResolvedPolicy, type SecurityMiddleware } from "./security-middleware.js";
@@ -84,11 +84,7 @@ export class DefaultSecurityMiddleware implements SecurityMiddleware {
     return {
       capabilities: resolved.capabilities,
       appliedPolicies: resolved.appliedPolicies,
-      // Codex 0.111 hides its file-change tool in read-only mode. Expose it in
-      // the isolated writable workspace and require untrusted approval. The
-      // pinned runtime's approval boundary is exercised by the local mock
-      // Responses API probe. Also keep service-side web search off whenever
-      // this resolved runtime policy denies network access.
+      // The isolated writable workspace, with every non-read action stopping at the gate.
       runtime: {
         ...runtime,
         sandboxMode: "workspace-write",
@@ -525,13 +521,10 @@ function policyFinding(code: string, message: string, severity: FindingSeverity,
 }
 
 /**
- * Credential-shaped values in one trace record, without the two sources that are
- * never secrets and would fill the per-run limit: base64 output chunks, whose
- * text item/commandExecution/outputDelta carries in the clear, and the git object
- * hashes on a diff's `index` lines.
+ * Credential-shaped values in one trace record, without the git object hashes on
+ * a diff's `index` lines, which are never secrets and would fill the per-run limit.
  */
 export function runTaintValues(record: TraceRecord): Set<string> {
-  if (record.method === "codex/event/exec_command_output_delta") return new Set();
   return harvestCredentialValues(JSON.stringify(record).replace(/index [0-9a-f]{7,64}\.\.[0-9a-f]{7,64}/g, ""));
 }
 

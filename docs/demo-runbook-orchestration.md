@@ -11,7 +11,7 @@ Say this once, early. It is true, and it pre-empts the first question.
 > The orchestrator, the HTTP API, the live event stream and this UI are the
 > real system. For this demo the agents, the supervisor's model call and the
 > security rules are simulated, so the run is the same every time and nothing
-> executes. The real Codex runtime and security middleware plug into the same
+> executes. The real Claude runtime and security middleware plug into the same
 > interfaces.
 
 ## Before you present

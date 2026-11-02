@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { Agent, AgentExecution, ProposedAction, Run, SecurityDecision, Task } from "@launchpad/shared";
 import { loadConfig } from "../../src/config.js";
 import { RunCancelledError, traceOf } from "../../src/errors.js";
-import { UngatedRuntimePolicyError } from "../../src/gated-turn.js";
+import { UngatedRuntimePolicyError } from "../../src/turn-security-policy.js";
 import { ClaudeExecutionRuntime, claudeSystemPrompt, type ClaudeRuntimeLimits } from "../../src/orchestrator/claude-execution-runtime.js";
 import type { ActionGate, ExecutionRequest } from "../../src/orchestrator/ports.js";
 import type { TraceRecord } from "../../src/trace.js";
@@ -27,7 +27,7 @@ import {
   type MockTurn,
 } from "./claude-fakes.js";
 
-const DEFAULT_LIMITS: ClaudeRuntimeLimits = loadConfig({ NODE_ENV: "test", MODEL_PROVIDER: "anthropic" }).claude;
+const DEFAULT_LIMITS: ClaudeRuntimeLimits = loadConfig({ NODE_ENV: "test" }).claude;
 
 let dataDirectory: string;
 let mock: MockAnthropic | null = null;
@@ -112,7 +112,7 @@ describe("ClaudeExecutionRuntime: the loop", () => {
 
     expect(outcome.output).toBe("Added validation.");
     expect(outcome.threadId).toBeNull();
-    // inputTokens includes the cached part, as the Codex runtime reports it.
+    // inputTokens includes the cached part.
     expect(outcome.usage).toEqual({ inputTokens: 335, cachedInputTokens: 200, outputTokens: 25 });
     expect(outcome.tracePath).toBe(path.join(dataDirectory, "traces", "execution-1.jsonl"));
     expect(outcome.traceTruncated).toBe(false);

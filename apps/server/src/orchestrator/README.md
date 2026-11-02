@@ -23,13 +23,10 @@ always the middleware's decision
 | `task-disposition.ts` | Strictly validates whether a specialist reports its Task complete or incomplete. |
 | `ports.ts` | The interfaces the orchestrator depends on: `RunStore`, `AgentDirectory`, `ExecutionRuntime`, `WorkingCopies` and `ActionGate`. |
 | `in-memory-run-store.ts` | `RunStore` in memory, publishing RunEvents with per-run seqs. Used by tests and by `dev:demo` without `DATABASE_URL`; real Runs use `PostgresRunStore`. |
-| `claude-execution-runtime.ts` | `ClaudeExecutionRuntime`, for `MODEL_PROVIDER=anthropic`: an agent loop on this host over the Messages API, with tools in one disposable container per execution. Writes Codex-shaped trace records. |
-| `codex-execution-runtime.ts` | `CodexExecutionRuntime`: one execution, one disposable container, the Run's working copy at `/workspace`, its own trace file. Drives the turn with `../gated-turn.ts`. |
+| `claude-execution-runtime.ts` | `ClaudeExecutionRuntime`, an agent loop on this host over the Messages API, with tools in one disposable container per execution. Writes JSON-RPC-shaped trace records. |
 | `working-copies.ts` | `DirectoryWorkingCopies`: copies the workspace to `<root>/<runId>/workspace` once per Run. Skips dependencies, local tool/credential stores, environment secrets, and common private-key files; keeps example environment templates and copies other symlinks as links. |
 
-Outside this folder: `../gated-turn.ts` drives one Codex turn whose
-approval requests go to `ActionGate.decide` and whose trace records go to
-`ActionGate.observe`. `../claude-tool-sandbox.ts` is Claude's container and
+Outside this folder: `../claude-tool-sandbox.ts` is Claude's container and
 `../claude-editor.ts` turns its file edits into the diffs the gate evaluates.
 `../run-routes.ts` holds the HTTP routes.
 
@@ -52,7 +49,7 @@ is created either. A blocked handoff withholds that result from the prompt.
   become a way around the middleware.
 - **Failures.** When a Task fails, its dependents are skipped. Running work
   finishes, nothing new starts, and the Run fails.
-- **Completion reports.** A Codex turn ending successfully completes its
+- **Completion reports.** An agent turn ending successfully completes its
   AgentExecution. Its Task completes only when the final response is the strict
   JSON disposition requested by `task-prompt.ts` with status `complete`.
   `incomplete`, missing and malformed reports fail the Task without retrying.
@@ -63,14 +60,11 @@ is created either. A blocked handoff withholds that result from the prompt.
 - **Policy.** It is resolved once per execution and snapshotted on
   `AgentExecution.capabilities`. The scheduler serialises on
   `capabilities.write`. The runtime settings come from the middleware, never
-  from here. When the resolved policy denies network, the container runtime
-  disables Codex's service-side `web_search` tool as well as workspace network
-  access.
-- **The runtime fails closed.** Both runtimes refuse to start unless the policy
+  from here. When the resolved policy denies network, the tool container gets no
+  network.
+- **The runtime fails closed.** The runtime refuses to start unless the policy
   is `workspace-write` sandbox with `untrusted` approvals, and a gate that throws
-  declines the action and ends the turn. On Codex, workspace writes are scoped to
-  the isolated run workspace, proposals must stop at an approval request before the
-  gate allows them, and a file change it cannot describe is declined. On Claude, the
+  declines the action and ends the turn. The
   model can only act by asking the loop, so no tool runs without a decision.
   A model refusal, a truncated response, an unknown stop reason or an exhausted
   limit fails the execution, and a tool call from such a turn never runs.
@@ -131,8 +125,7 @@ Changing any of these is a contract change: record it in
 ## Wiring it into the server
 
 `../postgres-runs.ts` builds the orchestrator with P3's PostgreSQL
-repositories, P1's middleware, the model planner, the runtime for the selected
-provider (Claude or Codex) and per-Run working copies. `index.ts` uses it with `APP_AUTH_MODE=password`,
+repositories, P1's middleware, the model planner, the Claude runtime and per-Run working copies. `index.ts` uses it with `APP_AUTH_MODE=password`,
 recovers interrupted Runs before it listens, and starts the approval sweep.
 
 ## Still to do

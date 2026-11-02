@@ -72,7 +72,7 @@ Leave `TEST_DATABASE_URL` commented out.
 Check it without showing the key:
 
 ```bash
-grep -E '^(MODEL_PROVIDER|APP_AUTH_MODE|DATABASE_URL|RUNTIME_PROVIDER|CLAUDE_MAX_ITERATIONS|CLAUDE_MAX_TOTAL|GUARDRAIL_(EGRESS|SEMANTIC)_ENABLED)' .env
+grep -E '^(APP_AUTH_MODE|DATABASE_URL|CLAUDE_MAX_ITERATIONS|CLAUDE_MAX_TOTAL|GUARDRAIL_(EGRESS|SEMANTIC)_ENABLED)' .env
 grep -c '^ANTHROPIC_API_KEY=sk-ant-' .env
 ```
 
@@ -80,13 +80,11 @@ The first command should print exactly these lines:
 
 ```text
 APP_AUTH_MODE=password
-MODEL_PROVIDER=anthropic
 CLAUDE_MAX_ITERATIONS=20
 CLAUDE_MAX_TOTAL_OUTPUT_TOKENS=50000
 CLAUDE_MAX_TOTAL_INPUT_TOKENS=500000
 GUARDRAIL_EGRESS_ENABLED=true
 GUARDRAIL_SEMANTIC_ENABLED=true
-RUNTIME_PROVIDER=container
 DATABASE_URL=postgres://launchpad:launchpad@127.0.0.1:5433/launchpad
 ```
 
@@ -194,7 +192,6 @@ minutes to appear.
 | `Could not reach the Anthropic API` | Your machine couldn't connect, and the attempt was retried once | Check your network and report it if it persists |
 | A `semantic-monitor-unavailable` finding | A security review didn't answer in time, so the action needs a person | Report how often it happens |
 | The agent says it couldn't run tests | Expected: it has no network or `node_modules` | Report it only if the edit also failed |
-| Playground or Safety says it needs Codex | Expected on this path | Ignore it |
 | `Dashboard`, `Runs` or sign-in fails | Not expected | Stop and report it |
 | The container engine can't mount a folder | Docker can't reach the state folder | Set `LOCAL_POC_DATA_ROOT` to a folder Docker can share, then rerun `npm run poc` |
 

@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
 import type { User } from "@launchpad/shared";
-import type { AgentService } from "../../src/agent-service.js";
 import { createApp } from "../../src/app.js";
 import type { Identity } from "../../src/auth-routes.js";
 import { loadConfig } from "../../src/config.js";
@@ -41,7 +40,7 @@ async function start() {
   };
   // A shared token is configured too: with identity it must not let anyone in.
   const config = loadConfig({ NODE_ENV: "test", APP_AUTH_TOKEN: "shared-token-that-is-long-enough" });
-  app = await createApp(config, { systemInfo: async () => ({}) } as unknown as AgentService, { identity });
+  app = await createApp(config, { identity });
 }
 
 const bearer = (token: string) => ({ authorization: `Bearer ${token}` });
@@ -52,7 +51,7 @@ describe("session sign-in", () => {
     expect((await app.inject({ url: "/api/auth" })).json()).toEqual({ required: true, method: "password" });
     expect((await app.inject({ url: "/api/health" })).statusCode).toBe(200);
     expect((await app.inject({ url: "/api/auth/me" })).statusCode).toBe(401);
-    expect((await app.inject({ url: "/api/system", headers: bearer("shared-token-that-is-long-enough") })).statusCode).toBe(401);
+    expect((await app.inject({ url: "/api/auth/me", headers: bearer("shared-token-that-is-long-enough") })).statusCode).toBe(401);
   });
 
   it("signs in, hands over the token unredacted, and signs out", async () => {
@@ -67,25 +66,6 @@ describe("session sign-in", () => {
     expect((await app.inject({ url: "/api/auth/me", headers: bearer(TOKEN) })).json()).toEqual({ user: USER });
     expect((await app.inject({ method: "DELETE", url: "/api/auth/session", headers: bearer(TOKEN) })).statusCode).toBe(204);
     expect((await app.inject({ url: "/api/auth/me", headers: bearer(TOKEN) })).statusCode).toBe(401);
-  });
-
-  it("does not expose the global legacy API to password-authenticated sessions", async () => {
-    await start();
-    const signedIn = await app.inject({ method: "POST", url: "/api/auth/session", payload: { email: USER.email, password: "right password" } });
-    const headers = bearer(signedIn.json().token);
-    const routes = [
-      "/api/system",
-      "/api/admin/overview",
-      "/api/agents",
-      "/api/agents/00000000-0000-4000-8000-000000000001/workspace/file?path=.env",
-      "/api/runs/00000000-0000-4000-8000-000000000001/trace",
-    ];
-
-    for (const url of routes) {
-      const response = await app.inject({ url, headers });
-      expect(response.statusCode, url).toBe(404);
-      expect(response.json()).toEqual({ error: "API route not found" });
-    }
   });
 
   it("validates the sign-in body", async () => {

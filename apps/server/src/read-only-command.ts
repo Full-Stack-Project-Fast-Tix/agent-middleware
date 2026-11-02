@@ -1,5 +1,5 @@
-// Whether a command only reads, for an agent whose profile cannot write. Codex
-// reports every command as `/usr/bin/bash -lc "..."`, and agents chain commands,
+// Whether a command only reads, for an agent whose profile cannot write. A
+// command may be reported as `/usr/bin/bash -lc "..."`, and agents chain commands,
 // so this parses that shell text. Anything it does not fully understand is not a
 // read: expansions, substitutions, redirects and unknown programs all fail closed.
 

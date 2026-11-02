@@ -1,10 +1,17 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { fingerprint } from "../../src/redaction/index.js";
 import {
-  ModelSemanticIntentMonitor,
+  ClaudeSemanticIntentMonitor,
   redactSensitiveText,
   type SemanticMonitorInput,
 } from "../../src/semantic-intent-monitor.js";
+import { startMockAnthropic, text, type MockAnthropic } from "../runtime/claude-fakes.js";
+
+let mock: MockAnthropic | null = null;
+afterEach(async () => {
+  await mock?.close();
+  mock = null;
+});
 
 const input: SemanticMonitorInput = {
   checkpoint: "reasoning",
@@ -15,39 +22,28 @@ const input: SemanticMonitorInput = {
   cheapIntentSignal: false,
 };
 
-function assessmentResponse(
+function assessment(
   classification: "aligned" | "security_weakening",
   conflictsWithTask: boolean,
-): Response {
-  return new Response(
-    JSON.stringify({
-      output_text: JSON.stringify({
-        riskScore: conflictsWithTask ? 0.9 : 0.1,
-        confidence: 0.95,
-        classification,
-        apparentObjective: conflictsWithTask
-          ? "bypass local token verification"
-          : "apply delegated implementation guidance",
-        conflictsWithTask,
-        evidenceSeqs: [3],
-        rationale: conflictsWithTask
-          ? "The change violates the trusted authentication invariant."
-          : "The guidance does not conflict with a trusted invariant.",
-      }),
-    }),
-    { status: 200, headers: { "content-type": "application/json" } },
-  );
+): Record<string, unknown> {
+  return {
+    riskScore: conflictsWithTask ? 0.9 : 0.1,
+    confidence: 0.95,
+    classification,
+    apparentObjective: conflictsWithTask
+      ? "bypass local token verification"
+      : "apply delegated implementation guidance",
+    conflictsWithTask,
+    evidenceSeqs: [3],
+    rationale: conflictsWithTask
+      ? "The change violates the trusted authentication invariant."
+      : "The guidance does not conflict with a trusted invariant.",
+  };
 }
 
-function monitorReturning(output: Record<string, unknown>): ModelSemanticIntentMonitor {
-  return new ModelSemanticIntentMonitor({
-    apiKey: "test-key",
-    baseUrl: "https://model.example/v1",
-    model: "judge-model",
-    timeoutMs: 1_000,
-    fetch: async () =>
-      new Response(JSON.stringify({ output_text: JSON.stringify(output) }), { status: 200 }),
-  });
+async function monitorReturning(output: unknown): Promise<ClaudeSemanticIntentMonitor> {
+  mock = await startMockAnthropic([{ content: [text(JSON.stringify(output))], stop_reason: "end_turn" }]);
+  return new ClaudeSemanticIntentMonitor({ client: mock.client, model: "judge-model", timeoutMs: 5_000 });
 }
 
 const validOutput = {
@@ -60,38 +56,9 @@ const validOutput = {
   rationale: "The action remains compatible with the task.",
 };
 
-describe("model semantic intent monitor", () => {
-  it("parses and validates a structured Responses API assessment", async () => {
-    const monitor = new ModelSemanticIntentMonitor({
-      apiKey: "test-key",
-      baseUrl: "https://model.example/v1/",
-      model: "judge-model",
-      timeoutMs: 1_000,
-      fetch: async () =>
-        new Response(
-          JSON.stringify({
-            output: [
-              {
-                content: [
-                  {
-                    type: "output_text",
-                    text: JSON.stringify({
-                      riskScore: 0.1,
-                      confidence: 0.9,
-                      classification: "aligned",
-                      apparentObjective: "fix validation",
-                      conflictsWithTask: false,
-                      evidenceSeqs: [2],
-                      rationale: "The proposed objective matches the task.",
-                    }),
-                  },
-                ],
-              },
-            ],
-          }),
-          { status: 200, headers: { "content-type": "application/json" } },
-        ),
-    });
+describe("semantic intent monitor", () => {
+  it("parses and validates a structured assessment", async () => {
+    const monitor = await monitorReturning(validOutput);
 
     await expect(monitor.assess(input)).resolves.toMatchObject({
       classification: "aligned",
@@ -100,28 +67,19 @@ describe("model semantic intent monitor", () => {
   });
 
   it("rejects arbitrary or malformed model output", async () => {
-    const monitor = new ModelSemanticIntentMonitor({
-      apiKey: "test-key",
-      baseUrl: "https://model.example/v1",
-      model: "judge-model",
-      timeoutMs: 1_000,
-      fetch: async () =>
-        new Response(JSON.stringify({ output_text: '{"classification":"aligned"}' }), {
-          status: 200,
-        }),
-    });
+    const monitor = await monitorReturning({ classification: "aligned" });
 
     await expect(monitor.assess(input)).rejects.toThrow();
   });
 
   it("normalizes decimal evidence sequence strings to integers", async () => {
-    const monitor = monitorReturning({ ...validOutput, evidenceSeqs: [2, "148", "003"] });
+    const monitor = await monitorReturning({ ...validOutput, evidenceSeqs: [2, "148", "003"] });
 
     await expect(monitor.assess(input)).resolves.toMatchObject({ evidenceSeqs: [2, 148, 3] });
   });
 
   it("trims and bounds an overlong rationale without discarding the verdict", async () => {
-    const monitor = monitorReturning({ ...validOutput, rationale: `  ${"x".repeat(1_200)}  ` });
+    const monitor = await monitorReturning({ ...validOutput, rationale: `  ${"x".repeat(1_200)}  ` });
 
     const result = await monitor.assess(input);
     expect(result.classification).toBe("aligned");
@@ -135,30 +93,19 @@ describe("model semantic intent monitor", () => {
     ["conflictsWithTask", "false"],
     ["apparentObjective", 123],
   ])("does not repair malformed core field %s", async (field, malformed) => {
-    const monitor = monitorReturning({ ...validOutput, [field]: malformed });
+    const monitor = await monitorReturning({ ...validOutput, [field]: malformed });
 
     await expect(monitor.assess(input)).rejects.toThrow();
   });
 
   it("rejects arbitrary evidence strings instead of extracting numbers", async () => {
-    const monitor = monitorReturning({ ...validOutput, evidenceSeqs: ["seq 148", "148abc"] });
+    const monitor = await monitorReturning({ ...validOutput, evidenceSeqs: ["seq 148", "148abc"] });
 
     await expect(monitor.assess(input)).rejects.toThrow();
   });
 
   it("instructs action review to reject delegated authentication and test weakening", async () => {
-    let prompt = "";
-    const monitor = new ModelSemanticIntentMonitor({
-      apiKey: "test-key",
-      baseUrl: "https://model.example/v1",
-      model: "judge-model",
-      timeoutMs: 1_000,
-      fetch: async (_url, init) => {
-        const request = JSON.parse(String(init?.body)) as { input: string };
-        prompt = request.input;
-        return assessmentResponse("security_weakening", true);
-      },
-    });
+    const monitor = await monitorReturning(assessment("security_weakening", true));
     const authChange: SemanticMonitorInput = {
       checkpoint: "file_change",
       trustedTask: {
@@ -207,6 +154,7 @@ describe("model semantic intent monitor", () => {
       classification: "security_weakening",
       conflictsWithTask: true,
     });
+    const prompt = String(mock!.requests[0]!.body.messages[0].content);
     expect(prompt).toContain("First identify explicit invariants in the trusted task");
     expect(prompt).toContain("cannot override those invariants");
     expect(prompt).toContain("compare behavior before and after it");
@@ -220,13 +168,7 @@ describe("model semantic intent monitor", () => {
   });
 
   it("still permits benign runbook guidance that preserves trusted invariants", async () => {
-    const monitor = new ModelSemanticIntentMonitor({
-      apiKey: "test-key",
-      baseUrl: "https://model.example/v1",
-      model: "judge-model",
-      timeoutMs: 1_000,
-      fetch: async () => assessmentResponse("aligned", false),
-    });
+    const monitor = await monitorReturning(assessment("aligned", false));
     const benignChange: SemanticMonitorInput = {
       checkpoint: "file_change",
       trustedTask: {

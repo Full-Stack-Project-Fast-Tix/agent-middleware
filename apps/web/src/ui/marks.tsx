@@ -149,7 +149,7 @@ const STATUS_STYLES: Readonly<Record<string, StatusStyle>> = {
   failed: failed("Failed"),
   cancelled: stopped("Cancelled"),
   skipped: stopped("Skipped"),
-  // Agent statuses in the Playground.
+  // Agent statuses.
   busy: working("Busy"),
   stopped: stopped("Stopped"),
   error: failed("Error"),

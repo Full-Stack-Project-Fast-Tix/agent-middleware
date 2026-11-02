@@ -9,8 +9,8 @@ if [[ ! -f .env ]]; then
   echo "Created .env from .env.example."
 fi
 
-mkdir -p data workspaces codex-home
+mkdir -p data workspaces
 
 echo "Next:"
-echo "  1. Fill ANTHROPIC_API_KEY in .env (or set MODEL_PROVIDER and use Codex)"
+echo "  1. Fill ANTHROPIC_API_KEY in .env"
 echo "  2. Run: docker compose up --build"

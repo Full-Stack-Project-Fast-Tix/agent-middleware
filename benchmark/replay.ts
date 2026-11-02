@@ -14,7 +14,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { runChecks } from "../apps/server/src/checks.js";
 import { loadConfig } from "../apps/server/src/config.js";
-import { buildGuardChecks } from "../apps/server/src/container-codex-runner.js";
+import { buildGuardChecks } from "../apps/server/src/guard-checks.js";
 import { learnFrom, type Reflection } from "../apps/server/src/reflections.js";
 import { buildTrialResult } from "./metrics.js";
 import { readTrace } from "./trace-io.js";
@@ -74,8 +74,6 @@ export function runReplay(opts: ReplayOptions): TrialResult[] {
   for (const gc of opts.guardConfigs) {
     const config = loadConfig({
       NODE_ENV: "test",
-      MODEL_PROVIDER: "openai",
-      OPENAI_API_KEY: "replay-not-used",
       ...gc.env,
     } as NodeJS.ProcessEnv);
     const reflectionOn = config.reflectionGuardEnabled;
@@ -146,8 +144,6 @@ function rescore(rows: ManifestRow[], opts: ReplayOptions): TrialResult[] {
 
     const config = loadConfig({
       NODE_ENV: "test",
-      MODEL_PROVIDER: "openai",
-      OPENAI_API_KEY: "replay-not-used",
       ...(CONFIG_ENV[row.guardConfig] ?? {}),
     } as NodeJS.ProcessEnv);
 

@@ -1,68 +1,45 @@
 import { existsSync } from "node:fs";
+import { z } from "zod";
 import { describe, expect, it } from "vitest";
 import { createApp } from "../../src/app.js";
 import { loadConfig } from "../../src/config.js";
 import { HttpError } from "../../src/errors.js";
-import type { AgentService } from "../../src/agent-service.js";
 
-const service = {
-  listAgents: () => [],
-  systemInfo: async () => ({}),
-} as unknown as AgentService;
+/** The answers every route shares, whatever it does. */
+function addRoutes(app: Awaited<ReturnType<typeof createApp>>) {
+  app.post("/api/echo", async (request) => z.object({ name: z.string() }).parse(request.body));
+  app.get("/api/missing", async () => {
+    throw new HttpError(404, "Agent not found");
+  });
+}
 
 describe("HTTP boundary", () => {
   it("protects API routes with the configured shared token", async () => {
-    const app = await createApp(
-      loadConfig({ NODE_ENV: "test", APP_AUTH_TOKEN: "a-strong-test-token" }),
-      service,
-    );
-    const denied = await app.inject({ method: "GET", url: "/api/agents" });
+    const app = await createApp(loadConfig({ NODE_ENV: "test", APP_AUTH_TOKEN: "a-strong-test-token" }));
+    addRoutes(app);
+    const denied = await app.inject({ method: "GET", url: "/api/missing" });
     expect(denied.statusCode).toBe(401);
 
     const allowed = await app.inject({
       method: "GET",
-      url: "/api/agents",
+      url: "/api/missing",
       headers: { authorization: "Bearer a-strong-test-token" },
     });
-    expect(allowed.statusCode).toBe(200);
+    expect(allowed.statusCode).toBe(404);
     await app.close();
   });
 
-  it("keeps the API's error answers in production, where the web files are served too", async () => {
-    const app = await createApp(
-      loadConfig({ NODE_ENV: "production", HOST: "127.0.0.1" }),
-      { ...service, getAgent: () => { throw new HttpError(404, "Agent not found"); } } as unknown as AgentService,
-    );
+  it("answers invalid input with its details, and an HttpError with its status", async () => {
+    const app = await createApp(loadConfig({ NODE_ENV: "test" }));
+    addRoutes(app);
 
-    const invalid = await app.inject({ method: "POST", url: "/api/agents", payload: {} });
+    const invalid = await app.inject({ method: "POST", url: "/api/echo", payload: {} });
     expect(invalid.statusCode).toBe(400);
     expect(invalid.json().details).toBeDefined();
 
-    const missing = await app.inject({ method: "GET", url: "/api/agents/00000000-0000-4000-8000-000000000001" });
+    const missing = await app.inject({ method: "GET", url: "/api/missing" });
     expect(missing.statusCode).toBe(404);
     expect(missing.json()).toEqual({ error: "Agent not found" });
-    await app.close();
-  });
-
-  it("says plainly that the Playground needs Codex under the Claude provider", async () => {
-    let sent = false;
-    const app = await createApp(
-      loadConfig({ NODE_ENV: "test", MODEL_PROVIDER: "anthropic", ANTHROPIC_API_KEY: "sk-ant-test" }),
-      {
-        sendMessage: async () => {
-          sent = true;
-        },
-      } as unknown as AgentService,
-    );
-    const response = await app.inject({
-      method: "POST",
-      url: "/api/agents/00000000-0000-4000-8000-000000000001/messages",
-      payload: { content: "hello" },
-    });
-    expect(response.statusCode).toBe(503);
-    expect(response.json().error).toContain("Codex");
-    expect(response.json().error).toContain("MODEL_PROVIDER=anthropic");
-    expect(sent).toBe(false);
     await app.close();
   });
 
@@ -70,33 +47,20 @@ describe("HTTP boundary", () => {
   const webBuilt = existsSync(new URL("../../../web/dist/index.html", import.meta.url));
 
   it.skipIf(!webBuilt)("sends the same error body in production as in development", async () => {
-    const app = await createApp(
-      loadConfig({ NODE_ENV: "production", HOST: "127.0.0.1", APP_AUTH_MODE: "password", DATABASE_URL: "unused", MODEL_PROVIDER: "anthropic", ANTHROPIC_API_KEY: "sk-ant-test" }),
-      {
-        getAgent: () => {
-          throw new HttpError(404, "Agent not found");
-        },
-      } as unknown as AgentService,
-    );
-    const missing = await app.inject({ method: "GET", url: "/api/agents/00000000-0000-4000-8000-000000000001" });
+    const app = await createApp(loadConfig({ NODE_ENV: "production", HOST: "127.0.0.1" }));
+    addRoutes(app);
+    const missing = await app.inject({ method: "GET", url: "/api/missing" });
     expect(missing.statusCode).toBe(404);
     expect(missing.json()).toEqual({ error: "Agent not found" });
-
-    const legacy = await app.inject({
-      method: "POST",
-      url: "/api/agents/00000000-0000-4000-8000-000000000001/messages",
-      payload: { content: "hello" },
-    });
-    expect(legacy.statusCode).toBe(503);
-    expect(legacy.json().error).toContain("MODEL_PROVIDER=anthropic");
     await app.close();
   });
 
   it("preserves Fastify client error status codes", async () => {
-    const app = await createApp(loadConfig({ NODE_ENV: "test" }), service);
+    const app = await createApp(loadConfig({ NODE_ENV: "test" }));
+    addRoutes(app);
     const malformed = await app.inject({
       method: "POST",
-      url: "/api/agents",
+      url: "/api/echo",
       headers: { "content-type": "application/json" },
       payload: "{not-json",
     });
@@ -104,75 +68,11 @@ describe("HTTP boundary", () => {
 
     const oversized = await app.inject({
       method: "POST",
-      url: "/api/agents",
+      url: "/api/echo",
       headers: { "content-type": "application/json" },
       payload: JSON.stringify({ name: "x".repeat(1_100_000) }),
     });
     expect(oversized.statusCode).toBe(413);
-    await app.close();
-  });
-
-  it("serves the read-only Admin overview through the normal API boundary", async () => {
-    const adminService = {
-      adminOverview: () => ({
-        totals: { runs: 2, intervenedRuns: 1, blockedActions: 1, redirects: 0, approvalRequests: 0, approvals: 0, denials: 0, timeouts: 0, recurringPatterns: 0, needsAttention: 0 },
-        categories: [{ category: "data_exfiltration", count: 1 }],
-        interventions: [],
-        learnedPatterns: [],
-      }),
-    } as unknown as AgentService;
-    const app = await createApp(loadConfig({ NODE_ENV: "test" }), adminService);
-
-    const response = await app.inject({ method: "GET", url: "/api/admin/overview" });
-
-    expect(response.statusCode).toBe(200);
-    expect(response.json().totals).toMatchObject({ runs: 2, blockedActions: 1 });
-    await app.close();
-  });
-
-  it("resolves a one-shot run approval through the narrow API", async () => {
-    const runId = "11111111-1111-4111-8111-111111111111";
-    const approvalId = "22222222-2222-4222-8222-222222222222";
-    const calls: unknown[] = [];
-    const approvalService = {
-      resolveApproval: async (...args: unknown[]) => {
-        calls.push(args);
-        return { id: runId, status: "running", pendingApproval: null };
-      },
-    } as unknown as AgentService;
-    const app = await createApp(loadConfig({ NODE_ENV: "test" }), approvalService);
-
-    const response = await app.inject({
-      method: "POST",
-      url: `/api/runs/${runId}/approval`,
-      payload: { approvalId, decision: "approve" },
-    });
-
-    expect(response.statusCode).toBe(200);
-    expect(calls).toEqual([[runId, approvalId, "approve"]]);
-    expect(response.json()).toEqual({
-      run: expect.objectContaining({ id: runId, status: "running", pendingApproval: null }),
-    });
-    await app.close();
-  });
-
-  it("returns conflict for a stale approval id", async () => {
-    const runId = "11111111-1111-4111-8111-111111111111";
-    const approvalId = "22222222-2222-4222-8222-222222222222";
-    const approvalService = {
-      resolveApproval: async () => {
-        throw new HttpError(409, "Approval is stale or has already been resolved");
-      },
-    } as unknown as AgentService;
-    const app = await createApp(loadConfig({ NODE_ENV: "test" }), approvalService);
-
-    const response = await app.inject({
-      method: "POST",
-      url: `/api/runs/${runId}/approval`,
-      payload: { approvalId, decision: "deny" },
-    });
-
-    expect(response.statusCode).toBe(409);
     await app.close();
   });
 });

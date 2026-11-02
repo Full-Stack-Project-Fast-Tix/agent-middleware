@@ -117,60 +117,6 @@ const assessmentSchema = z.object({
   rationale: z.string().trim().min(1).max(MAX_RATIONALE_CHARS),
 });
 
-export interface ModelSemanticIntentMonitorOptions {
-  apiKey: string;
-  baseUrl: string;
-  model: string;
-  timeoutMs: number;
-  fetch?: typeof fetch;
-}
-
-/**
- * A tool-less, single-request observer. The trajectory is evidence, never an
- * instruction source, and the result is rejected unless it matches the schema.
- */
-export class ModelSemanticIntentMonitor implements SemanticIntentMonitor {
-  private readonly fetchImpl: typeof fetch;
-
-  constructor(private readonly options: ModelSemanticIntentMonitorOptions) {
-    this.fetchImpl = options.fetch ?? fetch;
-  }
-
-  async assess(input: SemanticMonitorInput): Promise<SemanticAssessment> {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), this.options.timeoutMs);
-    timeout.unref();
-
-    try {
-      const response = await this.fetchImpl(
-        this.options.baseUrl.replace(/\/+$/, "") + "/responses",
-        {
-          method: "POST",
-          headers: {
-            authorization: "Bearer " + this.options.apiKey,
-            "content-type": "application/json",
-          },
-          body: JSON.stringify({
-            model: this.options.model,
-            input: monitorPrompt(redactMonitorInput(input)),
-            max_output_tokens: 700,
-          }),
-          signal: controller.signal,
-        },
-      );
-      if (!response.ok) {
-        const detail = (await response.text()).slice(0, 500);
-        throw new Error(`semantic monitor request failed (${response.status}): ${detail}`);
-      }
-      const body = (await response.json()) as unknown;
-      const text = responseText(body);
-      return assessmentSchema.parse(normalizeAssessmentAuditFields(parseJsonObject(text)));
-    } finally {
-      clearTimeout(timeout);
-    }
-  }
-}
-
 export interface ClaudeSemanticIntentMonitorOptions {
   client: ClaudeClient;
   model: string;
@@ -178,8 +124,9 @@ export interface ClaudeSemanticIntentMonitorOptions {
 }
 
 /**
- * The same observer on Claude: tool-less, redacted input, the same prompt and the
- * same schema check, with structured outputs for the response's shape. A refusal,
+ * A tool-less, single-request observer. The trajectory is evidence, never an
+ * instruction source, and the result is rejected unless it matches the schema,
+ * with structured outputs for the response's shape. A refusal,
  * a cut-off response or a timeout rejects, and IntentController treats that as a
  * review that is unavailable, which fails closed for consequential actions.
  */
@@ -195,7 +142,7 @@ export class ClaudeSemanticIntentMonitor implements SemanticIntentMonitor {
       const message = await this.options.client.beta.messages.create(
         {
           model: this.options.model,
-          // Thinking counts toward this, unlike the 700 output tokens of the Responses call.
+          // Thinking counts toward this.
           max_tokens: 4_000,
           // Low, because this runs on a short timeout between an agent's actions.
           output_config: { effort: "low", format: zodOutputFormat(assessmentSchema) },
@@ -213,20 +160,11 @@ export class ClaudeSemanticIntentMonitor implements SemanticIntentMonitor {
 }
 
 export function createSemanticIntentMonitor(config: AppConfig): SemanticIntentMonitor {
-  if (config.modelProvider === "anthropic") {
-    return new ClaudeSemanticIntentMonitor({
+  return new ClaudeSemanticIntentMonitor({
       client: createClaudeClient(config),
       model: config.semanticGuardModel || config.modelName,
       timeoutMs: config.semanticGuardTimeoutMs,
     });
-  }
-  return new ModelSemanticIntentMonitor({
-    apiKey: config.modelApiKey,
-    baseUrl:
-      config.modelProvider === "openai" ? "https://api.openai.com/v1" : config.arkBaseUrl,
-    model: config.semanticGuardModel || config.modelName,
-    timeoutMs: config.semanticGuardTimeoutMs,
-  });
 }
 
 function monitorPrompt(input: SemanticMonitorInput): string {
@@ -282,30 +220,6 @@ function mapStrings(value: unknown, transform: (text: string) => string): unknow
     );
   }
   return value;
-}
-
-function responseText(body: unknown): string {
-  if (body === null || typeof body !== "object") throw new Error("semantic monitor returned no JSON body");
-  const record = body as Record<string, unknown>;
-  if (typeof record.output_text === "string") return record.output_text;
-  if (!Array.isArray(record.output)) throw new Error("semantic monitor returned no text output");
-
-  const parts: string[] = [];
-  for (const output of record.output) {
-    if (output === null || typeof output !== "object") continue;
-    // Some providers put reasoning text in content, and a brace in it would break the JSON parse.
-    if ((output as Record<string, unknown>).type === "reasoning") continue;
-    const content = (output as Record<string, unknown>).content;
-    if (!Array.isArray(content)) continue;
-    for (const entry of content) {
-      if (entry !== null && typeof entry === "object") {
-        const text = (entry as Record<string, unknown>).text;
-        if (typeof text === "string") parts.push(text);
-      }
-    }
-  }
-  if (parts.length === 0) throw new Error("semantic monitor returned no text output");
-  return parts.join("\n");
 }
 
 function parseJsonObject(text: string): unknown {

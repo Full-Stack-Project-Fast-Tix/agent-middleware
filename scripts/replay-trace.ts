@@ -26,7 +26,7 @@
 import { readFileSync } from "node:fs";
 import { loadConfig } from "../apps/server/src/config.js";
 import { runChecks, type Finding } from "../apps/server/src/checks.js";
-import { buildGuardChecks } from "../apps/server/src/container-codex-runner.js";
+import { buildGuardChecks } from "../apps/server/src/guard-checks.js";
 import type { Reflection } from "../apps/server/src/reflections.js";
 import type { TraceRecord } from "../apps/server/src/trace.js";
 
@@ -122,8 +122,6 @@ function readReflections(path: string | null): Reflection[] {
 function replayConfig(options: Options) {
   return loadConfig({
     NODE_ENV: "test",
-    MODEL_PROVIDER: "openai",
-    OPENAI_API_KEY: "replay-not-used",
     GUARDRAIL_EGRESS_ENABLED: String(options.egress),
     GUARDRAIL_REFLECTION_ENABLED: String(options.reflection),
     ...(options.blobMinChars === null

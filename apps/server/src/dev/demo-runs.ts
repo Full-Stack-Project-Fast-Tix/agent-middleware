@@ -7,7 +7,7 @@
 //
 //   DemoMiddleware  a few fixed rules instead of policy, guards and semantic review
 //   DemoPlanner     a fixed three-step plan instead of a model call
-//   DemoRuntime     scripted actions with pauses instead of Codex in a container
+//   DemoRuntime     scripted actions with pauses instead of Claude and a container
 //
 // Nothing here executes anything: DemoRuntime only proposes actions to the
 // gate and records the answers. That is the only reason a rule-of-thumb
