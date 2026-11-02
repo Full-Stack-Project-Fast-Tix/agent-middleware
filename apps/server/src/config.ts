@@ -3,6 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadEnvFile } from "node:process";
 import { z } from "zod";
+import { expandHome } from "./workspace-source.js";
 
 // Load the repository-level .env for local npm start/dev commands. Existing
 // process environment variables keep precedence, so CI and deployments can
@@ -32,6 +33,8 @@ const envSchema = z.object({
   RUN_TOKEN_BUDGET: z.coerce.number().int().positive().default(2_000_000),
   APP_DATA_DIR: z.string().default(path.resolve(".data")),
   AGENT_WORKSPACE_ROOT: z.string().default(path.resolve("workspaces")),
+  /** Comma-separated folders a security admin may pick a new workspace's folder inside. Empty: nobody may. */
+  WORKSPACE_SOURCE_ROOTS: z.string().default(""),
   /** Enable broad network access for agent tool commands in unguarded executions. A profile can still deny it. */
   AGENT_NETWORK_ACCESS: z
     .string()
@@ -177,6 +180,10 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env) {
     logLevel: env.LOG_LEVEL,
     dataDirectory: resolveConfiguredPath(env.APP_DATA_DIR),
     workspaceRoot: resolveConfiguredPath(env.AGENT_WORKSPACE_ROOT),
+    workspaceSourceRoots: env.WORKSPACE_SOURCE_ROOTS.split(",")
+      .map((value) => value.trim())
+      .filter((value) => value !== "")
+      .map((value) => path.resolve(expandHome(value))),
     agentNetworkAccess: env.AGENT_NETWORK_ACCESS,
     runArtifactRetentionDays: env.RUN_ARTIFACT_RETENTION_DAYS,
     runTokenBudget: env.RUN_TOKEN_BUDGET,

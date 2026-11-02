@@ -168,7 +168,8 @@ profiles and policies is decision 21. `npm run db:admin -w
 @launchpad/server` bootstraps the first users and registers host project paths;
 it also lists users/workspaces and can create empty workspaces. A
 `security_admin` can create accounts attached to their workspace, manage its
-members, and create additional empty workspaces (contract decision 15). Failed sign-ins
+members, and create additional workspaces, with a project folder only inside the
+operator's `WORKSPACE_SOURCE_ROOTS` (contract decisions 15 and 32). Failed sign-ins
 are limited by shared PostgreSQL counters: five attempts per account and 30 per
 source address within 15 minutes. Authentication limits are consistent across
 restarts and replicas. Run streams detect commits made by another instance and

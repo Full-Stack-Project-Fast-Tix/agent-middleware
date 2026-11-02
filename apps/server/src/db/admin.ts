@@ -9,6 +9,7 @@ import {
 } from "@launchpad/shared";
 import type pg from "pg";
 import { HttpError } from "../errors.js";
+import { allowedSourcePath } from "../workspace-source.js";
 import { hashPassword } from "./postgres-identity.js";
 import { fromRow, insertRow } from "./rows.js";
 
@@ -307,15 +308,19 @@ export async function addWorkspace(
   });
 }
 
-/** A security admin may create an empty workspace; repository paths stay operator-controlled. */
+/**
+ * A security admin may create a workspace, with a folder only inside the
+ * operator's `sourceRoots`. The folder is checked after the role, so nobody
+ * else learns which paths exist.
+ */
 export async function createWorkspaceForAdmin(
   pool: pg.Pool,
-  input: { authorizationWorkspaceId: string; actorUserId: string; name: string },
+  input: { authorizationWorkspaceId: string; actorUserId: string; name: string; sourcePath?: string; sourceRoots?: readonly string[] },
 ): Promise<{ id: string; name: string }> {
   return changeMembers(pool, input.authorizationWorkspaceId, input.actorUserId, async (db, actor) => {
     const result = await createWorkspaceRows(db, {
       name: input.name.trim(),
-      sourcePath: null,
+      sourcePath: input.sourcePath === undefined ? null : await allowedSourcePath(input.sourcePath, input.sourceRoots ?? []),
       ownerId: input.actorUserId,
       actor,
     });
@@ -337,7 +342,10 @@ async function createWorkspaceRows(
   );
   await insertRow(db, "workspaces", { id: workspaceId, name: input.name, sourcePath: input.sourcePath, createdByUserId: input.ownerId, ...stamps() });
   await insertRow(db, "workspace_members", { workspaceId, userId: input.ownerId, role: "security_admin", joinedAt: new Date().toISOString() });
-  await audit(db, input.actor, "workspace.created", workspaceId, { ownerUserId: input.ownerId });
+  await audit(db, input.actor, "workspace.created", workspaceId, {
+    ownerUserId: input.ownerId,
+    ...(input.sourcePath === null ? {} : { sourcePath: input.sourcePath }),
+  });
   await audit(db, input.actor, "member.added", workspaceId, { userId: input.ownerId, role: "security_admin" });
   for (const [role, { description, capabilities }] of Object.entries(STANDARD_AGENTS)) {
     const name = role[0]!.toUpperCase() + role.slice(1);

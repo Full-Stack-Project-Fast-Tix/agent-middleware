@@ -1,4 +1,7 @@
 import { randomUUID } from "node:crypto";
+import { mkdir, mkdtemp, realpath, rm, symlink } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import type { FastifyInstance } from "fastify";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -246,6 +249,48 @@ describe.skipIf(!url)("member routes", () => {
     await setMember(pool!, { workspaceId: team.id, email: team.developer.email, role: "security_admin" });
     expect((await change(team.id, team.admin, team.developer.id, "auditor")).statusCode).toBe(200);
     expect((await add(team.id, team.developer, team.outsider.email)).statusCode).toBe(403);
+  });
+});
+
+describe.skipIf(!url)("a new workspace's folder", () => {
+  it("must be inside an allowed root, symlinks resolved, and is checked only for security admins", async () => {
+    const base = await realpath(await mkdtemp(path.join(tmpdir(), "agentguard-roots-")));
+    await mkdir(path.join(base, "allowed", "project"), { recursive: true });
+    await mkdir(path.join(base, "secret"));
+    await symlink(path.join(base, "secret"), path.join(base, "allowed", "escape"));
+    const rooted = await createApp(loadConfig({ NODE_ENV: "test", WORKSPACE_SOURCE_ROOTS: path.join(base, "allowed") }), {
+      identity: new PostgresIdentity(pool!),
+      memberDatabase: pool!,
+    });
+    try {
+      const team = await workspace();
+      const create = (target: FastifyInstance, who: Person, sourcePath: string) =>
+        target.inject({
+          method: "POST",
+          url: "/api/workspaces",
+          headers: who.headers,
+          payload: { name: "Picked", authorizationWorkspaceId: team.id, sourcePath },
+        });
+
+      const created = await create(rooted, team.admin, path.join(base, "allowed", "project"));
+      expect(created.statusCode).toBe(201);
+      const id = created.json().workspace.id as string;
+      const { rows } = await pool!.query<{ source_path: string }>("SELECT source_path FROM workspaces WHERE id = $1", [id]);
+      expect(rows[0]!.source_path).toBe(path.join(base, "allowed", "project"));
+      expect((await auditFor(id)).find((event) => event.event_type === "workspace.created")!.metadata.sourcePath).toBe(rows[0]!.source_path);
+
+      expect((await create(rooted, team.admin, path.join(base, "secret"))).statusCode).toBe(400);
+      expect((await create(rooted, team.admin, path.join(base, "allowed", "escape"))).statusCode).toBe(400);
+      expect((await create(rooted, team.admin, path.join(base, "allowed", "missing"))).statusCode).toBe(400);
+      expect((await create(rooted, team.admin, "allowed/project")).statusCode).toBe(400);
+      // The role is checked first, so a developer cannot probe which folders exist.
+      expect((await create(rooted, team.developer, path.join(base, "missing"))).statusCode).toBe(403);
+      // With no roots configured, nobody may pick a folder.
+      expect((await create(app!, team.admin, path.join(base, "allowed", "project"))).statusCode).toBe(400);
+    } finally {
+      await rooted.close();
+      await rm(base, { recursive: true, force: true });
+    }
   });
 });
 

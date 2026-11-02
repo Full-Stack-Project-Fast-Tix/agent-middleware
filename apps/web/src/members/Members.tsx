@@ -113,6 +113,7 @@ function WorkspaceMembers({ workspaceId, workspaceName, viewerId, reloadWorkspac
   const [newPassword, setNewPassword] = useState("");
   const [creatingAccount, setCreatingAccount] = useState(false);
   const [workspaceNameInput, setWorkspaceNameInput] = useState("");
+  const [workspaceFolderInput, setWorkspaceFolderInput] = useState("");
   const [creatingWorkspace, setCreatingWorkspace] = useState(false);
 
   const latestLoad = useRef(0);
@@ -255,8 +256,14 @@ function WorkspaceMembers({ workspaceId, workspaceName, viewerId, reloadWorkspac
     setActionError(null);
     setCreatingWorkspace(true);
     try {
-      const workspace = await membersApi.createWorkspace({ name: workspaceNameInput.trim(), authorizationWorkspaceId: workspaceId });
+      const folder = workspaceFolderInput.trim();
+      const workspace = await membersApi.createWorkspace({
+        name: workspaceNameInput.trim(),
+        authorizationWorkspaceId: workspaceId,
+        ...(folder === "" ? {} : { sourcePath: folder }),
+      });
       setWorkspaceNameInput("");
+      setWorkspaceFolderInput("");
       await reloadWorkspaces();
       selectWorkspace(workspace.id);
     } catch (reason) {
@@ -379,12 +386,13 @@ function WorkspaceMembers({ workspaceId, workspaceName, viewerId, reloadWorkspac
                 <Select label="Role" value={role} onChange={setRole} options={ROLE_OPTIONS} />
                 <Button type="submit" variant="primary" busy={creatingAccount} disabled={!email.trim() || !newName.trim() || newPassword.length < 12}>Create account</Button>
               </form>
-              <h2>Create an empty workspace</h2>
+              <h2>Create a workspace</h2>
               <form className="members-add" onSubmit={(event) => void createWorkspace(event)}>
                 <label>Workspace name<input value={workspaceNameInput} onChange={(event) => setWorkspaceNameInput(event.target.value)} maxLength={120} required /></label>
+                <label>Project folder (optional)<input value={workspaceFolderInput} onChange={(event) => setWorkspaceFolderInput(event.target.value)} maxLength={4096} placeholder="~/projects/app" autoComplete="off" spellCheck={false} /></label>
                 <Button type="submit" variant="primary" busy={creatingWorkspace} disabled={!workspaceNameInput.trim()}>Create workspace</Button>
               </form>
-              <p className="meta">New workspaces start empty with the standard agents. A platform operator must register a host project path before Runs can copy a codebase.</p>
+              <p className="meta">New workspaces get the standard agents. Each Run copies the project folder, a full path on the server, and leaves the folder itself unchanged. The folder must be inside one the server operator allows with WORKSPACE_SOURCE_ROOTS. Leave it blank for an empty workspace.</p>
             </section>
           )}
 

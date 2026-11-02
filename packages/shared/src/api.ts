@@ -425,6 +425,8 @@ export type CreateMemberAccountRequest = z.infer<typeof createMemberAccountReque
 export const createWorkspaceRequestSchema = z.object({
   name: requiredTextSchema.max(120),
   authorizationWorkspaceId: idSchema,
+  /** A folder on the server for Runs to copy. Only inside the server's WORKSPACE_SOURCE_ROOTS. */
+  sourcePath: requiredTextSchema.max(4096).optional(),
 });
 export type CreateWorkspaceRequest = z.infer<typeof createWorkspaceRequestSchema>;
 

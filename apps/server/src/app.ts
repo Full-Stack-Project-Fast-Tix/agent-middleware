@@ -164,7 +164,7 @@ export async function createApp(
     registerRunRoutes(app, extensions.runs, config.dataDirectory);
   }
   if (extensions.identity && extensions.memberDatabase) {
-    registerMemberRoutes(app, extensions.memberDatabase);
+    registerMemberRoutes(app, extensions.memberDatabase, config.workspaceSourceRoots);
     registerWorkspaceConfigRoutes(app, extensions.memberDatabase);
   }
 

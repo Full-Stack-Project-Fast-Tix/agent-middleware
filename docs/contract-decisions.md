@@ -374,7 +374,7 @@ also create an account and attach it to that workspace in one transaction, and
 may create a new empty workspace as its first security admin. The new account's
 initial password must be delivered to that person through a secure channel.
 Host project paths and first-account bootstrap remain operator-only through
-`db:admin`: browser users must not point the server at arbitrary host paths, and
+`db:admin` (amended by decision 32): browser users must not point the server at arbitrary host paths, and
 there is no global platform-admin role yet.
 
 A workspace keeps at least one `security_admin`; the API answers 409 rather than
@@ -685,6 +685,19 @@ use it too.
 
 `.codex` stays on the working-copy denylist: it can hold a credential in a user's
 repository whichever agent runs.
+
+## 32. Security admins may pick a folder inside operator-allowed roots
+
+**Decision (2 November 2026):** This amends decision 15. When the operator sets
+`WORKSPACE_SOURCE_ROOTS` (comma-separated folders on the server), a
+`security_admin` may give a new workspace a project folder from the Members view,
+as long as it is inside one of those roots. The server resolves symlinks on both
+the folder and the roots before comparing, so a link cannot lead outside, and
+stores the resolved path. The role is checked before the folder, so other roles
+cannot probe which paths exist. `workspace.created` records the path. With the
+setting empty, which is the default, nothing changes from decision 15: only
+`db:admin` sets folders. Changing an existing workspace's folder stays
+operator-only.
 
 ## Guidance for P3's schema
 

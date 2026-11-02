@@ -18,13 +18,15 @@ import { addMember, changeMemberRole, createMemberAccount, createWorkspaceForAdm
 const workspaceParams = z.object({ workspaceId: z.guid() });
 const memberParams = workspaceParams.extend({ userId: z.guid() });
 
-export function registerMemberRoutes(app: FastifyInstance, pool: pg.Pool): void {
+export function registerMemberRoutes(app: FastifyInstance, pool: pg.Pool, sourceRoots: readonly string[] = []): void {
   app.post("/api/workspaces", async (request, reply) => {
     const input = createWorkspaceRequestSchema.parse(request.body);
     const created = await createWorkspaceForAdmin(pool, {
       authorizationWorkspaceId: input.authorizationWorkspaceId,
       actorUserId: signedInUser(request).id,
       name: input.name,
+      ...(input.sourcePath === undefined ? {} : { sourcePath: input.sourcePath }),
+      sourceRoots,
     });
     return reply.code(201).send({ workspace: workspaceSummarySchema.parse({ ...created, role: "security_admin" }) });
   });
