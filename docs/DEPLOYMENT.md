@@ -41,8 +41,12 @@ bootstrap and project-path registration remain operator-only. After signing in,
 a workspace security admin can create an account attached to that workspace,
 manage its roles, or create another workspace in the Members view: empty, or
 with a project folder inside one of the `WORKSPACE_SOURCE_ROOTS` the operator set
-(contract decision 32). Deliver
-new account passwords to their owners through a secure channel.
+(contract decision 32), or upload a ZIP from the Members view. ZIP uploads are
+limited to 10 MB compressed, 100 MB expanded, and 2,000 entries. Links, unsafe
+paths, oversized entries and known credential files are rejected. Validated
+files are stored under the app data directory and can only be attached before
+the workspace's first Run. Deliver new account passwords to their owners through
+a secure channel.
 
 For a demo, `seed-demo <source-path>` makes one workspace with one person per role,
 with the password from stdin.

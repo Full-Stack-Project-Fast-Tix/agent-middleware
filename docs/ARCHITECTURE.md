@@ -184,7 +184,9 @@ profiles and policies is decision 21. `npm run db:admin -w
 it also lists users/workspaces and can create empty workspaces. A
 `security_admin` can create accounts attached to their workspace, manage its
 members, and create additional workspaces, with a project folder only inside the
-operator's `WORKSPACE_SOURCE_ROOTS` (contract decisions 15 and 32). Password
+operator's `WORKSPACE_SOURCE_ROOTS` (contract decisions 15 and 32), or upload a
+validated ZIP to an empty workspace before its first Run. ZIP extraction is
+bounded and rejects links, traversal and known credential files. Password
 sign-in currently has no failed-attempt rate limit (contract decision 27 records
 the removed design). Run streams detect commits made by another instance and
 ask the client to reload its snapshot, but orchestration waiters, cancellation,

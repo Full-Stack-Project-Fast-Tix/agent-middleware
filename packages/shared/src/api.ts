@@ -134,6 +134,7 @@ export const apiPaths = {
   me: () => "/api/auth/me",
   workspaces: () => "/api/workspaces",
   workspaceCreate: () => "/api/workspaces",
+  workspaceArchive: (workspaceId: string) => `/api/workspaces/${encodeURIComponent(workspaceId)}/source/archive`,
   workspaceAgents: (workspaceId: string) => `/api/workspaces/${encodeURIComponent(workspaceId)}/agents`,
   workspaceVault: (workspaceId: string) => `/api/workspaces/${encodeURIComponent(workspaceId)}/vault/secrets`,
   workspaceVaultSecret: (workspaceId: string, name: string) =>
@@ -467,6 +468,8 @@ export type CreateWorkspaceRequest = z.infer<typeof createWorkspaceRequestSchema
 
 export const createdWorkspaceResponseSchema = z.object({ workspace: workspaceSummarySchema });
 export type CreatedWorkspaceResponse = z.infer<typeof createdWorkspaceResponseSchema>;
+
+export const uploadWorkspaceArchiveSchema = z.object({ archiveBase64: z.string().min(1).max(14_000_000) });
 
 /**
  * Workspace members, in password mode only.

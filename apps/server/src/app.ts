@@ -43,7 +43,7 @@ export async function createApp(
       level: config.logLevel,
       redact: ["req.headers.authorization", "req.headers.cookie"],
     },
-    bodyLimit: 1_048_576,
+    bodyLimit: 15 * 1024 * 1024,
   });
 
   await app.register(cors, {
@@ -164,7 +164,7 @@ export async function createApp(
     registerRunRoutes(app, extensions.runs, config.dataDirectory);
   }
   if (extensions.identity && extensions.memberDatabase) {
-    registerMemberRoutes(app, extensions.memberDatabase, config.workspaceSourceRoots);
+    registerMemberRoutes(app, extensions.memberDatabase, config.workspaceSourceRoots, config.dataDirectory);
     registerWorkspaceConfigRoutes(app, extensions.memberDatabase);
   }
 

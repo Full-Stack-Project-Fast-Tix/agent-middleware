@@ -33,6 +33,7 @@ export const AUDIT_EVENT_TYPES = [
   "member.removed",
   "user.created",
   "workspace.created",
+  "workspace.source_uploaded",
 ] as const;
 export const auditEventTypeSchema = z.enum(AUDIT_EVENT_TYPES);
 export type AuditEventType = z.infer<typeof auditEventTypeSchema>;

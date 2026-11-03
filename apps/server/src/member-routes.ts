@@ -1,5 +1,8 @@
 import type { FastifyInstance } from "fastify";
 import type pg from "pg";
+import { mkdir, mkdtemp, rename, rm } from "node:fs/promises";
+import path from "node:path";
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import {
   addWorkspaceMemberRequestSchema,
@@ -7,9 +10,12 @@ import {
   createWorkspaceRequestSchema,
   updateWorkspaceMemberRequestSchema,
   workspaceSummarySchema,
+  uploadWorkspaceArchiveSchema,
 } from "@launchpad/shared";
 import { signedInUser } from "./auth-routes.js";
-import { addMember, changeMemberRole, createMemberAccount, createWorkspaceForAdmin, listMembers, removeMember } from "./db/admin.js";
+import { addMember, attachWorkspaceSource, changeMemberRole, createMemberAccount, createWorkspaceForAdmin, listMembers, removeMember } from "./db/admin.js";
+import { extractWorkspaceZip } from "./workspace-archive.js";
+import { HttpError } from "./errors.js";
 
 // Workspace members, as specified in packages/shared/src/api.ts. Authentication
 // is the session hook. Authorisation is in db/admin.ts, because the role has to
@@ -18,7 +24,7 @@ import { addMember, changeMemberRole, createMemberAccount, createWorkspaceForAdm
 const workspaceParams = z.object({ workspaceId: z.guid() });
 const memberParams = workspaceParams.extend({ userId: z.guid() });
 
-export function registerMemberRoutes(app: FastifyInstance, pool: pg.Pool, sourceRoots: readonly string[] = []): void {
+export function registerMemberRoutes(app: FastifyInstance, pool: pg.Pool, sourceRoots: readonly string[] = [], dataDirectory = ".data"): void {
   app.post("/api/workspaces", async (request, reply) => {
     const input = createWorkspaceRequestSchema.parse(request.body);
     const created = await createWorkspaceForAdmin(pool, {
@@ -29,6 +35,27 @@ export function registerMemberRoutes(app: FastifyInstance, pool: pg.Pool, source
       sourceRoots,
     });
     return reply.code(201).send({ workspace: workspaceSummarySchema.parse({ ...created, role: "security_admin" }) });
+  });
+
+  app.post("/api/workspaces/:workspaceId/source/archive", async (request, reply) => {
+    const { workspaceId } = workspaceParams.parse(request.params);
+    const { archiveBase64 } = uploadWorkspaceArchiveSchema.parse(request.body);
+    const userId = signedInUser(request).id;
+    const parent = path.join(dataDirectory, "workspace-sources", workspaceId);
+    await mkdir(parent, { recursive: true });
+    const staging = await mkdtemp(path.join(parent, ".staging-"));
+    const sourcePath = path.join(parent, `project-${randomUUID()}`);
+    try {
+      await extractWorkspaceZip(archiveBase64, staging);
+      await rename(staging, sourcePath);
+      await attachWorkspaceSource(pool, { workspaceId, actorUserId: userId, sourcePath });
+      return reply.code(201).send({ message: "Project files uploaded and attached to the workspace." });
+    } catch (error) {
+      await rm(staging, { recursive: true, force: true });
+      await rm(sourcePath, { recursive: true, force: true });
+      if (error instanceof Error && !("statusCode" in error)) throw new HttpError(400, error.message);
+      throw error;
+    }
   });
 
   app.get("/api/workspaces/:workspaceId/members", async (request) => {

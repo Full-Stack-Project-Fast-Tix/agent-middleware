@@ -114,6 +114,7 @@ function WorkspaceMembers({ workspaceId, workspaceName, viewerId, reloadWorkspac
   const [creatingAccount, setCreatingAccount] = useState(false);
   const [workspaceNameInput, setWorkspaceNameInput] = useState("");
   const [workspaceFolderInput, setWorkspaceFolderInput] = useState("");
+  const [workspaceArchive, setWorkspaceArchive] = useState<File | null>(null);
   const [creatingWorkspace, setCreatingWorkspace] = useState(false);
 
   const latestLoad = useRef(0);
@@ -262,12 +263,14 @@ function WorkspaceMembers({ workspaceId, workspaceName, viewerId, reloadWorkspac
         authorizationWorkspaceId: workspaceId,
         ...(folder === "" ? {} : { sourcePath: folder }),
       });
+      if (workspaceArchive !== null) await membersApi.uploadWorkspaceArchive(workspace.id, workspaceArchive);
       setWorkspaceNameInput("");
       setWorkspaceFolderInput("");
+      setWorkspaceArchive(null);
       await reloadWorkspaces();
       selectWorkspace(workspace.id);
     } catch (reason) {
-      setActionError(reason instanceof Error ? reason.message : "The workspace could not be created.");
+      setActionError(reason instanceof Error ? reason.message : "The workspace could not be created or uploaded.");
     } finally {
       setCreatingWorkspace(false);
     }
@@ -389,10 +392,12 @@ function WorkspaceMembers({ workspaceId, workspaceName, viewerId, reloadWorkspac
               <h2>Create a workspace</h2>
               <form className="members-add" onSubmit={(event) => void createWorkspace(event)}>
                 <label>Workspace name<input value={workspaceNameInput} onChange={(event) => setWorkspaceNameInput(event.target.value)} maxLength={120} required /></label>
-                <label>Project folder (optional)<input value={workspaceFolderInput} onChange={(event) => setWorkspaceFolderInput(event.target.value)} maxLength={4096} placeholder="~/projects/app" autoComplete="off" spellCheck={false} /></label>
-                <Button type="submit" variant="primary" busy={creatingWorkspace} disabled={!workspaceNameInput.trim()}>Create workspace</Button>
+                <label>Project folder on this server (optional)<input value={workspaceFolderInput} onChange={(event) => setWorkspaceFolderInput(event.target.value)} maxLength={4096} placeholder="~/projects/app" autoComplete="off" spellCheck={false} disabled={workspaceArchive !== null} /></label>
+                <label>Or upload a project ZIP (max 10 MB)<input type="file" accept=".zip,application/zip" onChange={(event) => setWorkspaceArchive(event.target.files?.[0] ?? null)} disabled={workspaceFolderInput.trim() !== ""} /></label>
+                {workspaceArchive !== null && workspaceArchive.size > 10 * 1024 * 1024 && <p className="notice notice-blocked" role="alert">ZIP files must be no larger than 10 MB.</p>}
+                <Button type="submit" variant="primary" busy={creatingWorkspace} disabled={!workspaceNameInput.trim() || (workspaceArchive !== null && workspaceArchive.size > 10 * 1024 * 1024)}>Create workspace</Button>
               </form>
-              <p className="meta">New workspaces get the standard agents. Each Run copies the project folder, a full path on the server, and leaves the folder itself unchanged. The folder must be inside one the server operator allows with WORKSPACE_SOURCE_ROOTS. Leave it blank for an empty workspace.</p>
+              <p className="meta">New workspaces get the standard agents. Provide a folder on the server, upload a ZIP, or leave both blank for an empty workspace. ZIP uploads reject links, unsafe paths, credential files, and archives that expand beyond the server limits.</p>
             </section>
           )}
 

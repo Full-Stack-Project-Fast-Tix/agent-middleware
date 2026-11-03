@@ -328,6 +328,19 @@ export async function createWorkspaceForAdmin(
   });
 }
 
+/** Attach a validated uploaded source only while a workspace has never had a Run. */
+export async function attachWorkspaceSource(pool: pg.Pool, input: { workspaceId: string; actorUserId: string; sourcePath: string }): Promise<void> {
+  await changeMembers(pool, input.workspaceId, input.actorUserId, async (db, actor) => {
+    const { rows } = await db.query<{ source_path: string | null; runs: number }>(
+      `SELECT w.source_path, (SELECT count(*)::int FROM runs r WHERE r.workspace_id = w.id) AS runs
+       FROM workspaces w WHERE w.id = $1 FOR UPDATE`, [input.workspaceId]);
+    if (!rows[0]) throw new HttpError(404, "Workspace not found");
+    if (rows[0].source_path !== null || rows[0].runs > 0) throw new HttpError(409, "A project archive can only be added to a new empty workspace before its first Run");
+    await db.query("UPDATE workspaces SET source_path = $2, updated_at = $3 WHERE id = $1", [input.workspaceId, input.sourcePath, new Date().toISOString()]);
+    await audit(db, actor, "workspace.source_uploaded", input.workspaceId, { source: "browser ZIP upload" });
+  });
+}
+
 async function createWorkspaceRows(
   db: pg.PoolClient,
   input: { name: string; sourcePath: string | null; ownerId: string; actor: Actor },
