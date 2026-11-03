@@ -700,8 +700,10 @@ real Claude Run has proven this path.
   item, taken from real traces in `benchmark-results/`. No check was forked or
   weakened. `threadId` is null, because there is no server-side thread.
 - **Usage.** `inputTokens` includes cache reads and writes, and `cachedInputTokens` is
-  the reads, matching how Codex totals its input. An attempt that fails records its
-  usage only in its trace, because `ExecutionOutcome` is not returned.
+  the reads, matching how Codex totals its input. Successful attempts save usage on
+  their execution. If an attempt fails after receiving a model response, its usage is
+  available in the trace but is not copied to the execution because `ExecutionOutcome`
+  is not returned. A failure before the first response has no token count.
 - **The legacy path** is unchanged and needs Codex. The message route answers 503 with
   the reason. The web app reads `modelProvider` from `/api/system`, a field the server
   already returned, so this is no contract change. Only `apps/web`'s local type gained

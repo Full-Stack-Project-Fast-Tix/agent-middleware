@@ -28,7 +28,7 @@ The proof of concept currently includes:
 - **Reflection memory** recording structured lessons from past security incidents.
 - Security findings surfaced in the execution trajectory, with replay/evaluation through an existing benchmark framework.
 
-The multi-agent and password-authenticated paths are implemented foundations, with workspace-role checks and capability ceilings. Password mode exposes only workspace-scoped multi-agent APIs. Configurable policy rules, stronger tenant isolation, and web admin for creating users and workspaces remain unfinished. Run copies omit known environment-secret patterns and common credential stores/files by default; this filename-based filter is not general secret detection.
+The multi-agent and password-authenticated paths are implemented foundations, with workspace-role checks and capability ceilings. Password mode exposes only workspace-scoped multi-agent APIs. Security admins can create workspaces and accounts and manage workspace members in the web console; project folders must be under a path allowed by the server operator, and uploading a project from a user's computer is not supported yet. Configurable policy rules and stronger tenant isolation remain unfinished. Run copies omit known environment-secret patterns and common credential stores/files by default; this filename-based filter is not general secret detection.
 
 ## Planned product capabilities
 

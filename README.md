@@ -146,11 +146,13 @@ isolation. **There is deliberately no master switch.**
 
 A guarded turn runs `workspace-write` limited to `/workspace` and
 `approvalPolicy: untrusted`. Network stays denied unless the operator sets
-`AGENT_NETWORK_ACCESS=true`; every command still reaches the gate. If a Run has
-selected local vault credentials, every detected outbound command also waits for
-a person to approve it. The runtime expects every command except a known-safe
-read — and any file-edit proposal — to pause at an approval request. At that step the guard refuses a
-command that carries a workspace secret — one that:
+`AGENT_NETWORK_ACCESS=true`; every command still reaches the gate. In a Run with
+vault grants, direct outbound commands wait for human approval. Requests through
+the constrained vault broker are checked against the executing agent's host
+grants and can proceed only for an approved host. The runtime expects every
+command except a known-safe read — and any file-edit proposal — to pause at an
+approval request. At that step the guard refuses a command that carries a
+workspace secret — one that:
 
 - names a sensitive path in its own arguments (`curl --data @.env …`), or
 - follows an earlier read of a sensitive file (`cat .env` then `curl …`), or
@@ -495,9 +497,9 @@ this machine and every tool call in a disposable container. The gate sits outsid
 the agent by construction: the model can only act by asking AgentGuard
 ([contract decision 30](docs/contract-decisions.md#30-claude-runs-through-an-agent-loop-agentguard-owns)).
 
-These steps have been exercised end to end against a local mock of the API, but
-**not yet against the real API**. The first real run is what proves this path, so
-start small. It needs Docker, Node.js 22 and an Anthropic API key.
+The Claude path has been exercised against the real Anthropic API in prior local
+Runs. Your own Docker, database and workspace setup still needs to work, so start
+small. It needs Docker, Node.js 22 and an Anthropic API key.
 
 **1. Put the key in `.env`.** It is the only place it goes, and the server is the
 only thing that reads it. No container ever gets it.
@@ -556,8 +558,10 @@ concrete task on a single agent, such as *Add a function that reverses a string 
 **5. What to watch for.**
 
 - **Run Detail** shows each decision as it happens, and the raw trace of each
-  attempt. The Anthropic Console shows the real spend. An attempt that fails records
-  its tokens only in its trace, not on the execution.
+  attempt. The Anthropic Console shows the real spend. Successful attempts save
+  usage on the execution. If an attempt fails after receiving a model response,
+  its token usage appears in the trace but is not saved on the execution; a failure
+  before the first response has no token count.
 - **A refusal** fails the attempt with `Claude refused to continue (category: ...)`.
   Security-related work can trip the `cyber` classifier. The request opts in to
   server-side fallback, which retries on another model first, and the trace shows

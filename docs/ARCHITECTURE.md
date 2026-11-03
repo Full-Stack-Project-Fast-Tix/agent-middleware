@@ -284,7 +284,7 @@ refused send after a secret read stops the attempt rather than only the action.
 | | Claude |
 | --- | --- |
 | API key | On the host only |
-| Network | Denied unless the operator enables `AGENT_NETWORK_ACCESS`; selected local vault values do not enable it. With a vault grant, each detected outbound command requires human approval. |
+| Network | Denied unless the operator enables `AGENT_NETWORK_ACCESS`; a vault grant does not enable container networking. Direct outbound commands in a vault-granted Run require human approval. Approved broker requests are checked against the executing agent's exact host grants. |
 | Reads | Every command reaches the gate, including reads, so the guard's cost and its evidence both rise slightly |
 | Commands the gate sees | The text the model wrote |
 | Read-only agents | Read-only mount as well as the gate |
