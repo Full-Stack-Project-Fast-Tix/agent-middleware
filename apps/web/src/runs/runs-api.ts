@@ -9,8 +9,6 @@ import {
   runResponseSchema,
   runSnapshotResponseSchema,
   runTimelineResponseSchema,
-  workspaceVaultResponseSchema,
-  workspaceVaultSecretInfoSchema,
   type Agent,
   type Approval,
   type CreateRunRequest,
@@ -23,8 +21,6 @@ import {
   type RunStatus,
   type RunTimeline,
   type WorkspaceSummary,
-  type PutWorkspaceVaultSecret,
-  type WorkspaceVaultSecretInfo,
   workspacesResponseSchema,
 } from "@launchpad/shared";
 import { ApiError, authHeaders, request } from "../api";
@@ -41,18 +37,6 @@ export const runsApi = {
 
   agents: async (workspaceId: string): Promise<Agent[]> =>
     agentsResponseSchema.parse(await request(apiPaths.workspaceAgents(workspaceId))).agents,
-
-  vaultSecrets: async (workspaceId: string): Promise<WorkspaceVaultSecretInfo[]> =>
-    workspaceVaultResponseSchema.parse(await request(apiPaths.workspaceVault(workspaceId))).secrets,
-
-  putVaultSecret: async (workspaceId: string, secret: PutWorkspaceVaultSecret): Promise<WorkspaceVaultSecretInfo> =>
-    workspaceVaultSecretInfoSchema.parse((await request(apiPaths.workspaceVault(workspaceId), {
-      method: "PUT", body: JSON.stringify(secret),
-    }) as { secret: unknown }).secret),
-
-  deleteVaultSecret: async (workspaceId: string, name: string): Promise<void> => {
-    await request(apiPaths.workspaceVaultSecret(workspaceId, name), { method: "DELETE" });
-  },
 
   createRun: async (workspaceId: string, body: CreateRunRequest): Promise<Run> =>
     runResponseSchema.parse(await request(apiPaths.runs(workspaceId), { method: "POST", body: JSON.stringify(body) })).run,

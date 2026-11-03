@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
-import type { Agent, OrchestrationMode } from "@launchpad/shared";
+import type { Agent, AgentProfile, EffectivePermissionsResponse, OrchestrationMode } from "@launchpad/shared";
 import { navigate, paths } from "../router";
 import { Button, ButtonLink, EmptyState, ErrorState, PageHeader, Select } from "../ui";
 import { useCurrentWorkspace } from "../useCurrentWorkspace";
 import { runsApi } from "./runs-api";
 import { WorkspaceVaultPicker } from "./WorkspaceVaultPicker";
+import { workspaceApi } from "../workspace/workspace-api";
 
 const EXAMPLES = [
   "Add input validation to the checkout endpoint and return 400 on bad input.",
@@ -16,6 +17,10 @@ export function NewRun() {
   const { workspaces, current, error: workspacesError, reload } = useCurrentWorkspace();
   const workspaceId = current?.id ?? "";
   const [agents, setAgents] = useState<Agent[]>([]);
+  const [profiles, setProfiles] = useState<AgentProfile[]>([]);
+  const [permissions, setPermissions] = useState<EffectivePermissionsResponse["agents"]>([]);
+  const [permissionsError, setPermissionsError] = useState<string | null>(null);
+  const [permissionsLoading, setPermissionsLoading] = useState(true);
   const [vaultGrants, setVaultGrants] = useState<Array<{ secretName: string; agentIds: string[] }>>([]);
   const [mode, setMode] = useState<OrchestrationMode>("auto");
   const [agentId, setAgentId] = useState("");
@@ -24,25 +29,50 @@ export function NewRun() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    let active = true;
     setAgents([]);
     setAgentId("");
     setVaultGrants([]);
-    if (!workspaceId) return;
-    runsApi.agents(workspaceId).then(setAgents).catch(() => setAgents([]));
+    setProfiles([]);
+    setPermissions([]);
+    setPermissionsError(null);
+    setPermissionsLoading(Boolean(workspaceId));
+    if (!workspaceId) return () => { active = false; };
+    runsApi.agents(workspaceId).then((nextAgents) => { if (active) setAgents(nextAgents); }).catch(() => { if (active) setAgents([]); });
+    Promise.all([workspaceApi.profiles(workspaceId), workspaceApi.effective(workspaceId)]).then(([nextProfiles, nextPermissions]) => {
+      if (active) {
+        setProfiles(nextProfiles);
+        setPermissions(nextPermissions);
+        setPermissionsLoading(false);
+      }
+    }).catch((reason: unknown) => {
+      if (active) {
+        setPermissionsError(reason instanceof Error ? reason.message : String(reason));
+        setPermissionsLoading(false);
+      }
+    });
+    return () => { active = false; };
   }, [workspaceId]);
 
   const usable = agents.filter((agent) => agent.enabled && agent.archivedAt === null);
+  const delegatingProfileIds = new Set(profiles.filter((profile) => profile.archivedAt === null && profile.capabilities.delegate).map((profile) => profile.id));
+  const defaultSupervisors = usable.filter((agent) => delegatingProfileIds.has(agent.profileId));
+  const selectedAgent = usable.find((agent) => agent.id === agentId) ??
+    (mode === "auto" && agentId === "" && defaultSupervisors.length === 1 ? defaultSupervisors[0] : undefined);
+  const selectedPermissions = selectedAgent === undefined
+    ? undefined
+    : permissions.find((entry) => entry.agentId === selectedAgent.id)?.policy;
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!workspaceId || !prompt.trim()) return;
+    if (!workspaceId || !prompt.trim() || selectedAgent === undefined) return;
     setBusy(true);
     setError(null);
     try {
       const run = await runsApi.createRun(workspaceId, {
         userPrompt: prompt.trim(),
         orchestrationMode: mode,
-        ...(agentId ? { agentId } : {}),
+        agentId: selectedAgent.id,
         ...(vaultGrants.length ? { vaultGrants } : {}),
       });
       navigate(paths.run(run.id));
@@ -110,10 +140,37 @@ export function NewRun() {
           onChange={setAgentId}
           disabled={usable.length === 0}
           options={[
-            { value: "", label: "Workspace default" },
+            { value: "", label: mode === "auto"
+              ? defaultSupervisors.length === 1 ? `Workspace default · ${defaultSupervisors[0]!.name}` : "Choose a supervisor"
+              : "Choose an agent" },
             ...usable.map((agent) => ({ value: agent.id, label: agent.name, hint: agent.description || undefined })),
           ]}
         />
+
+        <section className="permission-preview" aria-live="polite" aria-label="Effective agent permissions">
+          <h3>Effective permissions</h3>
+          {permissionsError !== null ? (
+            <p className="meta">Could not load the permission preview: {permissionsError}</p>
+          ) : permissionsLoading ? (
+            <p className="meta">Loading effective permissions…</p>
+          ) : selectedAgent === undefined ? (
+            <p className="meta">Select an agent to see its effective permissions.{mode === "auto" && defaultSupervisors.length !== 1 ? " This workspace has no unique default supervisor, so choose one." : ""}</p>
+          ) : selectedPermissions == null ? (
+            <p className="meta">Effective permissions could not be resolved for {selectedAgent.name}; the server may refuse to run it.</p>
+          ) : (
+            <>
+              <p className="meta">{selectedAgent.name} · platform and workspace limits applied</p>
+              <ul className="permission-preview-list">
+                <li>Write files: <strong>{selectedPermissions.capabilities.write ? "Allowed" : "Blocked"}</strong></li>
+                <li>Run commands: <strong>{selectedPermissions.capabilities.shell ? "Allowed" : "Read-only commands"}</strong></li>
+                <li>Network capability: <strong>{selectedPermissions.capabilities.network ? "Allowed by policy" : "Blocked"}</strong></li>
+                <li>Delegate: <strong>{selectedPermissions.capabilities.delegate ? `Allowed · depth ${selectedPermissions.capabilities.maxDelegationDepth}` : "Blocked"}</strong></li>
+              </ul>
+              {mode === "auto" && !selectedPermissions.capabilities.delegate && <p className="notice notice-held">This agent cannot delegate under its effective permissions, so a planned run is likely to stop when it tries to assign work.</p>}
+              {selectedPermissions.capabilities.network && <p className="meta">The server operator can still disable container networking. Vault broker requests use their separate per-secret host grants.</p>}
+            </>
+          )}
+        </section>
 
         {workspaceId && <WorkspaceVaultPicker workspaceId={workspaceId} agents={usable} value={vaultGrants} onChange={setVaultGrants} />}
 
@@ -139,7 +196,7 @@ export function NewRun() {
 
         <div className="new-run-footer">
           <span>AgentGuard checks commands, file changes and delegations before they run.</span>
-          <Button type="submit" variant="primary" page busy={busy} disabled={!workspaceId || !prompt.trim()}>
+          <Button type="submit" variant="primary" page busy={busy} disabled={!workspaceId || !prompt.trim() || selectedAgent === undefined}>
             Start run
           </Button>
         </div>

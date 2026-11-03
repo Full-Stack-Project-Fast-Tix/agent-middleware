@@ -9,6 +9,7 @@ export type Route =
   | { page: "new-run" }
   | { page: "run"; runId: string }
   | { page: "members" }
+  | { page: "credentials" }
   | { page: "agents" }
   | { page: "policies" }
   | { page: "approvals" }
@@ -25,6 +26,7 @@ export const paths = {
   newRun: "/runs/new",
   run: (runId: string): string => `/runs/${runId}`,
   members: "/members",
+  credentials: "/credentials",
   agents: "/agents",
   policies: "/policies",
   approvals: "/approvals",
@@ -45,6 +47,8 @@ export function parseRoute(pathname: string): Route {
       return { page: "new-run" };
     case paths.members:
       return { page: "members" };
+    case paths.credentials:
+      return { page: "credentials" };
     case paths.agents:
       return { page: "agents" };
     case paths.policies:

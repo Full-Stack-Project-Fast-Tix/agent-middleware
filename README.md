@@ -171,10 +171,10 @@ The server stores each workspace's encrypted vault under `APP_DATA_DIR/vault/`;
 the key is not stored beside the encrypted entries. Back up the key securely:
 without it, vault entries cannot be decrypted after a restart or migration.
 
-Add a credential in the Run form by entering its name, value, and exact allowed
-HTTPS hostnames. Existing project `.env` files are not read automatically; add
-only the credentials needed. The UI receives metadata, never stored values.
-For each Run, grant a credential to specific agents. Those agents can request
+Manage credentials from the workspace's **Credentials** page by entering a name,
+value, and exact allowed HTTPS hostnames. Existing project `.env` files are not
+read automatically; add only the credentials needed. The UI receives metadata,
+never stored values. For each Run, grant a credential to specific agents. Those agents can request
 GET or POST through the host-side broker using the `agentguard-vault request`
 operation described in their task. The broker attaches the credential only to
 the configured auth header and only for an exact approved host; it rejects

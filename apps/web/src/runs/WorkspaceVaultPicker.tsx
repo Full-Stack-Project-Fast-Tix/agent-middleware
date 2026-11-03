@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import type { Agent, WorkspaceVaultSecretInfo } from "@launchpad/shared";
-import { runsApi } from "./runs-api";
+import { workspaceApi } from "../workspace/workspace-api";
+import { paths } from "../router";
+import { ButtonLink } from "../ui";
 
 /** Manage encrypted workspace credentials and choose the agents that may use them in one Run. */
 export function WorkspaceVaultPicker({
@@ -15,15 +17,9 @@ export function WorkspaceVaultPicker({
   onChange: (grants: Array<{ secretName: string; agentIds: string[] }>) => void;
 }) {
   const [secrets, setSecrets] = useState<WorkspaceVaultSecretInfo[]>([]);
-  const [name, setName] = useState("");
-  const [secretValue, setSecretValue] = useState("");
-  const [hosts, setHosts] = useState("");
-  const [authHeader, setAuthHeader] = useState("Authorization");
-  const [authPrefix, setAuthPrefix] = useState("Bearer ");
   const [vaultError, setVaultError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
 
-  const reload = () => runsApi.vaultSecrets(workspaceId).then((items) => {
+  const reload = () => workspaceApi.vaultSecrets(workspaceId).then((items) => {
     setSecrets(items);
     setVaultError(null);
   }).catch((error: unknown) => {
@@ -38,29 +34,6 @@ export function WorkspaceVaultPicker({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspaceId]);
 
-  const save = async (event: React.FormEvent) => {
-    event.preventDefault();
-    if (!name.trim() || !secretValue || !workspaceId) return;
-    setSaving(true);
-    setVaultError(null);
-    try {
-      await runsApi.putVaultSecret(workspaceId, {
-        name: name.trim().toUpperCase(),
-        value: secretValue,
-        allowedHosts: hosts.split(",").map((host) => host.trim().toLowerCase()).filter(Boolean),
-        authHeader,
-        authPrefix,
-      });
-      setName("");
-      setSecretValue("");
-      await reload();
-    } catch (error) {
-      setVaultError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setSaving(false);
-    }
-  };
-
   const toggle = (secretName: string, agentId: string, checked: boolean) => {
     const next = new Map(value.map((grant) => [grant.secretName, new Set(grant.agentIds)]));
     const ids = next.get(secretName) ?? new Set<string>();
@@ -71,8 +44,9 @@ export function WorkspaceVaultPicker({
 
   return (
     <section className="mode-choice" aria-label="Workspace vault">
-      <h3>Workspace credentials</h3>
-      <p className="meta">Credentials are encrypted on the server. Grant each one only to the agents that need it. Agents can use the broker for HTTPS requests to the listed hosts; the secret value is never sent into the container.</p>
+      <h3>Credentials for this Run</h3>
+      <p className="meta">Choose which agents may use each credential. They can make brokered HTTPS requests to the listed hosts; secret values stay on the server.</p>
+      <ButtonLink to={paths.credentials}>Manage workspace credentials</ButtonLink>
       {vaultError && <p className="notice notice-blocked" role="alert">{vaultError}</p>}
       {secrets.length > 0 && (
         <div className="vault-secret-list">
@@ -87,26 +61,11 @@ export function WorkspaceVaultPicker({
                   {agent.name}
                 </label>
               ))}
-              <button type="button" onClick={async () => {
-                if (!window.confirm(`Delete ${secret.name} from this workspace vault?`)) return;
-                try { await runsApi.deleteVaultSecret(workspaceId, secret.name); onChange(value.filter((grant) => grant.secretName !== secret.name)); await reload(); }
-                catch (error) { setVaultError(error instanceof Error ? error.message : String(error)); }
-              }}>Delete credential</button>
             </fieldset>;
           })}
         </div>
       )}
-      <details>
-        <summary>Add or replace a credential</summary>
-        <form onSubmit={(event) => void save(event)} className="new-run-task">
-          <label>Credential name<input value={name} onChange={(event) => setName(event.target.value)} placeholder="SERVICE_API_KEY" autoComplete="off" /></label>
-          <label>Secret value<input type="password" value={secretValue} onChange={(event) => setSecretValue(event.target.value)} autoComplete="new-password" /></label>
-          <label>Allowed HTTPS hosts, comma separated<input value={hosts} onChange={(event) => setHosts(event.target.value)} placeholder="api.example.com" /></label>
-          <label>Authentication header<input value={authHeader} onChange={(event) => setAuthHeader(event.target.value)} placeholder="Authorization" /></label>
-          <label>Header value prefix<input value={authPrefix} onChange={(event) => setAuthPrefix(event.target.value)} placeholder="Bearer " /></label>
-          <button type="submit" disabled={saving || !name.trim() || !secretValue || !hosts.trim()}>{saving ? "Saving…" : "Encrypt and save"}</button>
-        </form>
-      </details>
+      {secrets.length === 0 && !vaultError && <p className="meta">No credentials are configured for this workspace. Add them from Credentials settings.</p>}
     </section>
   );
 }

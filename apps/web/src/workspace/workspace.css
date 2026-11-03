@@ -75,6 +75,14 @@
   gap: 8px;
 }
 
+.vault-settings-list {
+  display: grid;
+  gap: 12px;
+  margin: 16px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
 @media (max-width: 720px) {
   .config-form {
     grid-template-columns: minmax(0, 1fr);

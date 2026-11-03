@@ -3,6 +3,7 @@ import type { User } from "@launchpad/shared";
 import { api, hasSavedSession, setAuthToken } from "./api";
 import { AccountMenu } from "./AccountMenu";
 import { AgentsPage } from "./workspace/AgentsPage";
+import { CredentialsPage } from "./workspace/CredentialsPage";
 import { ApprovalsPage } from "./workspace/ApprovalsPage";
 import { BenchmarksPage } from "./workspace/BenchmarksPage";
 import { PoliciesPage } from "./workspace/PoliciesPage";
@@ -38,6 +39,7 @@ function navItems(route: Route, authMethod: "token" | "password"): NavItem[] {
           { to: paths.security, label: "Security", current: route.page === "security" },
           { to: paths.benchmarks, label: "Benchmarks", current: route.page === "benchmarks" },
           { to: paths.members, label: "Members", current: route.page === "members" },
+          { to: paths.credentials, label: "Credentials", current: route.page === "credentials" },
         ]),
   ];
 }
@@ -60,7 +62,7 @@ function CurrentPage({ route, authMethod, viewer }: {
   viewer: User | null;
 }) {
   // These read Postgres, which the shared-token mode does not have.
-  if (authMethod === "token" && ["agents", "policies", "approvals", "security", "benchmarks"].includes(route.page)) return <NotFound />;
+  if (authMethod === "token" && ["agents", "policies", "approvals", "security", "benchmarks", "credentials"].includes(route.page)) return <NotFound />;
   switch (route.page) {
     case "dashboard":
       return <Dashboard />;
@@ -80,6 +82,8 @@ function CurrentPage({ route, authMethod, viewer }: {
       return <BenchmarksPage />;
     case "members":
       return authMethod === "password" ? <Members viewerId={viewer?.id ?? null} /> : <MembersUnavailable />;
+    case "credentials":
+      return <CredentialsPage />;
     case "design":
       if (DesignPreview === null) return <NotFound />;
       return <Suspense fallback={<Loading />}><DesignPreview /></Suspense>;

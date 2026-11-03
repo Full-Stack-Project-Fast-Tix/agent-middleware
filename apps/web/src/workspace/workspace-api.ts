@@ -10,6 +10,8 @@ import {
   policyResponseSchema,
   profileResponseSchema,
   profilesResponseSchema,
+  workspaceVaultResponseSchema,
+  workspaceVaultSecretInfoSchema,
   type Agent,
   type AgentProfile,
   type ApprovalPage,
@@ -24,6 +26,8 @@ import {
   type UpdateAgentProfileRequest,
   type UpdateAgentRequest,
   type UpdateSecurityPolicyRequest,
+  type PutWorkspaceVaultSecret,
+  type WorkspaceVaultSecretInfo,
 } from "@launchpad/shared";
 import { request } from "../api";
 
@@ -48,6 +52,15 @@ export const workspaceApi = {
     auditPageSchema.parse(await request(withQuery(apiPaths.workspaceAudit(workspaceId), query))),
   effective: async (workspaceId: string): Promise<EffectivePermissionsResponse["agents"]> =>
     effectivePermissionsResponseSchema.parse(await request(apiPaths.workspaceEffectivePermissions(workspaceId))).agents,
+  vaultSecrets: async (workspaceId: string): Promise<WorkspaceVaultSecretInfo[]> =>
+    workspaceVaultResponseSchema.parse(await request(apiPaths.workspaceVault(workspaceId))).secrets,
+  putVaultSecret: async (workspaceId: string, secret: PutWorkspaceVaultSecret): Promise<WorkspaceVaultSecretInfo> =>
+    workspaceVaultSecretInfoSchema.parse((await request(apiPaths.workspaceVault(workspaceId), {
+      method: "PUT", body: JSON.stringify(secret),
+    }) as { secret: unknown }).secret),
+  deleteVaultSecret: async (workspaceId: string, name: string): Promise<void> => {
+    await request(apiPaths.workspaceVaultSecret(workspaceId, name), { method: "DELETE" });
+  },
   benchmarks: async (): Promise<BenchmarksResponse["results"]> =>
     benchmarksResponseSchema.parse(await request(apiPaths.benchmarks())).results,
 

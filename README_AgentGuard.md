@@ -65,6 +65,7 @@ The redesigned React frontend is intended to provide:
 | Dashboard | Active/recent runs, agents, pending approvals, security findings, system status |
 | Agents | Reusable agent definitions, instructions, profiles, effective capabilities |
 | New Run | User task submission and `single` / `auto` orchestration selection |
+| Credentials | Workspace credential management and per-Run agent grants |
 | Run Detail | Task DAG, agent assignments, statuses, timeline, findings, approvals, changed files, trace drill-down |
 | Policies | Platform rules, workspace restrictions, profiles, and effective permissions |
 | Approvals | Pending requests, action context, policy reasons, and decisions |

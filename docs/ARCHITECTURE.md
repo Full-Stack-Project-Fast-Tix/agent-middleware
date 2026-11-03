@@ -221,8 +221,10 @@ Not built yet, by owner:
   them, so the timeline says so. Command text is saved redacted and bounded in
   audit metadata (contract decision 14).
 
-The password-mode console includes workspace Agents and Policies management,
-Approvals, Security findings and audit history, and saved Benchmarks reports.
+The password-mode console includes workspace Agents, Policies, Credentials and
+Members management, Approvals, Security findings and audit history, and saved
+Benchmarks reports. The New Run form previews an agent's effective permissions
+and supports per-agent vault grants.
 Workspace routes check membership and enforce role/version rules in the server;
 the UI only reflects those permissions. Benchmark reports are read from
 committed results and are not live measurements or runs initiated by the UI.
