@@ -299,6 +299,7 @@ describe("api payloads", () => {
     expect(createRunRequestSchema.parse({ userPrompt: "Fix the flaky test" })).toEqual({
       userPrompt: "Fix the flaky test",
       orchestrationMode: "single",
+      vaultGrants: [],
     });
   });
 

@@ -126,6 +126,7 @@ async function play(turns: MockTurn[], capabilities: Capabilities, respond: (com
     agent: { id: AGENT_ID } as Agent,
     workingDirectory: "/data/workspace",
     prompt: "Fix the bug.",
+    vaultGrants: [],
     runtimePolicy: policy.runtime,
     gate,
     signal: new AbortController().signal,

@@ -74,6 +74,7 @@ function requestWith(gate: ActionGate, overrides: Partial<ExecutionRequest> = {}
     agent: { id: "agent-1" } as Agent,
     workingDirectory: "/data/runs/run-1/workspace",
     prompt: "Add validation",
+    vaultGrants: [],
     runtimePolicy: { sandboxMode: "workspace-write", denyNetwork: true, approvalPolicy: "untrusted", semanticEnforcement: false, effectGating: true },
     gate,
     signal: new AbortController().signal,

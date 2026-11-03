@@ -52,7 +52,7 @@ describe("audit trail", () => {
 
     const first = audit[0]!;
     expect(first).toMatchObject({ eventType: "run.created", actorType: "user", actorId: USER_ID });
-    expect(first.metadata).toEqual({ orchestrationMode: "auto", agentId: AGENTS.supervisor });
+    expect(first.metadata).toEqual({ orchestrationMode: "auto", agentId: AGENTS.supervisor, vaultGrants: [] });
 
     // The supervisor's delegations are attributed to the supervisor.
     const delegations = audit.filter((event) => event.eventType === "delegation.requested");
