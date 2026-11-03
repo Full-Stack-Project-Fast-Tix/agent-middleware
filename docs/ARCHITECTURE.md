@@ -187,8 +187,8 @@ members, and create additional workspaces, with a project folder only inside the
 operator's `WORKSPACE_SOURCE_ROOTS` (contract decisions 15 and 32), or upload a
 validated ZIP to an empty workspace before its first Run. ZIP extraction is
 bounded and rejects links, traversal and known credential files. Password
-sign-in currently has no failed-attempt rate limit (contract decision 27 records
-the removed design). Run streams detect commits made by another instance and
+sign-in has a process-local failed-attempt limit; counters reset on restart and
+are not shared across replicas (contract decision 27). Run streams detect commits made by another instance and
 ask the client to reload its snapshot, but orchestration waiters, cancellation,
 approval coordination and run-scoped taint remain process-local. Keep the app
 single-instance. The
@@ -214,8 +214,7 @@ Not built yet, by owner:
 - **P3:** tenant isolation beyond workspace roles (every workspace's Runs share one
   host). First-account bootstrap and host project paths stay operator-only
   (decision 15); workspace admins can create accounts in their workspace and
-  empty workspaces. Sign-in has no limit on failed attempts (contract decision 27).
-  Migrating token-mode JSON records
+  empty workspaces. Migrating token-mode JSON records
   was decided against (decision 23). The
   integration harness still runs on `InMemoryRunStore`; the fuzz suite and the
   store suite are what exercise Postgres.

@@ -643,18 +643,19 @@ credentials or session state. Stronger OS, database, and network isolation
 requires a separate threat model and deployment design before production
 multi-tenant claims.
 
-## 27. Password sign-in currently has no failed-attempt limit
+## 27. Password sign-in throttles failures in one process
 
-**Current behavior (1 November 2026):** Password sign-in does not throttle failed
-attempts. The PostgreSQL-backed design below was removed before release, along
-with its migration, implementation and tests. It is historical context, not an
-active security control. Do not describe sign-in as rate-limited until an
-implementation is restored and verified.
+**Decision (3 November 2026):** Password sign-in permits five failed attempts
+per normalized account and 30 per client address in a 15-minute fixed window.
+The account and client counters are independent; either can throttle a request.
+The server returns `429` with `Retry-After` and a retry time, while invalid
+credentials keep the same generic response for unknown accounts and wrong
+passwords. A successful sign-in clears that account and client's counters.
 
-The removed design proposed five attempts per account and 30 per source address
-in a 15-minute fixed window, stored transactionally in PostgreSQL. Account and
-source keys were to be SHA-256 digests; raw passwords were never involved. This
-would have made limits consistent across restarts and app replicas.
+Counters are bounded, expire in memory, and use SHA-256 digests of account and
+client keys. Passwords are never included. This is a single-instance control:
+restarts reset it, and replicas do not share counters. Keep deployment
+single-instance until a shared limiter is designed and reviewed.
 
 ## 28. Multi-agent reflections reuse the deterministic memory contract
 

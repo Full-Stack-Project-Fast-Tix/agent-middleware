@@ -3,6 +3,7 @@ import { signInRequestSchema, type User } from "@launchpad/shared";
 import { isOpenRequest } from "./api-access.js";
 import type { Session } from "./db/postgres-identity.js";
 import { HttpError } from "./errors.js";
+import { SignInThrottle } from "./sign-in-throttle.js";
 
 // Sessions for signed-in users, as specified in packages/shared/src/api.ts.
 // With sessions on, they replace the operator's shared APP_AUTH_TOKEN: every
@@ -38,6 +39,7 @@ export function signedInUser(request: FastifyRequest): User {
 }
 
 export function registerSessionAuth(app: FastifyInstance, identity: Identity): void {
+  const signInThrottle = new SignInThrottle();
   app.decorateRequest("user", null);
 
   app.addHook("onRequest", async (request, reply) => {
@@ -49,8 +51,19 @@ export function registerSessionAuth(app: FastifyInstance, identity: Identity): v
 
   app.post("/api/auth/session", { config: { redact: false } }, async (request, reply) => {
     const { email, password } = signInRequestSchema.parse(request.body);
+    const retryAfter = signInThrottle.retryAfterSeconds(email, request.ip);
+    if (retryAfter > 0) {
+      return reply.header("retry-after", String(retryAfter)).code(429).send({
+        error: "Too many sign-in attempts. Try again after the retry period.",
+        retryAfterSeconds: retryAfter,
+      });
+    }
     const session = await identity.signIn(email, password);
-    if (session === null) throw new HttpError(401, "The email or password is not right.");
+    if (session === null) {
+      signInThrottle.failed(email, request.ip);
+      throw new HttpError(401, "The email or password is not right.");
+    }
+    signInThrottle.succeeded(email, request.ip);
     return reply.code(201).send(session);
   });
 

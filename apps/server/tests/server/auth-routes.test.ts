@@ -73,4 +73,20 @@ describe("session sign-in", () => {
     const response = await app.inject({ method: "POST", url: "/api/auth/session", payload: { email: "not an email", password: "x" } });
     expect(response.statusCode).toBe(400);
   });
+
+  it("returns the same invalid-credential response and throttles after five failures", async () => {
+    await start();
+    const unknown = await app.inject({ method: "POST", url: "/api/auth/session", payload: { email: "missing@example.test", password: "nope" } });
+    const wrong = await app.inject({ method: "POST", url: "/api/auth/session", payload: { email: USER.email, password: "nope" } });
+    expect(unknown.statusCode).toBe(401);
+    expect(unknown.json()).toEqual(wrong.json());
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      const response = await app.inject({ method: "POST", url: "/api/auth/session", payload: { email: USER.email, password: "nope" } });
+      expect(response.statusCode).toBe(401);
+    }
+    const blocked = await app.inject({ method: "POST", url: "/api/auth/session", payload: { email: USER.email, password: "right password" } });
+    expect(blocked.statusCode).toBe(429);
+    expect(Number(blocked.headers["retry-after"])).toBeGreaterThan(0);
+    expect(blocked.json().retryAfterSeconds).toBeGreaterThan(0);
+  });
 });

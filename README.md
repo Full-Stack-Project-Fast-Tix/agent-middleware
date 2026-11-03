@@ -868,7 +868,8 @@ false negative puts a live credential on a projector.
 ### Platform limitations
 
 Shared demo token by default (`APP_AUTH_MODE=password` adds user accounts and
-workspace roles); no limit on failed sign-in attempts; logical workspace separation
+workspace roles); failed sign-ins are throttled per account and client in process memory
+(counters reset on restart; deploy one app instance); logical workspace separation
 but no hardened tenant isolation; no CSRF protection; no per-Agent container
 ordinary local containers rather than hardened multi-tenant sandboxes; agent
 network access is denied by the container's network mode, not host-level filtering.
