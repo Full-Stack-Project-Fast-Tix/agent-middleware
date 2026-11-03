@@ -1,7 +1,9 @@
-import { cp, mkdir, stat } from "node:fs/promises";
+import { cp, mkdir, stat, readdir, readFile, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import path from "node:path";
 import type { Run } from "@launchpad/shared";
 import type { WorkingCopies } from "./ports.js";
+import { redactSensitiveText } from "../redaction/index.js";
 
 // One isolated copy of the project per Run:
 //
@@ -126,7 +128,10 @@ export class DirectoryWorkingCopies implements WorkingCopies {
 
   async prepare(run: Run): Promise<string> {
     const target = this.pathFor(run.id);
-    if (await exists(target)) return target;
+    if (await exists(target)) {
+      if (!(await exists(path.join(path.dirname(target), "diff-baseline.json")))) await saveBaseline(target, path.dirname(target));
+      return target;
+    }
     await mkdir(path.dirname(target), { recursive: true });
 
     const source = run.parentRunId === null
@@ -134,6 +139,7 @@ export class DirectoryWorkingCopies implements WorkingCopies {
       : this.pathFor(run.parentRunId);
     if (source === null) {
       await mkdir(target);
+      await saveBaseline(target, path.dirname(target));
       return target;
     }
     const resolvedSource = path.resolve(source);
@@ -156,6 +162,7 @@ export class DirectoryWorkingCopies implements WorkingCopies {
       verbatimSymlinks: true,
       filter: (entry) => entry === resolvedSource || !this.isExcluded(entry),
     });
+    await saveBaseline(target, path.dirname(target));
     return target;
   }
 
@@ -173,6 +180,35 @@ export class DirectoryWorkingCopies implements WorkingCopies {
       EXCLUDED_CREDENTIAL_SUFFIXES.some((suffix) => name.endsWith(suffix))
     );
   }
+}
+
+/** Bounded baseline used to distinguish actual Run changes from gate proposals. */
+async function saveBaseline(workspace: string, runDirectory: string): Promise<void> {
+  const files: Record<string, { hash: string; text: string | null; size: number; display: "text" | "binary" | "large" }> = {};
+  const queue = [workspace];
+  let previewBytes = 0;
+  while (queue.length && Object.keys(files).length < 500) {
+    const dir = queue.shift()!;
+    for (const entry of await readdir(dir, { withFileTypes: true }).catch(() => [])) {
+      if (entry.isSymbolicLink() || [".git", "node_modules", "dist", "build"].includes(entry.name)) continue;
+      const absolute = path.join(dir, entry.name);
+      if (entry.isDirectory()) queue.push(absolute);
+      else if (entry.isFile()) {
+        const bytes = await readFile(absolute).catch(() => null);
+        if (bytes && bytes.length <= 2 * 1024 * 1024) {
+          const binary = bytes.includes(0);
+          const canKeepPreview = !binary && bytes.length <= 256 * 1024 && previewBytes + bytes.length <= 2 * 1024 * 1024;
+          if (canKeepPreview) previewBytes += bytes.length;
+          files[path.relative(workspace, absolute).split(path.sep).join("/")] = {
+            hash: createHash("sha256").update(bytes).digest("hex"), size: bytes.length,
+            display: binary ? "binary" : canKeepPreview ? "text" : "large",
+            text: canKeepPreview ? redactSensitiveText(bytes.toString("utf8")) : null,
+          };
+        }
+      }
+    }
+  }
+  await writeFile(path.join(runDirectory, "diff-baseline.json"), JSON.stringify({ files, truncated: queue.length > 0 || Object.keys(files).length >= 500 }), { mode: 0o600 });
 }
 
 function isInside(parent: string, candidate: string): boolean {

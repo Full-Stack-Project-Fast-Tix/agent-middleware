@@ -1,4 +1,5 @@
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile, realpath, stat } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import path from "node:path";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
@@ -8,6 +9,7 @@ import {
   putWorkspaceVaultSecretSchema,
   resolveApprovalRequestSchema,
   RUN_TIMELINE_MAX_ENTRIES,
+  runDiffResponseSchema,
   runListQuerySchema,
   type Agent,
   type Approval,
@@ -23,7 +25,8 @@ import type { Orchestrator } from "./orchestrator/orchestrator.js";
 import type { RunAudit, VaultGrant } from "./orchestrator/ports.js";
 import { buildRunTimeline } from "./run-timeline.js";
 import { traceFilePath } from "./trace.js";
-import { listWorkspaceFiles, readWorkspaceFile, WorkspacePathError } from "./workspace-files.js";
+import { listWorkspaceFiles, readWorkspaceFile, resolveInside, WorkspacePathError, MAX_READ_BYTES } from "./workspace-files.js";
+import { redactSensitiveText } from "./redaction/index.js";
 import type { WorkspaceVault } from "./workspace-vault.js";
 
 // HTTP routes for the Run -> Task -> AgentExecution model, as specified in
@@ -251,6 +254,66 @@ export function registerRunRoutes(app: FastifyInstance, options: RunRoutesOption
   app.get("/api/runs/:runId/files", async (request) => {
     const { runId } = runParams.parse(request.params);
     return { files: await listWorkspaceFiles(await readableWorkingCopy(request, runId)) };
+  });
+
+  app.get("/api/runs/:runId/diff", async (request) => {
+    const { runId } = runParams.parse(request.params);
+    const { snapshot } = await readableSnapshot(request, runId);
+    const root = path.join(dataDirectory, "runs", runId, "workspace");
+    if (snapshot.run.status === "queued" || snapshot.run.status === "running") throw new HttpError(409, "The run diff is available after the run finishes");
+    const baselineFile = path.join(dataDirectory, "runs", runId, "diff-baseline.json");
+    const artifactFile = path.join(dataDirectory, "runs", runId, "diff.json");
+    const saved = await readFile(artifactFile, "utf8").then((text) => JSON.parse(text) as unknown).catch(() => null);
+    if (saved !== null) return runDiffResponseSchema.parse(saved);
+    const baseline = await readFile(baselineFile, "utf8").then((text) => JSON.parse(text) as { files: Record<string, { hash: string; text: string | null; size: number; display: "text" | "binary" | "large" }>; truncated: boolean }).catch(() => null);
+    if (baseline === null) return runDiffResponseSchema.parse({ changes: [], changedFileCount: 0, truncated: false, baselineAvailable: false });
+    const current = await listWorkspaceFiles(root);
+    const currentMap = new Map<string, string>();
+    let oversizedFiles = false;
+    const realRoot = await realpath(root).catch(() => root);
+    for (const file of current) {
+      const absolute = resolveInside(root, file.path);
+      const realFile = await realpath(absolute).catch(() => null);
+      if (realFile === null || !realFile.startsWith(realRoot + path.sep)) continue;
+      const info = await stat(realFile).catch(() => null);
+      if (info === null) continue;
+      if (info.size > 2 * 1024 * 1024) { oversizedFiles = true; continue; }
+      const bytes = await readFile(realFile).catch(() => null);
+      if (bytes !== null) currentMap.set(file.path, createHash("sha256").update(bytes).digest("hex"));
+    }
+    const paths = new Set([...Object.keys(baseline.files), ...currentMap.keys()]);
+    const changed: Array<{ path: string; kind: "added" | "modified" | "deleted"; diff: string | null; display: "text" | "binary" | "large" | "unavailable" }> = [];
+    let changedFileCount = 0;
+    for (const filePath of [...paths].sort()) {
+      const before = baseline.files[filePath];
+      const after = currentMap.get(filePath);
+      if (before?.hash === after || (before === undefined && after === undefined)) continue;
+      let kind: "added" | "modified" | "deleted" = before === undefined ? "added" : after === undefined ? "deleted" : "modified";
+      let diff: string | null = null;
+      let display: "text" | "binary" | "large" | "unavailable" = "unavailable";
+      if (kind !== "deleted") {
+        const file = await readWorkspaceFile(root, filePath).catch(() => null);
+        if (file === null) display = "unavailable";
+        else if (file.size > MAX_READ_BYTES || file.truncated) display = "large";
+        else if (file.content.includes("\0")) display = "binary";
+        else {
+          display = "text";
+          const oldLines = (before?.text ?? "").split("\n").slice(0, 200);
+          const newLines = file.content.split("\n").slice(0, 200);
+          diff = redactSensitiveText([...oldLines.filter((line) => !newLines.includes(line)).map((line) => `- ${line}`), ...newLines.filter((line) => !oldLines.includes(line)).map((line) => `+ ${line}`)].join("\n")).slice(0, 20_000);
+        }
+      } else if (before?.display === "text") {
+        display = "text";
+        diff = redactSensitiveText((before.text ?? "").split("\n").slice(0, 200).map((line) => `- ${line}`).join("\n")).slice(0, 20_000);
+      } else if (before !== undefined) {
+        display = before.display;
+      }
+      changedFileCount += 1;
+      if (changed.length < 500) changed.push({ path: filePath, kind, diff, display });
+    }
+    const artifact = runDiffResponseSchema.parse({ changes: changed, changedFileCount, truncated: baseline.truncated || current.length >= 500 || oversizedFiles || paths.size > changed.length, baselineAvailable: true });
+    await writeFile(artifactFile, JSON.stringify(artifact), { mode: 0o600 });
+    return artifact;
   });
 
   app.get("/api/runs/:runId/file", async (request) => {

@@ -123,6 +123,27 @@ describe("a run's working copy", () => {
     expect((await inject("GET", apiPaths.runFiles(RUN))).statusCode).toBe(403);
     expect((await inject("GET", apiPaths.runFile(RUN, "index.html"))).statusCode).toBe(403);
   });
+
+  it("serves the saved redacted actual diff to workspace members", async () => {
+    directory = await mkdtemp(path.join(tmpdir(), "run-diff-"));
+    outside = await mkdtemp(path.join(tmpdir(), "run-diff-outside-"));
+    const config = loadConfig({ NODE_ENV: "test", APP_DATA_DIR: directory });
+    const runDirectory = path.join(config.dataDirectory, "runs", RUN);
+    const workspace = path.join(runDirectory, "workspace");
+    await mkdir(workspace, { recursive: true });
+    await writeFile(path.join(workspace, "added.ts"), "const apiKey = 'sk_live_ABCDEFGHIJKLMNOP1234';\n", "utf8");
+    await writeFile(path.join(runDirectory, "diff-baseline.json"), JSON.stringify({ files: { "old.ts": { hash: "old", text: "const old = true;", size: 17, display: "text" } }, truncated: false }));
+    app = await createApp(config, { runs: {
+      snapshot: async (id: string) => id === RUN ? ({ run: { id: RUN, workspaceId: MINE, status: "completed" }, executions: [], tasks: [], approvals: [], findings: [] } as unknown as RunSnapshot) : null,
+      currentUserId: () => VIEWER,
+      workspaceRole: async (id: string) => id === MINE ? "auditor" : null,
+    } as unknown as RunRoutesOptions });
+    const response = await inject("GET", apiPaths.runDiff(RUN));
+    expect(response.statusCode).toBe(200);
+    expect(response.body).not.toContain("sk_live_ABCDEFGHIJKLMNOP1234");
+    expect(response.json()).toMatchObject({ changedFileCount: 2, baselineAvailable: true });
+    expect(response.json().changes.map((change: { kind: string }) => change.kind)).toEqual(["added", "deleted"]);
+  });
 });
 
 describe("an attempt's trace", () => {

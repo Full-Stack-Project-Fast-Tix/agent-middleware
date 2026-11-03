@@ -8,6 +8,7 @@ import { runsApi } from "./runs-api";
 import { focusTaskId, isRunActive, isWrittenByPlan, pendingApprovals } from "./run-view";
 import { GateTimeline, ProposedFiles } from "./RunTimeline";
 import { RunFiles } from "./RunFiles";
+import type { RunDiffResponse } from "@launchpad/shared";
 import { ContinueWorkspace } from "./ContinueWorkspace";
 import { TaskDrilldown } from "./TaskDrilldown";
 import { TaskGraph } from "./TaskGraph";
@@ -34,6 +35,7 @@ export function RunDetail({ runId }: { runId: string }) {
   const [actionError, setActionError] = useState<string | null>(null);
   const [confirmingCancel, setConfirmingCancel] = useState(false);
   const [promptOpen, setPromptOpen] = useState(false);
+  const [diff, setDiff] = useState<RunDiffResponse | null>(null);
   const workspaceId = view?.run.workspaceId ?? null;
   const active = view !== null && isRunActive(view.run.status);
   const timeline = useRunTimeline(runId, active, view?.lastEventSeq ?? 0);
@@ -55,6 +57,12 @@ export function RunDetail({ runId }: { runId: string }) {
       .then((list) => setAgents(new Map(list.map((agent) => [agent.id, agent]))))
       .catch(() => setAgents(new Map()));
   }, [workspaceId]);
+
+  useEffect(() => {
+    setDiff(null);
+    if (view === null || isRunActive(view.run.status)) return;
+    void runsApi.diff(runId).then(setDiff).catch(() => setDiff(null));
+  }, [runId, view?.run.status]);
 
   const selectedTask = useMemo(() => {
     if (view === null) return null;
@@ -222,7 +230,26 @@ export function RunDetail({ runId }: { runId: string }) {
         </section>
       )}
 
-      <TaskGraph view={view} agents={agents} selectedTaskId={selectedTask?.id ?? null} onSelect={setPicked} />
+      <div id="run-tasks"><TaskGraph view={view} agents={agents} selectedTaskId={selectedTask?.id ?? null} onSelect={setPicked} /></div>
+
+      {!active && (
+        <section className="page-section run-receipt" aria-labelledby="run-receipt-title">
+          <h2 id="run-receipt-title">Run outcome</h2>
+          <p>{run.status === "completed" ? "Run completed." : run.status === "failed" ? "Run failed." : "Run cancelled."} The agent's report is not independently verified.</p>
+          <div className="cluster meta">
+            <span>{view.tasks.length} tasks</span>
+            <span>{view.executions.length} executions</span>
+            <span>{view.approvals.length} approvals</span>
+            <span>{view.findings.length} findings</span>
+            <span>{view.executions.reduce((n, item) => n + (item.usage?.inputTokens ?? 0) + (item.usage?.outputTokens ?? 0), 0).toLocaleString()} tokens</span>
+            <span>{run.startedAt && run.completedAt ? `${Math.max(0, Math.round((Date.parse(run.completedAt) - Date.parse(run.startedAt)) / 1000))}s elapsed` : "Duration unavailable"}</span>
+            <span>{diff === null ? "Changes loading" : `${diff.changedFileCount} files changed`}</span>
+          </div>
+          <nav aria-label="Run evidence" className="cluster">
+            <a href="#run-changes">Changes</a><a href="#run-timeline">Timeline</a><a href="#run-tasks">Tasks</a>
+          </nav>
+        </section>
+      )}
 
       <div className="run-body">
         <div className="run-main">
@@ -242,7 +269,7 @@ export function RunDetail({ runId }: { runId: string }) {
               <p className="meta">{run.error ?? "It was cancelled before it finished."}</p>
             </section>
           )}
-          <GateTimeline
+          <div id="run-timeline"><GateTimeline
             timeline={timeline.timeline}
             error={timeline.error}
             onRetry={() => void timeline.reload()}
@@ -263,8 +290,25 @@ export function RunDetail({ runId }: { runId: string }) {
               return approval !== undefined && canAnswer(approval);
             }}
             onResolve={(approvalId, decision) => void resolve(approvalId, decision)}
-          />
+          /></div>
           {timeline.timeline !== null && <ProposedFiles timeline={timeline.timeline} runEnded={!active} />}
+          {!active && diff !== null && (
+            <section className="page-section" id="run-changes" aria-labelledby="actual-changes-title">
+              <h2 id="actual-changes-title">Actual file changes</h2>
+              {!diff.baselineAvailable && <p className="meta">No baseline was captured for this run.</p>}
+              {diff.baselineAvailable && diff.changes.length === 0 && <p className="meta">No file changes were detected.</p>}
+              {diff.changes.map((change) => (
+                <details key={change.path}>
+                  <summary><code>{change.path}</code> · {change.kind}</summary>
+                  {change.display === "text" && <pre><code>{change.diff}</code></pre>}
+                  {change.display === "binary" && <p className="meta">Binary file; contents are not shown.</p>}
+                  {change.display === "large" && <p className="meta">File is too large to display here.</p>}
+                  {change.display === "unavailable" && <p className="meta">File contents are unavailable.</p>}
+                </details>
+              ))}
+              {diff.truncated && <p className="meta">The change list is bounded; some files may be omitted.</p>}
+            </section>
+          )}
           {mayAct && <RunFiles runId={runId} runEnded={!active} />}
         </div>
 

@@ -4,6 +4,7 @@ import {
   approvalResponseSchema,
   followRunEvents,
   runFileResponseSchema,
+  runDiffResponseSchema,
   runFilesResponseSchema,
   runListResponseSchema,
   runResponseSchema,
@@ -15,6 +16,7 @@ import {
   type Run,
   type RunEvent,
   type RunFileResponse,
+  type RunDiffResponse,
   type RunFilesResponse,
   type RunListResponse,
   type RunSnapshot,
@@ -86,6 +88,9 @@ export const runsApi = {
 
   file: async (runId: string, filePath: string): Promise<RunFileResponse> =>
     runFileResponseSchema.parse(await request(apiPaths.runFile(runId, filePath))),
+
+  diff: async (runId: string): Promise<RunDiffResponse> =>
+    runDiffResponseSchema.parse(await request(apiPaths.runDiff(runId))),
 
   /** Follow the Run's events until `signal` aborts; reconnects and resyncs on its own. */
   follow: (

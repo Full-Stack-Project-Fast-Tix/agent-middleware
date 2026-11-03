@@ -152,6 +152,7 @@ export const apiPaths = {
   executionTrace: (runId: string, executionId: string) =>
     `/api/runs/${encodeURIComponent(runId)}/executions/${encodeURIComponent(executionId)}/trace`,
   runFiles: (runId: string) => `/api/runs/${encodeURIComponent(runId)}/files`,
+  runDiff: (runId: string) => `/api/runs/${encodeURIComponent(runId)}/diff`,
   runFile: (runId: string, filePath: string) =>
     `/api/runs/${encodeURIComponent(runId)}/file?path=${encodeURIComponent(filePath)}`,
   benchmarks: () => "/api/benchmarks",
@@ -392,6 +393,14 @@ export const runFileResponseSchema = z.object({
   truncated: z.boolean(),
 });
 export type RunFileResponse = z.infer<typeof runFileResponseSchema>;
+
+export const runDiffResponseSchema = z.object({
+  changes: z.array(z.object({ path: z.string(), kind: z.enum(["added", "modified", "deleted"]), diff: z.string().nullable(), display: z.enum(["text", "binary", "large", "unavailable"]) })),
+  changedFileCount: z.number().int().nonnegative(),
+  truncated: z.boolean(),
+  baselineAvailable: z.boolean(),
+});
+export type RunDiffResponse = z.infer<typeof runDiffResponseSchema>;
 
 export const resolveApprovalRequestSchema = z.object({
   decision: approvalDecisionSchema,
