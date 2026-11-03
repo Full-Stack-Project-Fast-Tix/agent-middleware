@@ -153,6 +153,8 @@ export const apiPaths = {
   executionTrace: (runId: string, executionId: string) =>
     `/api/runs/${encodeURIComponent(runId)}/executions/${encodeURIComponent(executionId)}/trace`,
   runFiles: (runId: string) => `/api/runs/${encodeURIComponent(runId)}/files`,
+  /** Full-byte ZIP export of a Run working copy (bounded and credential-filtered). */
+  runArchive: (runId: string) => `/api/runs/${encodeURIComponent(runId)}/archive`,
   runDiff: (runId: string) => `/api/runs/${encodeURIComponent(runId)}/diff`,
   runFile: (runId: string, filePath: string) =>
     `/api/runs/${encodeURIComponent(runId)}/file?path=${encodeURIComponent(filePath)}`,

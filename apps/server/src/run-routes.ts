@@ -27,6 +27,7 @@ import { buildRunTimeline } from "./run-timeline.js";
 import { traceFilePath } from "./trace.js";
 import { listWorkspaceFiles, readWorkspaceFile, resolveInside, WorkspacePathError, MAX_READ_BYTES } from "./workspace-files.js";
 import { redactSensitiveText } from "./redaction/index.js";
+import { zipWorkspace } from "./workspace-zip.js";
 import type { WorkspaceVault } from "./workspace-vault.js";
 
 // HTTP routes for the Run -> Task -> AgentExecution model, as specified in
@@ -254,6 +255,16 @@ export function registerRunRoutes(app: FastifyInstance, options: RunRoutesOption
   app.get("/api/runs/:runId/files", async (request) => {
     const { runId } = runParams.parse(request.params);
     return { files: await listWorkspaceFiles(await readableWorkingCopy(request, runId)) };
+  });
+
+  app.get("/api/runs/:runId/archive", async (request, reply) => {
+    const { runId } = runParams.parse(request.params);
+    const root = await readableWorkingCopy(request, runId);
+    const archive = await zipWorkspace(root).catch((error: unknown) => {
+      if (error instanceof Error && /limit|deeply|safely/.test(error.message)) throw new HttpError(413, error.message);
+      throw error;
+    });
+    return reply.header("content-disposition", `attachment; filename="agentguard-run-${runId}.zip"`).type("application/zip").send(archive);
   });
 
   app.get("/api/runs/:runId/diff", async (request) => {

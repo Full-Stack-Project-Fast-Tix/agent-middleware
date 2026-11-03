@@ -2,7 +2,6 @@ import { Fragment, useEffect, useState } from "react";
 import type { RunFilesResponse } from "@launchpad/shared";
 import { Button, DataTable, ForeignInline } from "../ui";
 import { runsApi } from "./runs-api";
-import { zipTextFiles } from "./zip";
 
 function formatSize(bytes: number): string {
   return bytes < 1024 ? `${bytes} B` : `${(bytes / 1024).toFixed(bytes < 10_240 ? 1 : 0)} KB`;
@@ -68,20 +67,7 @@ export function RunFiles({ runId, runEnded }: { runId: string; runEnded: boolean
     setDownloadingAll(true);
     setNote(null);
     try {
-      const contents: Array<{ path: string; content: string }> = [];
-      let totalBytes = 0;
-      for (const file of files) {
-        const loaded = await runsApi.file(runId, file.path);
-        if (loaded.truncated) {
-          throw new Error(`${file.path} exceeds the 256 KB file limit, so the ZIP would be incomplete.`);
-        }
-        totalBytes += new TextEncoder().encode(loaded.content).length;
-        if (totalBytes > 20 * 1024 * 1024) {
-          throw new Error("The Run's files exceed the 20 MB ZIP limit. Download files individually instead.");
-        }
-        contents.push({ path: loaded.path, content: loaded.content });
-      }
-      const archive = zipTextFiles(contents);
+      const archive = await runsApi.archive(runId);
       const url = URL.createObjectURL(archive);
       const link = document.createElement("a");
       link.href = url;
@@ -99,10 +85,10 @@ export function RunFiles({ runId, runEnded }: { runId: string; runEnded: boolean
     <section className="page-section" aria-labelledby="run-files-heading">
       <div className="section-copy">
         <h2 id="run-files-heading">Files in this run's copy</h2>
-        <p className="meta">Agents work on a copy, so nothing here has changed your project. Check a file before you use it.</p>
+        <p className="meta">Agents work on a copy, so nothing here has changed your project. Download the Run copy as a ZIP to keep full file bytes, including binary files. The archive omits dependencies, build output, and known credential files; limits are 500 files and 100 MB.</p>
         {files !== null && files.length > 0 && (
           <Button variant="primary" busy={downloadingAll} onClick={() => void downloadAll()}>
-            Download all as ZIP
+            Download Run folder as ZIP
           </Button>
         )}
       </div>

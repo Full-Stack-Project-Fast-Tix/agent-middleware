@@ -92,6 +92,15 @@ export const runsApi = {
   diff: async (runId: string): Promise<RunDiffResponse> =>
     runDiffResponseSchema.parse(await request(apiPaths.runDiff(runId))),
 
+  archive: async (runId: string): Promise<Blob> => {
+    const response = await fetch(apiPaths.runArchive(runId), { headers: authHeaders() });
+    if (!response.ok) {
+      const { error } = (await response.json().catch(() => ({}))) as { error?: string };
+      throw new ApiError(error ?? "The workspace ZIP could not be created", response.status);
+    }
+    return response.blob();
+  },
+
   /** Follow the Run's events until `signal` aborts; reconnects and resyncs on its own. */
   follow: (
     runId: string,
