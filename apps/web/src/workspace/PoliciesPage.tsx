@@ -125,13 +125,19 @@ function Policies({ workspace }: { workspace: WorkspaceSummary }) {
       <ChangeError message={change.error} />
 
       <section className="page-section">
-        <h2>Policies</h2>
-        <p className="meta">Every agent is limited by the platform policies, then this workspace's, then its own profile. Each can only take away.</p>
+        <div className="config-section-heading">
+          <div>
+            <h2>Policies</h2>
+            <p className="meta">Limits apply in order: platform, workspace, then agent profile. Each layer can only remove capabilities.</p>
+          </div>
+          <span className="config-count">{policies.length} active</span>
+        </div>
         <DataTable caption="Security policies">
           <thead>
             <tr><th>Policy</th><th>Applies to</th><th>Limits</th><th>Version</th>{isAdmin && <th><span className="sr-only">Actions</span></th>}</tr>
           </thead>
           <tbody>
+            {policies.length === 0 && <tr><td colSpan={isAdmin ? 5 : 4} className="config-empty">No workspace policies are configured. The locked platform baseline still applies.</td></tr>}
             {policies.map((policy) => (
               <Fragment key={policy.id}>
                 <tr>
@@ -172,12 +178,19 @@ function Policies({ workspace }: { workspace: WorkspaceSummary }) {
       </section>
 
       <section className="page-section">
-        <h2>Profiles</h2>
+        <div className="config-section-heading">
+          <div>
+            <h2>Agent profiles</h2>
+            <p className="meta">Profiles set each agent's starting capabilities before policy limits are applied.</p>
+          </div>
+          <span className="config-count">{profiles.length} active</span>
+        </div>
         <DataTable caption="Agent profiles">
           <thead>
             <tr><th>Profile</th><th>Allows</th><th>Version</th>{isAdmin && <th><span className="sr-only">Actions</span></th>}</tr>
           </thead>
           <tbody>
+            {profiles.length === 0 && <tr><td colSpan={isAdmin ? 4 : 3} className="config-empty">No profiles are configured for this workspace.</td></tr>}
             {profiles.map((profile) => (
               <Fragment key={profile.id}>
                 <tr>

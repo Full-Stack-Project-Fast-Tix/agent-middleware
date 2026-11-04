@@ -120,19 +120,57 @@ export function NewRun() {
           <p className="new-run-workspace">You are not in a workspace yet. Ask your platform operator to add you to one.</p>
         )}
 
-        <fieldset className="mode-choice">
-          <legend>How should it run?</legend>
-          <label className={"mode-card" + (mode === "auto" ? " mode-card-chosen" : "")}>
-            <input type="radio" name="mode" value="auto" checked={mode === "auto"} onChange={() => { setMode("auto"); setAgentId(""); }} />
-            <strong>Plan and delegate</strong>
-            <span>A supervisor splits the work between specialist agents. Every delegation is checked.</span>
-          </label>
-          <label className={"mode-card" + (mode === "single" ? " mode-card-chosen" : "")}>
-            <input type="radio" name="mode" value="single" checked={mode === "single"} onChange={() => { setMode("single"); setAgentId(""); }} />
-            <strong>One agent</strong>
-            <span>A single agent does the whole task.</span>
-          </label>
-        </fieldset>
+        <section className="new-run-step" aria-labelledby="new-run-task-title">
+          <div className="new-run-step-heading">
+            <span className="new-run-step-number" aria-hidden="true">01</span>
+            <div>
+              <h2 id="new-run-task-title">Describe the task</h2>
+              <p>Be specific about the change and how you will know it is done.</p>
+            </div>
+          </div>
+          <div className="new-run-task">
+            <label>
+              Task
+              <textarea
+                aria-label="Task"
+                value={prompt}
+                onChange={(event) => setPrompt(event.target.value)}
+                placeholder="What should the agents do?"
+                rows={5}
+                maxLength={20_000}
+                required
+              />
+            </label>
+            <div className="new-run-examples" aria-label="Example tasks">
+              <span className="meta">Try an example</span>
+              {EXAMPLES.map((example) => (
+                <button type="button" className="new-run-example" key={example} onClick={() => setPrompt(example)}>{example}</button>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <section className="new-run-step" aria-labelledby="new-run-setup-title">
+          <div className="new-run-step-heading">
+            <span className="new-run-step-number" aria-hidden="true">02</span>
+            <div>
+              <h2 id="new-run-setup-title">Choose how it runs</h2>
+              <p>Every agent works within the effective permissions shown below.</p>
+            </div>
+          </div>
+          <fieldset className="mode-choice">
+            <legend>Execution mode</legend>
+            <label className={"mode-card" + (mode === "auto" ? " mode-card-chosen" : "")}>
+              <input type="radio" name="mode" value="auto" checked={mode === "auto"} onChange={() => { setMode("auto"); setAgentId(""); }} />
+              <strong>Plan and delegate</strong>
+              <span>A supervisor splits the work between specialist agents. Every delegation is checked.</span>
+            </label>
+            <label className={"mode-card" + (mode === "single" ? " mode-card-chosen" : "")}>
+              <input type="radio" name="mode" value="single" checked={mode === "single"} onChange={() => { setMode("single"); setAgentId(""); }} />
+              <strong>One agent</strong>
+              <span>A single agent does the whole task.</span>
+            </label>
+          </fieldset>
 
         <Select
           label={mode === "auto" ? "Supervisor" : "Agent"}
@@ -172,27 +210,8 @@ export function NewRun() {
           )}
         </section>
 
-        {workspaceId && <WorkspaceVaultPicker workspaceId={workspaceId} agents={usable} value={vaultGrants} onChange={setVaultGrants} />}
-
-        <div className="new-run-task">
-          <label>
-            Task
-            <textarea
-              aria-label="Task"
-              value={prompt}
-              onChange={(event) => setPrompt(event.target.value)}
-              placeholder="What should the agents do?"
-              rows={5}
-              maxLength={20_000}
-              required
-            />
-          </label>
-          <div className="new-run-examples">
-            {EXAMPLES.map((example) => (
-              <button type="button" className="new-run-example" key={example} onClick={() => setPrompt(example)}>{example}</button>
-            ))}
-          </div>
-        </div>
+          {workspaceId && <WorkspaceVaultPicker workspaceId={workspaceId} agents={usable} value={vaultGrants} onChange={setVaultGrants} />}
+        </section>
 
         <div className="new-run-footer">
           <span>AgentGuard checks commands, file changes and delegations before they run.</span>

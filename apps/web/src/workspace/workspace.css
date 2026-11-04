@@ -3,6 +3,38 @@
   gap: 24px;
 }
 
+.config-section-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px 20px;
+  margin-bottom: 12px;
+}
+
+.config-section-heading h2,
+.config-section-heading p {
+  margin: 0;
+}
+
+.config-section-heading p {
+  max-width: 68ch;
+  margin-top: 4px;
+}
+
+.config-count {
+  flex: none;
+  color: var(--ink-soft);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.config-empty {
+  padding: 20px 12px;
+  color: var(--ink-soft);
+  text-align: left;
+}
+
 .config-note {
   display: block;
   max-width: 48ch;

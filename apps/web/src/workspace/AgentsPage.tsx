@@ -79,13 +79,20 @@ function Agents({ workspace }: { workspace: WorkspaceSummary }) {
   return (
     <>
       <ChangeError message={change.error} />
-      <p className="members-readonly">The capability column shows each agent after platform and workspace limits apply. A specialist's “complete” report is its own claim; review and test evidence remain separate.</p>
       <section className="page-section">
+        <div className="config-section-heading">
+          <div>
+            <h2>Configured agents</h2>
+            <p className="meta">Effective capabilities include platform and workspace limits. Check agent reports against review and test evidence.</p>
+          </div>
+          <span className="config-count">{data.agents.length} total</span>
+        </div>
         <DataTable caption="Agents">
           <thead>
             <tr><th>Agent</th><th>Profile</th><th>May do, after policies</th><th>Status</th>{canEdit && <th><span className="sr-only">Actions</span></th>}</tr>
           </thead>
           <tbody>
+            {shown.length === 0 && <tr><td colSpan={canEdit ? 5 : 4} className="config-empty">{data.agents.length === 0 ? "No agents are configured for this workspace yet." : "No active agents to show."}</td></tr>}
             {shown.map((agent) => (
               <AgentRow
                 key={agent.id}

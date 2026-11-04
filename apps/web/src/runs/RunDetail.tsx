@@ -36,6 +36,7 @@ export function RunDetail({ runId }: { runId: string }) {
   const [confirmingCancel, setConfirmingCancel] = useState(false);
   const [promptOpen, setPromptOpen] = useState(false);
   const [diff, setDiff] = useState<RunDiffResponse | null>(null);
+  const [diffStatus, setDiffStatus] = useState<"loading" | "ready" | "unavailable">("loading");
   const workspaceId = view?.run.workspaceId ?? null;
   const active = view !== null && isRunActive(view.run.status);
   const timeline = useRunTimeline(runId, active, view?.lastEventSeq ?? 0);
@@ -61,7 +62,14 @@ export function RunDetail({ runId }: { runId: string }) {
   useEffect(() => {
     setDiff(null);
     if (view === null || isRunActive(view.run.status)) return;
-    void runsApi.diff(runId).then(setDiff).catch(() => setDiff(null));
+    setDiffStatus("loading");
+    void runsApi.diff(runId).then((result) => {
+      setDiff(result);
+      setDiffStatus("ready");
+    }).catch(() => {
+      setDiff(null);
+      setDiffStatus("unavailable");
+    });
   }, [runId, view?.run.status]);
 
   const selectedTask = useMemo(() => {
@@ -230,8 +238,6 @@ export function RunDetail({ runId }: { runId: string }) {
         </section>
       )}
 
-      <div id="run-tasks"><TaskGraph view={view} agents={agents} selectedTaskId={selectedTask?.id ?? null} onSelect={setPicked} /></div>
-
       {!active && (
         <section className="page-section run-receipt" aria-labelledby="run-receipt-title">
           <h2 id="run-receipt-title">Run outcome</h2>
@@ -243,13 +249,15 @@ export function RunDetail({ runId }: { runId: string }) {
             <span>{view.findings.length} findings</span>
             <span>{view.executions.reduce((n, item) => n + (item.usage?.inputTokens ?? 0) + (item.usage?.outputTokens ?? 0), 0).toLocaleString()} tokens</span>
             <span>{run.startedAt && run.completedAt ? `${Math.max(0, Math.round((Date.parse(run.completedAt) - Date.parse(run.startedAt)) / 1000))}s elapsed` : "Duration unavailable"}</span>
-            <span>{diff === null ? "Changes loading" : `${diff.changedFileCount} files changed`}</span>
+            <span>{diffStatus === "loading" ? "Loading changes" : diffStatus === "unavailable" ? "Change count unavailable" : `${diff?.changedFileCount ?? 0} files changed`}</span>
           </div>
           <nav aria-label="Run evidence" className="cluster">
             <a href="#run-changes">Changes</a><a href="#run-timeline">Timeline</a><a href="#run-tasks">Tasks</a>
           </nav>
         </section>
       )}
+
+      <div id="run-tasks"><TaskGraph view={view} agents={agents} selectedTaskId={selectedTask?.id ?? null} onSelect={setPicked} /></div>
 
       <div className="run-body">
         <div className="run-main">
@@ -292,9 +300,11 @@ export function RunDetail({ runId }: { runId: string }) {
             onResolve={(approvalId, decision) => void resolve(approvalId, decision)}
           /></div>
           {timeline.timeline !== null && <ProposedFiles timeline={timeline.timeline} runEnded={!active} />}
-          {!active && diff !== null && (
+          {!active && (diff !== null || diffStatus === "unavailable") && (
             <section className="page-section" id="run-changes" aria-labelledby="actual-changes-title">
               <h2 id="actual-changes-title">Actual file changes</h2>
+              {diffStatus === "unavailable" && <p className="meta">The change summary could not be loaded. Reload the page to try again.</p>}
+              {diff !== null && <>
               {!diff.baselineAvailable && <p className="meta">No baseline was captured for this run.</p>}
               {diff.baselineAvailable && diff.changes.length === 0 && <p className="meta">No file changes were detected.</p>}
               {diff.changes.map((change) => (
@@ -307,6 +317,7 @@ export function RunDetail({ runId }: { runId: string }) {
                 </details>
               ))}
               {diff.truncated && <p className="meta">The change list is bounded; some files may be omitted.</p>}
+              </>}
             </section>
           )}
           {mayAct && <RunFiles runId={runId} runEnded={!active} />}
