@@ -23,14 +23,37 @@ function HeldCount({ count }: { count: number }) {
   );
 }
 
-function NavLinks({ items }: { items: readonly NavItem[] }) {
+function NavLinks({ items, compact = false }: { items: readonly NavItem[]; compact?: boolean }) {
+  const primary = compact ? items.slice(0, 3) : items;
+  const workspaceItems = compact ? items.slice(3) : [];
+  const activeWorkspaceItem = workspaceItems.find((item) => item.current);
   return (
     <nav className="topnav" aria-label="Main">
-      {items.map((item) => (
+      {primary.map((item) => (
         <Link key={item.to} to={item.to} aria-current={item.current ? "page" : undefined}>
           {item.label}
         </Link>
       ))}
+      {workspaceItems.length > 0 && (
+        <details
+          className={"topnav-group" + (activeWorkspaceItem ? " topnav-group-current" : "")}
+          onClick={(event) => {
+            if ((event.target as Element).closest("a")) event.currentTarget.open = false;
+          }}
+        >
+          <summary aria-label={activeWorkspaceItem ? `Workspace navigation, current page: ${activeWorkspaceItem.label}` : "Workspace navigation"}>
+            Workspace
+            {activeWorkspaceItem && <span className="topnav-group-page">{activeWorkspaceItem.label}</span>}
+          </summary>
+          <div className="topnav-group-menu">
+            {workspaceItems.map((item) => (
+              <Link key={item.to} to={item.to} aria-current={item.current ? "page" : undefined}>
+                {item.label}
+              </Link>
+            ))}
+          </div>
+        </details>
+      )}
     </nav>
   );
 }
@@ -94,7 +117,7 @@ export function AppShell({ nav, heldCount, workspace, account, children }: {
             <Wordmark />
           </Link>
           {workspace && <div className="topbar-slot topbar-workspace">{workspace}</div>}
-          <NavLinks items={nav} />
+          <NavLinks items={nav} compact />
           <div className="topbar-end">
             {heldCount !== null && <HeldCount count={heldCount} />}
             {account && <div className="topbar-slot">{account}</div>}

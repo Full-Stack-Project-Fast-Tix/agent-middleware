@@ -1193,6 +1193,74 @@
   color: var(--petrol-deep);
 }
 
+.topnav-group {
+  position: relative;
+}
+
+.topnav-group summary {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 32px;
+  padding: 0 10px;
+  border-radius: var(--radius-control);
+  color: var(--ink-soft);
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  list-style: none;
+  transition: background-color var(--quick) var(--ease), color var(--quick) var(--ease);
+}
+
+.topnav-group summary::-webkit-details-marker {
+  display: none;
+}
+
+.topnav-group summary::after {
+  width: 6px;
+  height: 6px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  content: "";
+  transform: rotate(45deg) translateY(-2px);
+}
+
+.topnav-group summary:hover,
+.topnav-group[open] summary {
+  background: var(--hover);
+  color: var(--ink);
+}
+
+.topnav-group-current summary {
+  color: var(--petrol-deep);
+}
+
+.topnav-group-page {
+  color: var(--ink-faint);
+  font-size: var(--text-sm);
+  font-weight: 400;
+}
+
+.topnav-group-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 1;
+  display: grid;
+  min-width: 190px;
+  gap: 2px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-block);
+  background: var(--surface);
+  box-shadow: var(--shadow-pop);
+}
+
+.topnav .topnav-group-menu a {
+  min-height: 38px;
+  padding: 0 10px;
+}
+
 .topbar-end {
   display: flex;
   align-items: center;
