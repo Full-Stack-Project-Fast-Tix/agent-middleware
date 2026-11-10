@@ -47,6 +47,7 @@ export function TaskDrilldown({
   resolvingApprovalId,
   canAnswer,
   onResolveApproval,
+  hidden,
 }: {
   view: RunView;
   task: Task;
@@ -54,6 +55,7 @@ export function TaskDrilldown({
   resolvingApprovalId: string | null;
   canAnswer: (approval: Approval) => boolean;
   onResolveApproval: (approval: Approval, decision: "approve" | "deny") => void;
+  hidden: boolean;
 }) {
   const executions = executionsOf(view, task.id);
   const findings = findingsOf(view, task.id);
@@ -65,7 +67,7 @@ export function TaskDrilldown({
     .map((edge) => ({ id: edge.dependsOnTaskId, task: view.tasks.find((candidate) => candidate.id === edge.dependsOnTaskId) }));
 
   return (
-    <aside className="task-drilldown" aria-label={`Task: ${task.title}`} tabIndex={0}>
+    <aside id="selected-task-details" className="task-drilldown" aria-label={`Task details: ${task.title}`} tabIndex={0} hidden={hidden}>
       <header className="task-section task-drilldown-head">
         <h2 className="task-drilldown-title"><TaskName title={task.title} writtenByPlan={isWrittenByPlan(task)} /></h2>
         <div className="cluster meta">

@@ -35,6 +35,7 @@ export function RunDetail({ runId }: { runId: string }) {
   const [actionError, setActionError] = useState<string | null>(null);
   const [confirmingCancel, setConfirmingCancel] = useState(false);
   const [promptOpen, setPromptOpen] = useState(false);
+  const [taskDetailsOpen, setTaskDetailsOpen] = useState(false);
   const [diff, setDiff] = useState<RunDiffResponse | null>(null);
   const [diffStatus, setDiffStatus] = useState<"loading" | "ready" | "unavailable">("loading");
   const workspaceId = view?.run.workspaceId ?? null;
@@ -43,6 +44,7 @@ export function RunDetail({ runId }: { runId: string }) {
 
   useEffect(() => {
     setPicked(null);
+    setTaskDetailsOpen(false);
   }, [runId]);
 
   // This page hears of a held action first; the top bar should not lag behind it.
@@ -141,6 +143,7 @@ export function RunDetail({ runId }: { runId: string }) {
 
   const review = (approval: Approval) => {
     setPicked(approval.taskId);
+    setTaskDetailsOpen(true);
     // The drill-down sits below the timeline on narrow screens.
     window.requestAnimationFrame(() => {
       document.getElementById(`approval-${approval.id}`)?.scrollIntoView({ block: "nearest" });
@@ -257,9 +260,24 @@ export function RunDetail({ runId }: { runId: string }) {
         </section>
       )}
 
-      <div id="run-tasks"><TaskGraph view={view} agents={agents} selectedTaskId={selectedTask?.id ?? null} onSelect={setPicked} /></div>
+      <div id="run-tasks">
+        <TaskGraph
+          view={view}
+          agents={agents}
+          selectedTaskId={selectedTask?.id ?? null}
+          onSelect={(taskId) => {
+            setPicked(taskId);
+            setTaskDetailsOpen(true);
+          }}
+          detailsOpen={taskDetailsOpen}
+          onToggleDetails={() => {
+            if (!taskDetailsOpen && picked === null && selectedTask !== null) setPicked(selectedTask.id);
+            setTaskDetailsOpen((open) => !open);
+          }}
+        />
+      </div>
 
-      <div className="run-body">
+      <div className={"run-body" + (!taskDetailsOpen ? " run-body-details-closed" : "")}>
         <div className="run-main">
           {run.finalOutput !== null && run.status === "completed" && (
             <section className="page-section" aria-label="Agent's report">
@@ -287,6 +305,7 @@ export function RunDetail({ runId }: { runId: string }) {
             selectedTaskId={selectedTask?.id ?? null}
             onSelectTask={(taskId) => {
               setPicked(taskId);
+              setTaskDetailsOpen(true);
               // The drill-down sits below the timeline on narrow screens.
               window.requestAnimationFrame(() => {
                 document.querySelector(".task-drilldown")?.scrollIntoView({ block: "nearest" });
@@ -325,6 +344,7 @@ export function RunDetail({ runId }: { runId: string }) {
 
         {selectedTask !== null && (
           <TaskDrilldown
+            hidden={!taskDetailsOpen}
             view={view}
             task={selectedTask}
             agents={agents}

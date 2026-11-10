@@ -281,6 +281,15 @@
   gap: 4px 24px;
 }
 
+.task-graph-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px 16px;
+  min-width: 0;
+}
+
 .run-detail {
   gap: 28px;
 }
@@ -596,6 +605,10 @@
   align-items: start;
 }
 
+.run-body-details-closed {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .run-main {
   display: grid;
   gap: 32px;
@@ -639,6 +652,10 @@
   border: 1px solid var(--line);
   border-radius: var(--radius-surface);
   background: var(--surface);
+}
+
+.task-drilldown[hidden] {
+  display: none;
 }
 
 .task-section {

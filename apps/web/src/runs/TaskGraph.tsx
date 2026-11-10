@@ -1,5 +1,6 @@
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { highestSeverity, type Agent } from "@launchpad/shared";
+import { Button } from "../ui";
 import { agentName, humanize, SeverityBadge, StatusBadge } from "./format";
 import { layoutTaskGraph, placeTaskGraph } from "./graph-layout";
 import { executionsOf, findingsOf, isRunActive, isWrittenByPlan, type RunView } from "./run-view";
@@ -29,11 +30,15 @@ export function TaskGraph({
   agents,
   selectedTaskId,
   onSelect,
+  detailsOpen,
+  onToggleDetails,
 }: {
   view: RunView;
   agents: ReadonlyMap<string, Agent>;
   selectedTaskId: string | null;
   onSelect: (taskId: string) => void;
+  detailsOpen: boolean;
+  onToggleDetails: () => void;
 }) {
   const { frame, width } = useFrameWidth();
   const layout = useMemo(() => layoutTaskGraph(view.tasks, view.dependencies), [view.dependencies, view.tasks]);
@@ -57,8 +62,9 @@ export function TaskGraph({
     <section className="page-section" aria-labelledby="task-graph-heading">
       <div className="section-head">
         <h2 id="task-graph-heading">Tasks</h2>
-        {(kinds.size > 1 || view.tasks.some(isWrittenByPlan)) && (
-          <div className="task-graph-legend meta">
+        <div className="task-graph-actions">
+          {(kinds.size > 1 || view.tasks.some(isWrittenByPlan)) && (
+            <div className="task-graph-legend meta">
             {view.tasks.some(isWrittenByPlan) && <span>Task names are written by the plan</span>}
             {kinds.size > 1 && (
               <>
@@ -66,8 +72,18 @@ export function TaskGraph({
                 <span><i className="legend-line legend-line-delegation" /> started by the plan</span>
               </>
             )}
-          </div>
-        )}
+            </div>
+          )}
+          <Button
+            variant="ghost"
+            aria-expanded={detailsOpen}
+            aria-controls={selectedTaskId === null ? undefined : "selected-task-details"}
+            disabled={selectedTaskId === null}
+            onClick={onToggleDetails}
+          >
+            {detailsOpen ? "Hide task details" : "Show task details"}
+          </Button>
+        </div>
       </div>
       <div className="task-graph-frame" ref={frame}>
         {layout.nodes.length === 0 && (
