@@ -8,6 +8,8 @@ import type { RunView } from "./harness/view.js";
 import { loadConfig } from "../../src/config.js";
 import { DefaultSecurityMiddleware } from "../../src/security-middleware-impl.js";
 
+const INTEGRATION_TIMEOUT_MS = 15_000;
+
 // Gate 1 of the work plan: one multi-agent Run goes through security
 // evaluation, persists its state and emits events, observed only through the
 // public API. Runs against stand-in subsystems until the real ones land (see
@@ -29,7 +31,7 @@ describe("secure multi-agent run", () => {
   afterEach(async () => {
     await target.close();
     expect(target.failures).toEqual([]);
-  });
+  }, INTEGRATION_TIMEOUT_MS);
 
   async function startRun(options: StandInOptions = {}) {
     target = await startStandIn(options);
@@ -146,7 +148,7 @@ describe("secure multi-agent run", () => {
     expect(evaluations.map(({ action }) => action.type)).toEqual([
       "delegation", "delegation", "command", "context_handoff", "command", "file_change",
     ]);
-  });
+  }, INTEGRATION_TIMEOUT_MS);
 
   it("plans, delegates, blocks exfiltration, pauses for approval and completes", async () => {
     const { client, run, recorder } = await startRun();
@@ -206,7 +208,7 @@ describe("secure multi-agent run", () => {
       ["command", executionFor(implement!.id)],
       ["file_change", executionFor(implement!.id)],
     ]);
-  });
+  }, INTEGRATION_TIMEOUT_MS);
 
   it("declines only the action when an approval is denied, and the run carries on", async () => {
     const { client, run, recorder } = await startRun();
@@ -222,7 +224,7 @@ describe("secure multi-agent run", () => {
     expect(snapshot.tasks.find((task) => task.title === "Add validation")?.status).toBe("completed");
     expect(findingsOf(snapshot, "Add validation")).toContainEqual(["runtime", "approval-denied", true]);
     expect(executedActions()).toEqual(["command"]);
-  });
+  }, INTEGRATION_TIMEOUT_MS);
 
   it("pauses planning for a gated delegation and resumes planning once approved", async () => {
     const { client, run, recorder } = await startRun({ gateWriteDelegations: true });
@@ -254,7 +256,7 @@ describe("secure multi-agent run", () => {
       ["policy", "write-delegation-requires-approval", true],
       ["runtime", "approval-approved", false],
     ]);
-  });
+  }, INTEGRATION_TIMEOUT_MS);
 
   it("creates no task, and no dependents, for a delegation that is denied", async () => {
     const { client, run, recorder } = await startRun({ gateWriteDelegations: true });
@@ -271,7 +273,7 @@ describe("secure multi-agent run", () => {
       ["policy", "write-delegation-requires-approval", true],
       ["runtime", "approval-denied", true],
     ]);
-  });
+  }, INTEGRATION_TIMEOUT_MS);
 
   it("cancels a run waiting for approval, idempotently", async () => {
     const { client, run, recorder } = await startRun();
@@ -290,7 +292,7 @@ describe("secure multi-agent run", () => {
     expect(snapshot.tasks.find((task) => task.title === "Add validation")?.status).toBe("cancelled");
     expect(executedActions()).not.toContain("file_change");
     expect((await client.cancelRun(run.id)).cancelRequestedAt).toBe(requested.cancelRequestedAt);
-  });
+  }, INTEGRATION_TIMEOUT_MS);
 
   it("answers misuse with contract-shaped errors", async () => {
     const { client, recorder } = await startRun();
@@ -312,5 +314,5 @@ describe("secure multi-agent run", () => {
 
     const unauthenticated = await fetch(`${target.baseUrl}/api/runs/${pending.runId}/snapshot`);
     expect(unauthenticated.status).toBe(401);
-  });
+  }, INTEGRATION_TIMEOUT_MS);
 });

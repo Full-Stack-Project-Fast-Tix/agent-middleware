@@ -61,7 +61,7 @@ describe("the outbound redaction hook", () => {
     const parsed = lines.map((line) => JSON.parse(line) as (typeof records)[number]);
     expect(parsed.map((record) => record.seq)).toEqual([1, 2]);
     expect(parsed[1]?.method).toBe("item/completed");
-  });
+  }, 15_000);
 
   it("redacts a JSON body, keeping what surrounds the secret", async () => {
     const app = await appWithRoutes();

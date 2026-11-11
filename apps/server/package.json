@@ -9,7 +9,7 @@
     "dev:demo": "tsx watch --conditions=development src/index.ts --runs-demo",
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run",
+    "test": "vitest run --maxWorkers=2",
     "test:fuzz": "vitest run tests/orchestrator/fuzz.test.ts",
     "benchmark:multi-agent": "tsx --conditions=development ../../benchmark/run-multi-agent-live.ts",
     "verify:claude-runtime": "tsx --conditions=development scripts/verify-claude-runtime.ts",

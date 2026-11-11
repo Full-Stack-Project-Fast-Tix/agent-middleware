@@ -70,7 +70,8 @@ describe("HTTP boundary", () => {
       method: "POST",
       url: "/api/echo",
       headers: { "content-type": "application/json" },
-      payload: JSON.stringify({ name: "x".repeat(1_100_000) }),
+      // The app's 15 MiB limit leaves room for bounded browser ZIP uploads.
+      payload: JSON.stringify({ name: "x".repeat(15 * 1024 * 1024) }),
     });
     expect(oversized.statusCode).toBe(413);
     await app.close();
