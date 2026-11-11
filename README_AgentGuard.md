@@ -4,7 +4,7 @@
 
 AgentGuard is a platform for delegating software-engineering tasks to autonomous coding agents while keeping **security enforcement, human approvals, and execution visibility outside the agents themselves**.
 
-> **Project status:** Active capstone development. The repository now has a multi-agent Run/Task/AgentExecution path, password-authenticated workspaces backed by PostgreSQL, server-side middleware wiring, container-backed Claude execution, and a web console with a Dashboard, Runs, Run Detail and workspace members. The broader governance and operations-console vision below is only partly implemented. This remains a proof of concept, not production-grade tenant isolation.
+> **Project status:** The repository has a Claude-only multi-agent Run/Task/AgentExecution path, password-authenticated PostgreSQL workspaces, server-side middleware, and a web console for Runs, approvals, workspace administration, security evidence, and saved benchmarks. The broader governance and operations-console vision below is only partly implemented. This remains a proof of concept, not production-grade tenant isolation.
 
 ## Overview
 
@@ -28,7 +28,7 @@ The proof of concept currently includes:
 - **Reflection memory** recording structured lessons from past security incidents.
 - Security findings surfaced in the execution trajectory, with replay/evaluation through an existing benchmark framework.
 
-The multi-agent and password-authenticated paths are implemented foundations, with workspace-role checks and capability ceilings. Password mode exposes only workspace-scoped multi-agent APIs. Security admins can create workspaces and accounts and manage workspace members in the web console; project folders must be under a path allowed by the server operator, and uploading a project from a user's computer is not supported yet. Configurable policy rules and stronger tenant isolation remain unfinished. Run copies omit known environment-secret patterns and common credential stores/files by default; this filename-based filter is not general secret detection.
+The multi-agent and password-authenticated paths are implemented foundations, with workspace-role checks and capability ceilings. Password mode exposes workspace-scoped multi-agent APIs. Security admins can create workspaces and accounts and manage workspace members in the web console; a new workspace can start empty, use an operator-approved server folder, or receive a validated ZIP upload before its first Run. Completed Runs show a bounded actual file diff and outcome receipt, and their working copies can be downloaded as ZIP. Failed sign-ins are throttled in process memory; this is not shared across replicas. Configurable fine-grained policy rules and stronger tenant isolation remain unfinished. Run copies omit known environment-secret patterns and common credential stores/files by default; this filename-based filter is not general secret detection.
 
 ## Planned product capabilities
 
@@ -71,6 +71,14 @@ The redesigned React frontend is intended to provide:
 | Approvals | Pending requests, action context, policy reasons, and decisions |
 | Security / Audit | Findings, interventions, policy changes, append-only audit history |
 | Benchmarks | Benign/adversarial results, security effectiveness, and false interventions |
+
+This table describes the broader product target, not a claim that every view is
+complete. For example, the current Dashboard focuses on pending approvals and
+recent Runs; it does not yet summarize agent inventory or overall system health.
+The Policies view manages capability ceilings and profiles; fine-grained policy
+rules are not implemented. Current implementation status and remaining external
+validation are tracked in [`handover.md`](handover.md) and
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 ## Architecture
 

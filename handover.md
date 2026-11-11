@@ -1,157 +1,144 @@
 # Team handover: current state and next steps
 
-> **Note, 2 November 2026:** Ark and Codex have since been removed, along with the
-> single-agent Playground and the Volcengine deployment ([decision 31](docs/contract-decisions.md#31-claude-is-the-only-runtime)).
-> Mentions of them below are historical.
+**Updated:** 11 November 2026
+**Branch checked:** `main`
+**Status:** Core POC implementation is present. Remaining work is validation,
+operations, documentation upkeep, and explicitly deferred product scope. This is
+not a production-hardened multi-tenant service.
 
-**Updated:** 1 November 2026
-
-**Repository state reviewed:** `main` after the P1/P2 closure work. This is a
-proof of concept and does not claim production-grade tenant isolation.
-
-## What is complete
+## Current implementation
 
 ### P1 — Security
 
-- Middleware-managed Codex executions use `workspace-write` within the isolated
-  Run copy and `untrusted` approvals, so file changes reach the gate. The pinned
-  runtime probe verifies that declining a change leaves the file absent.
-- A network-denied policy also disables Codex's service-side web search.
-- Run copies exclude known environment secrets, credential stores and selected
-  private-key/state files while retaining example templates. The marker parity
-  test keeps the copy exclusions aligned with the egress guard. This remains a
-  filename filter, not general secret detection.
-- Password mode now rejects the global legacy Agent, admin, system, workspace
-  file and single-agent Run APIs. Those routes use a shared JSON store with no
-  workspace identity and remain available only in token mode.
-- Raw execution traces are restricted to `developer` and `security_admin`.
-  Auditors use the bounded, redacted Run timeline and snapshots.
-- Command text is saved redacted and bounded in `security.decision` audit rows so the
-  timeline can show it. A redaction miss there cannot be removed (decision 14).
-- Arbitrary `SecurityPolicy.rules` remain unsupported and fail closed. A future
-  rules feature requires a versioned schema and enforcement semantics.
-- Multi-agent reflection memory now loads from and saves to the existing
-  PostgreSQL reflection tables, using the same structured `learnFrom` rules as
-  token mode. It is not prompt text, and its live efficacy still needs benchmark
-  evidence.
-- The Claude runtime keeps the model call on the host, so its tool containers
-  run with `--network none` when policy denies network (`docs/contract-decisions.md`,
-  decision 30). Host-level egress remains open for Codex.
+- Claude is the only agent runtime. The server owns the Claude tool loop; each
+  tool action passes through AgentGuard middleware before execution. Agent tools
+  run in disposable containers, with networking disabled when policy denies it.
+- Deterministic and semantic checks produce bounded findings and middleware
+  decisions. Semantic confidence is audit information; it does not decide
+  whether an action is allowed.
+- Workspace vault grants are resolved server-side, scoped to selected agents,
+  and mediated through the HTTPS vault broker. Vault use requires the configured
+  master key and the Postgres-backed workspace service.
+- Workspace working-copy exclusions cover known credential paths and are kept
+  aligned with sensitive-file checks by tests. This is a filename-based filter,
+  not general secret detection.
+- Reflection memory is wired to PostgreSQL using structured findings. Whether
+  it improves live multi-agent outcomes remains unmeasured.
+- Fine-grained `SecurityPolicy.rules` are unsupported and fail closed. A future
+  rules feature needs a versioned schema and reviewed enforcement semantics.
 
 ### P2 — Orchestration
 
-- A completed Codex turn no longer automatically completes its Task. Every
-  specialist must return a strict JSON disposition with `complete` or
-  `incomplete` and a bounded summary. Missing, malformed and incomplete reports
-  leave the execution completed, fail the Task without retrying, skip its
-  dependants and fail the Run.
-- Test-running work stays with the write-capable Developer; the Reviewer remains
-  read-only.
-- Nested specialist delegation remains deliberately disabled. The current flow
-  is supervisor to specialist, one level deep.
-- Terminal Run working copies and raw traces have a settled 30-day retention
-  policy. Active and approval-waiting artifacts must never be removed; durable
-  audit/status/finding/result data survives artifact expiry.
+- Runs use the Run → Task → AgentExecution model. A supervisor plans and
+  delegates one level to specialists; write-capable work is serialized.
+- Specialists return a strict completion disposition. A completed model turn
+  alone does not complete a Task; incomplete or malformed dispositions fail the
+  task without an unsafe retry.
+- Dependency handling, approvals, cancellation, retries, and terminal artifact
+  retention are implemented. Nested specialist delegation remains deliberately
+  disabled for this POC.
 
-### Platform and product already present
+### P3 — Platform
 
-- Password sign-in with no limit on failed attempts, PostgreSQL persistence,
-  workspace roles, member management APIs, Run APIs, SSE updates and backup
-  tooling are implemented.
-- The web console has the shared shell, Dashboard, Runs list and detail, task
-  graph, gate timeline, approvals, member management and the redesigned UI.
+- Password-authenticated workspaces, roles, Postgres-backed Runs, workspace
+  management, sign-in throttling, and run-scoped working copies are implemented.
+- A workspace admin can create an empty workspace or upload a validated ZIP
+  before its first Run. ZIP extraction is bounded and rejects unsafe paths,
+  links, and known credential files. Server-folder registration remains an
+  operator action restricted by `WORKSPACE_SOURCE_ROOTS`.
+- A completed Run has a bounded, redacted actual file diff and an outcome
+  receipt. The entire Run workspace can also be downloaded as ZIP.
+- Sign-in throttling is in process memory. It resets on restart and is not shared
+  across replicas. Keep this POC single-instance: event resync does not make
+  orchestration waiters, cancellation, approvals, or run-scoped taint
+  multi-instance safe.
 
-## Deliberate POC boundaries
+### P4 — Contracts, UI, and integration
 
-- **Settled P1/P3:** agents have no general network capability. Provider-only
-  egress is not implemented or claimed; the deploy script now fails closed if
-  the Codex workspace-write sandbox cannot be verified (decision 25).
-- **Settled P1/P3:** PostgreSQL workspace roles and run-scoped working copies
-  provide logical separation, not hardened isolation between production
-  tenants. Runtime containers now receive an execution-specific Codex home;
-  stronger OS, database and network isolation needs separate review (decision 26).
-- **Settled P1/P2:** specialist delegation stays one layer deep for this POC.
-  Recursive delegation needs a separate lineage, lifecycle, scheduling and
-  security design (decision 24).
-- Raw traces may contain sensitive values missed by pattern redaction and are
-  incomplete when rolled. They are debugging artifacts, not the audit record.
-- The concrete middleware has a focused multi-agent integration scenario. The
-  new live benchmark harness exercises PostgreSQL Runs, planning, delegation,
-  Tasks and gated containers, but no live run has been captured yet. It is
-  evaluation work, not a missing enforcement boundary for this milestone.
+- The console includes Dashboard, Runs, Run Detail, Approvals, Agents, Policies,
+  Security/Audit, Members, Credentials, and saved Benchmark reports.
+- Start a Run separates task entry from execution setup. Completed Run Detail
+  distinguishes gate proposals from actual file changes and labels agent
+  reports as unverified. Task details are available in a collapsible panel.
+- Desktop navigation groups less-frequent workspace destinations. The mobile
+  navigation keeps all destinations directly listed.
+- ZIP upload, full Run ZIP download, failed-sign-in throttling, actual Run diffs,
+  and the outcome receipt are implemented.
 
-## Work remaining by owner
+## Remaining work
 
 ### P1
 
-P1's Run/Task benchmark path is implemented; P1 should now run it on a dedicated
-database with live provider credentials and review its results before making
-multi-agent efficacy claims. The remaining P1 work is:
-
-- rerun the file-change approval and network-denial probes whenever the pinned
-  Codex image changes;
-- review any future rule schema, nested delegation, provider-only egress, or
-  production tenant-isolation proposal before it is enabled;
-- maintain the secret-copy marker parity test as sensitive markers change.
-- review reflection behavior and failure handling as part of the first live
-  Run/Task benchmark; the wiring is implemented but efficacy is unmeasured.
+- Run `benchmark/run-multi-agent-live.ts` against a dedicated Postgres database,
+  the pinned Claude runtime image, and live provider credentials. Review the
+  saved traces and report before making claims about multi-agent efficacy or
+  reflection memory. This is the main remaining P1 item; the harness exists.
+- Re-run the file-change approval and network-denial runtime probes when the
+  Claude runtime image or sandbox setup changes.
+- Maintain sensitive-file marker parity as the marker list evolves.
 
 ### P2
 
-The disposition contract remains in place. P2 reviewed `run-retention.ts`: it
-selects only terminal Runs older than the cutoff, removes traces before the
-workspace so a failed cleanup can retry, and preserves rows. The review fixed
-two helper edge cases: zero retention now means keep forever even when called
-directly, and filesystem permission errors are reported instead of treated as
-a missing directory. Remaining P2 work:
-
-- preserve the disposition contract and failure semantics as runtimes evolve;
-- join P1 if nested delegation is proposed later.
+- No outstanding P2 feature implementation is currently identified. Preserve
+  the task disposition and lifecycle invariants as orchestration changes.
+- Revisit nested delegation only if the product explicitly needs it and a new
+  lineage, scheduling, lifecycle, and security design is reviewed.
 
 ### P3
 
-- Terminal artifact cleanup is implemented and P2-reviewed (`run-retention.ts`).
-- Run `scripts/deploy-multi-agent.sh` on a real ECS host. Its systemd steps have
-  not been exercised yet; verify its fail-closed sandbox check and network
-  behavior on the target host.
-- Open Run streams detect another instance's durable event cursor and resync the
-  client snapshot. This does not support multi-instance operation: orchestration
-  waiters, cancellation, approval coordination and run-scoped taint are local.
-  Keep deployment single-instance until those are shared.
-- First-account bootstrap and host project path registration remain
-  operator-only. Workspace security admins can create accounts attached to their
-  workspace, manage roles, and create empty workspaces in Members. The CLI lists
-  users/workspaces and still accepts account passwords on stdin; project paths
-  never come from browser input. Deliver UI-created passwords through a secure
-  channel.
-- Lead any future stronger tenant-isolation or provider-only egress design with
-  P1; current POC boundaries are settled in decisions 25–26.
+- Exercise `scripts/deploy-multi-agent.sh` and its systemd/backup behavior on
+  the intended Linux/ECS host. Local build checks do not validate that host.
+- Keep bootstrap of the first account and registration of server-side project
+  folders operator-only. Do not deploy as multi-instance without shared
+  coordination for the process-local state listed above.
+- Stronger tenant isolation is deferred; current workspace roles and Run copies
+  are logical separation, not hardened isolation between mutually untrusted
+  tenants.
 
 ### P4
 
-- Reviewed Agents, Policies, Approvals, Security and Benchmarks wording: resolved
-  capabilities, unsupported fine-grained rules, proposal-only approvals, finding
-  limits, and report provenance are now stated in the relevant views.
-- Keep Benchmarks clear that saved reports are artifacts, not live workspace
-  measurements or a live-model efficacy claim. Multi-agent load numbers use
-  simulated agents; the new live Run/Task path is a separate command.
-- An expired trace answers 410, which the trace view shows as its error.
-- Keep UI wording clear that `complete` is the specialist's report, while tests
-  and review are separate evidence.
+- Do a manual browser review at desktop and mobile widths, especially the
+  grouped navigation, Start a Run form, completed Run receipt, and collapsed
+  task-details panel. The AppShell regression test checks markup structure, not
+  visual layout or real pointer/keyboard interaction.
+- Keep docs and UI wording aligned with implemented behavior and distinguish
+  saved benchmark artifacts from live efficacy results.
 
-## Dependencies
+## Deliberate POC boundaries
 
-| Work | Dependency |
-| --- | --- |
-| P3 artifact cleanup | Implemented and reviewed by P2; no dependency remains. |
-| Nested delegation | Settled: disabled beyond the supervisor's one planning layer for this POC (decision 24). Revisit only with a separately reviewed design. |
-| Provider-only egress | Settled: not claimed or implemented; agents remain network-denied. A host-enforced route needs live deployment design and validation (decision 25). |
-| Production tenant isolation | Settled: current separation is logical only. The per-execution Codex home is implemented; stronger isolation requires a separate design (decision 26). |
+- Agents have no general network capability. Provider-only egress is not
+  implemented or claimed.
+- Workspace roles and isolated Run working copies do not provide production
+  tenant isolation. Raw traces may contain values missed by redaction and may
+  be truncated; they are debugging evidence, not the complete audit record.
+- Policy rules beyond capability ceilings, recursive delegation, user-side
+  browsing of arbitrary host folders, multi-instance orchestration, and a
+  Dashboard covering all aspirational system metrics are outside the current
+  implementation.
+- `dev:demo` uses simulated Runs. The workspace vault and real account/workspace
+  administration require the Postgres-backed mode and configured vault key.
 
-## Settled references
+## Dependencies and handoff
 
-The authoritative choices are in `docs/contract-decisions.md`, especially
-decisions 14 (timeline and command storage), 16 (raw trace access), 17 (task
-disposition), 18 (artifact retention), 19 (who answers an approval), 20 (what always
-asks a person) and 21 (editing configuration). Current implementation status is in
-`docs/ARCHITECTURE.md`.
+| Work | Depends on | Can proceed now? |
+| --- | --- | --- |
+| P1 live benchmark and reflection review | Dedicated Postgres, container runtime/image, Claude credentials, benchmark budget | Yes, when those are available |
+| P1 runtime probes | Claude container image and local runtime access | Yes |
+| P3 deployment validation | Intended Linux/ECS host and deployment credentials | No, host access required |
+| P4 browser review | Running app and browser at desktop/mobile widths | Yes |
+| Fine-grained rules, nested delegation, hardened tenant isolation | New product/security decisions and reviewed designs | Deferred; no one is blocking another |
+
+No remaining implementation item above depends on another person finishing code
+first. The live benchmark and deployment checks depend on external environment
+access, not P2/P4 code.
+
+## References
+
+- [Architecture](docs/ARCHITECTURE.md) — implemented system and current limits.
+- [Architecture direction](docs/architecture-direction.md) — agreed future
+  direction, not proof of implementation.
+- [Contract decisions](docs/contract-decisions.md) — settled interfaces and
+  security choices, especially decisions 18–21, 24–27, 30–32.
+- [Deployment](docs/DEPLOYMENT.md) — host prerequisites and POC deployment.
+- [Live orchestration benchmark](benchmark/run-multi-agent-live.ts) — P1
+  validation harness.

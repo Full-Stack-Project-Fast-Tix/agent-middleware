@@ -203,14 +203,13 @@ the latest successfully completed workspace copy, which remains available as
 the starting point for its next Run. Rows stay, and reading an expired trace
 answers 410 rather than a plain 404.
 
-Not built yet, by owner:
-- **P1:** multi-agent reflection memory now loads and folds structured findings
+Remaining implementation and validation gaps:
+- **P1:** multi-agent reflection memory loads and folds structured findings
   into the existing PostgreSQL reflection/sighting tables for later Runs. Its
   live efficacy has not yet been measured. A PostgreSQL-backed live Run/Task
-  benchmark harness now exists at
-  `benchmark/run-multi-agent-live.ts`; it has not yet been run against a live
-  model/runtime. Policy `rules` stay unsupported until P1 reviews a schema, so
-  nothing yet produces `policy_required`.
+  benchmark harness exists at `benchmark/run-multi-agent-live.ts`, but has not
+  yet been run against a live model/runtime. Policy `rules` stay unsupported
+  until P1 reviews a schema, so nothing yet produces `policy_required`.
 - **P3:** tenant isolation beyond workspace roles (every workspace's Runs share one
   host). First-account bootstrap and host project paths stay operator-only
   (decision 15); workspace admins can create accounts in their workspace and
@@ -218,9 +217,11 @@ Not built yet, by owner:
   was decided against (decision 23). The
   integration harness still runs on `InMemoryRunStore`; the fuzz suite and the
   store suite are what exercise Postgres.
-- **P3/P4:** applied file changes on the gate timeline. Saved data does not hold
-  them, so the timeline says so. Command text is saved redacted and bounded in
-  audit metadata (contract decision 14).
+- **P3/P4:** a bounded baseline is captured for each Run and a redacted actual
+  file diff is saved and shown in Run Detail after completion. This is separate
+  from the gate timeline, which records proposed changes and decisions; an
+  allowed proposal does not prove that a change was applied. Command text is
+  saved redacted and bounded in audit metadata (contract decision 14).
 
 The password-mode console includes workspace Agents, Policies, Credentials and
 Members management, Approvals, Security findings and audit history, and saved
