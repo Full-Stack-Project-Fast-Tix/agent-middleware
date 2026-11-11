@@ -644,6 +644,28 @@ describe("ClaudeExecutionRuntime: refusal fallback", () => {
   });
 });
 
+describe("ClaudeExecutionRuntime: vault destinations", () => {
+  it("submits an ungranted host to the security gate before the runtime fallback refuses it", async () => {
+    const command = "agentguard-vault request --secret TEST_API_TOKEN --method GET --url https://example.com/";
+    const runtime = await runtimeFor([toolTurn(bash("vault-call", command)), finalTurn()]);
+    const gate = gateWith();
+    const outcome = await runtime.execute(requestWith(gate, {
+      vaultGrants: [{
+        name: "TEST_API_TOKEN",
+        value: "not-a-real-token",
+        allowedHosts: ["httpbin.org"],
+        authHeader: "X-Api-Key",
+        authPrefix: "",
+      }],
+    }));
+
+    expect(gate.actions).toEqual([{ type: "command", actionId: "vault-call", command, cwd: null }]);
+    expect(sandbox().commands).toEqual([]);
+    expect(lastUserContent(1)[0]).toMatchObject({ type: "tool_result", tool_use_id: "vault-call", is_error: true });
+    expect(readFileSync(outcome.tracePath!, "utf8")).not.toContain("not-a-real-token");
+  });
+});
+
 describe("ClaudeExecutionRuntime: the API key", () => {
   it("never reaches the trace, the tools, the outcome or the container request", async () => {
     const runtime = await runtimeFor([toolTurn(bash("a", "env"), editor("b", { command: "create", path: "a", file_text: "x" })), finalTurn()]);

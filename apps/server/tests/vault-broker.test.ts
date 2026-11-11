@@ -1,0 +1,20 @@
+import { describe, expect, it, vi } from "vitest";
+import { createPinnedIPv4Lookup } from "../src/vault-broker.js";
+
+describe("vault broker DNS pinning", () => {
+  it("returns a list when Node's HTTPS client requests all lookup results", () => {
+    const callback = vi.fn();
+
+    createPinnedIPv4Lookup("203.0.113.7")("api.example.test", { all: true }, callback);
+
+    expect(callback).toHaveBeenCalledWith(null, [{ address: "203.0.113.7", family: 4 }]);
+  });
+
+  it("returns the address and family for a single-result lookup", () => {
+    const callback = vi.fn();
+
+    createPinnedIPv4Lookup("203.0.113.7")("api.example.test", { family: 4 }, callback);
+
+    expect(callback).toHaveBeenCalledWith(null, "203.0.113.7", 4);
+  });
+});

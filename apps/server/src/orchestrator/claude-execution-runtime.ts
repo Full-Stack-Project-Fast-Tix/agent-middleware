@@ -481,10 +481,6 @@ class ClaudeTurn {
     if (/^\s*agentguard-vault\b/.test(command)) {
       const brokerRequest = parseVaultRequestCommand(command);
       if (brokerRequest === null) return this.rejected(toolUse, "The vault broker command is malformed or uses an unsupported method or URL.");
-      const grant = this.request.vaultGrants.find((item) => item.name === brokerRequest.secretName);
-      if (grant === undefined || !grant.allowedHosts.includes(brokerRequest.url.hostname.toLowerCase())) {
-        return this.rejected(toolUse, "This secret or API host was not granted to this agent for this Run.");
-      }
       const item = {
         id: toolUse.id,
         type: "commandExecution",
@@ -494,6 +490,13 @@ class ClaudeTurn {
       };
       const verdict = await this.gate({ type: "command", actionId: toolUse.id, command, cwd: null }, item);
       if (verdict !== "run") return toolError(toolUse, REFUSED_RESULT);
+      // Normally the middleware rejects missing secrets and ungranted hosts.
+      // Keep this runtime check as a fail-closed fallback, after the gate has
+      // recorded and evaluated the proposed command.
+      const grant = this.request.vaultGrants.find((entry) => entry.name === brokerRequest.secretName);
+      if (grant === undefined || !grant.allowedHosts.includes(brokerRequest.url.hostname.toLowerCase())) {
+        return this.rejected(toolUse, "This secret or API host was not granted to this agent for this Run.");
+      }
       await this.emitItem("item/started", { ...item, status: "inProgress" });
       if (this.stopped) return toolError(toolUse, REFUSED_RESULT);
       const startedAt = Date.now();

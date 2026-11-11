@@ -4,6 +4,17 @@ import https from "node:https";
 import type { WorkspaceVaultSecret } from "./workspace-vault.js";
 type BrokerSecret = Pick<WorkspaceVaultSecret, "value" | "allowedHosts" | "authHeader" | "authPrefix">;
 
+/** Return the DNS-pinned IPv4 in the callback shape Node requests, including `all` mode. */
+export function createPinnedIPv4Lookup(address: string): NonNullable<https.RequestOptions["lookup"]> {
+  return (_hostname, options, callback) => {
+    if (options.all) {
+      callback(null, [{ address, family: 4 }]);
+    } else {
+      callback(null, address, 4);
+    }
+  };
+}
+
 export interface VaultRequestInput {
   secretName: string;
   method: "GET" | "POST";
@@ -79,7 +90,7 @@ export async function requestWithVaultSecret(
         accept: "application/json, text/plain;q=0.9, */*;q=0.1",
         ...(body === undefined ? {} : { "content-type": "application/json", "content-length": String(body.byteLength) }),
       },
-      lookup: (_host, _options, callback) => callback(null, address, 4),
+      lookup: createPinnedIPv4Lookup(address),
       timeout: 15_000,
       maxHeaderSize: 16_384,
     }, (response) => {

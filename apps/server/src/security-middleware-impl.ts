@@ -473,6 +473,9 @@ class StatefulExecutionGuard implements ExecutionGuard {
       const brokerRequest = parseVaultRequestCommand(action.command);
       const brokerHostAllowed = brokerRequest !== null &&
         this.runTaint?.vaultHostsByAgent.get(this.context.agentId)?.has(brokerRequest.url.hostname.toLowerCase()) === true;
+      if (brokerRequest !== null && !brokerHostAllowed) {
+        return policyFinding("vault-destination-denied", "This API host is not approved for the granted vault secret.", "high", true);
+      }
       if (!capabilities.network && classifyEgress(action.command, this.runTaint?.sensitiveSourceRead ?? false).egress && !brokerHostAllowed) {
         return policyFinding("capability-network-denied", "This agent profile does not permit network access.", "high", true);
       }
