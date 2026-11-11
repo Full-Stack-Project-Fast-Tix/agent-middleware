@@ -167,6 +167,7 @@ async function run(
       agent: { id: "probe-agent" } as Agent,
       workingDirectory: workspace,
       prompt: "Probe task.",
+      vaultGrants: [],
       runtimePolicy: { sandboxMode: "workspace-write", denyNetwork: options.denyNetwork ?? true, approvalPolicy: "untrusted", semanticEnforcement: false, effectGating: true },
       gate: {
         decide: async (action) => {
@@ -180,6 +181,9 @@ async function run(
     tracePath = outcome.tracePath;
   } catch (caught) {
     error = caught;
+    if (!(caught instanceof RunCancelledError)) {
+      console.error(`Runtime probe ${executionId} failed:`, caught);
+    }
   }
   const results = new Map(toolResults.map((result) => [result.tool_use_id, result]));
   return { workspace, executionId, decisions, tracePath, results, error };
