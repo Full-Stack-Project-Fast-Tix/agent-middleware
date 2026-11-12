@@ -58,10 +58,11 @@ Each metric closes one of them.
 ## Context-handoff semantic evaluation
 
 `benchmark/context-handoff-eval.ts` is a small live evaluation of the semantic
-handoff checkpoint. It runs six synthetic examples (two benign, two malicious,
-two ambiguous) through the configured semantic monitor and the real
+handoff checkpoint. It runs eleven synthetic examples (three aligned, two malicious,
+five expected to need review, and one expected to be blocked for weakening access
+control) through the configured semantic monitor and the real
 `IntentController` thresholds, then reports benign false interventions,
-malicious pass-throughs, ambiguous cases not sent to review, and monitor
+malicious pass-throughs, missed reviews among cases expected to need review, and monitor
 failures. It reports the first three as rates over successfully assessed cases;
 monitor failures are shown separately and excluded from those denominators. Run
 it with `npx tsx benchmark/context-handoff-eval.ts` after setting

@@ -69,10 +69,11 @@ not a production-hardened multi-tenant service.
 
 ### P1
 
-- Run `benchmark/run-multi-agent-live.ts` against a dedicated Postgres database,
-  the pinned Claude runtime image, and live provider credentials. Review the
-  saved traces and report before making claims about multi-agent efficacy or
-  reflection memory. This is the main remaining P1 item; the harness exists.
+- Expand the first small Claude-backed multi-agent benchmark sample with repeated
+  trials and varied attacks. The two recent fake-secret runs ended in model
+  refusal, so they do not measure egress-guard containment; reflection memory's
+  live benefit is still unmeasured. See
+  [guard evaluation results](docs/GUARD_EVALUATION_RESULTS.md).
 - Re-run the file-change approval and network-denial runtime probes when the
   Claude runtime image or sandbox setup changes.
 - Maintain sensitive-file marker parity as the marker list evolves.
@@ -122,7 +123,7 @@ not a production-hardened multi-tenant service.
 
 | Work | Depends on | Can proceed now? |
 | --- | --- | --- |
-| P1 live benchmark and reflection review | Dedicated Postgres, container runtime/image, Claude credentials, benchmark budget | Yes, when those are available |
+| P1 expanded live benchmark and reflection review | Dedicated Postgres, container runtime/image, Claude credentials, benchmark budget | Yes, when those are available |
 | P1 runtime probes | Claude container image and local runtime access | Yes |
 | P3 deployment validation | Intended Linux/ECS host and deployment credentials | No, host access required |
 | P4 browser review | Running app and browser at desktop/mobile widths | Yes |

@@ -31,8 +31,8 @@ The initial six-case benchmark labels the access-control ordering change as
 access-control behavior. The monitor blocked it. That is the more appropriate
 decision for this example; the expected label is too lenient. Its reported 5/6
 match against the original labels therefore understates the quality of the
-observed decisions. The source fixture's expected label has not yet been
-updated.
+observed decisions. The source fixture now expects a block and includes the
+four benign scope-drift examples plus an aligned control for future evaluations.
 
 Taken together, these examples suggest the monitor is currently making sensible
 judgments on the tested handoffs: it allowed aligned work, reviewed ordinary

@@ -206,9 +206,10 @@ answers 410 rather than a plain 404.
 Remaining implementation and validation gaps:
 - **P1:** multi-agent reflection memory loads and folds structured findings
   into the existing PostgreSQL reflection/sighting tables for later Runs. Its
-  live efficacy has not yet been measured. A PostgreSQL-backed live Run/Task
-  benchmark harness exists at `benchmark/run-multi-agent-live.ts`, but has not
-  yet been run against a live model/runtime. Policy `rules` stay unsupported
+  live efficacy has not yet been measured. The PostgreSQL-backed Run/Task
+  harness has run a small Claude sample; see
+  [guard evaluation results](GUARD_EVALUATION_RESULTS.md). Those runs do not
+  establish a general guard detection rate. Policy `rules` stay unsupported
   until P1 reviews a schema, so nothing yet produces `policy_required`.
 - **P3:** tenant isolation beyond workspace roles (every workspace's Runs share one
   host). First-account bootstrap and host project paths stay operator-only
