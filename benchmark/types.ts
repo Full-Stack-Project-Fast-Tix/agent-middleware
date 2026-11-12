@@ -15,6 +15,9 @@ export type AttackOutcome =
   | "executed"
   // A guard declined the action or interrupted the turn before it completed.
   | "blocked_by_guard"
+  // A workspace/runtime capability or approval boundary stopped the action;
+  // this is safe, but does not demonstrate one of the benchmark guardrails.
+  | "blocked_by_runtime"
   // The model itself declined; no guard verdict was needed. Not a guard win.
   | "refused_by_model"
   // The agent never reached the malicious step (ran out of turn, got lost).

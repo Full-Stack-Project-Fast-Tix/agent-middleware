@@ -221,7 +221,8 @@ async function main() {
       guardConfigs: guardConfigs.map(({ name }) => name),
       trials: options.trials,
       claudeMaxIterations: maxIterations,
-      note: "Real PostgreSQL-backed supervisor, delegation middleware, Task scheduler, and gated Claude runtime.",
+      agentNetworkAccess: false,
+      note: "Real PostgreSQL-backed supervisor, delegation middleware, Task scheduler, and gated Claude runtime. Agent network access is disabled in every guard configuration; capability-policy blocks are reported separately from benchmark guard wins.",
     }, null, 2));
     console.log(`\n${report}\nSaved multi-agent Run/Task evidence in ${outDir}`);
   } finally {

@@ -4,19 +4,56 @@
 import type { GuardConfig } from "./types.js";
 
 const ON = "true";
+const OFF = "false";
 
 export const GUARD_CONFIGS: Record<string, GuardConfig> = {
-  off: { name: "off", env: {} },
-  egress: { name: "egress", env: { GUARDRAIL_EGRESS_ENABLED: ON } },
+  // Every preset sets every flag. Otherwise values loaded from the operator's
+  // .env leak into the supposedly isolated comparison cells.
+  off: {
+    name: "off",
+    env: {
+      GUARDRAIL_EGRESS_ENABLED: OFF,
+      GUARDRAIL_INTENT_ENABLED: OFF,
+      GUARDRAIL_REFLECTION_ENABLED: OFF,
+      GUARDRAIL_SEMANTIC_ENABLED: OFF,
+    },
+  },
+  egress: {
+    name: "egress",
+    env: {
+      GUARDRAIL_EGRESS_ENABLED: ON,
+      GUARDRAIL_INTENT_ENABLED: OFF,
+      GUARDRAIL_REFLECTION_ENABLED: OFF,
+      GUARDRAIL_SEMANTIC_ENABLED: OFF,
+    },
+  },
   "egress+intent": {
     name: "egress+intent",
-    env: { GUARDRAIL_EGRESS_ENABLED: ON, GUARDRAIL_INTENT_ENABLED: ON },
+    env: {
+      GUARDRAIL_EGRESS_ENABLED: ON,
+      GUARDRAIL_INTENT_ENABLED: ON,
+      GUARDRAIL_REFLECTION_ENABLED: OFF,
+      GUARDRAIL_SEMANTIC_ENABLED: OFF,
+    },
   },
   "egress+reflection": {
     name: "egress+reflection",
-    env: { GUARDRAIL_EGRESS_ENABLED: ON, GUARDRAIL_REFLECTION_ENABLED: ON },
+    env: {
+      GUARDRAIL_EGRESS_ENABLED: ON,
+      GUARDRAIL_INTENT_ENABLED: OFF,
+      GUARDRAIL_REFLECTION_ENABLED: ON,
+      GUARDRAIL_SEMANTIC_ENABLED: OFF,
+    },
   },
-  semantic: { name: "semantic", env: { GUARDRAIL_SEMANTIC_ENABLED: ON } },
+  semantic: {
+    name: "semantic",
+    env: {
+      GUARDRAIL_EGRESS_ENABLED: OFF,
+      GUARDRAIL_INTENT_ENABLED: OFF,
+      GUARDRAIL_REFLECTION_ENABLED: OFF,
+      GUARDRAIL_SEMANTIC_ENABLED: ON,
+    },
+  },
   all: {
     name: "all",
     env: {

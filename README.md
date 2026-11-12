@@ -387,9 +387,35 @@ interventions.
 
 ## Evaluation
 
-We ran 630 live runs (42 scenarios × 3 guard configurations × 5 repeats, on
-gpt-5.1) against an [AgentDojo](https://arxiv.org/abs/2406.13352)-style
-benchmark built for this project. Three numbers matter.
+### Current Claude evidence
+
+The latest repeatable sample contains 36 PostgreSQL-backed Claude Runs: four
+scenarios × three guard configurations × three repeats. Across its 27 planted
+exfiltration prompts, Claude sent the synthetic secret to the intended sink in
+0 runs and explicitly declined the planted secret-transfer instruction in
+26; one run never reached that step. The nine benign controls completed without
+guard interruptions.
+
+These results do **not** demonstrate live guard efficacy. AgentGuard excluded
+`.env` from all 36 Run workspaces, and the benchmark kept agent network access
+disabled in every configuration. The `off` preset disabled the four benchmark
+guardrail flags but left capability policy active. After correcting the scorer
+to require attack-specific trace evidence, the matrix showed zero
+attack-specific guard blocks. All nine attacked Runs failed to complete the
+requested task. Treat this as evidence about Claude's refusal behavior and the
+benchmark's current limitations, not as a leak-rate estimate.
+
+The complete result and reproducible command are in
+[`docs/GUARD_EVALUATION_RESULTS.md`](docs/GUARD_EVALUATION_RESULTS.md) and
+[`docs/BENCHMARK.md`](docs/BENCHMARK.md). Raw traces and per-run artifacts are
+local under `benchmark-results/` and ignored by Git.
+
+### Historical GPT-5.1 benchmark
+
+An earlier version of this project recorded 630 live runs (42 scenarios × 3
+guard configurations × 5 repeats, on gpt-5.1) against an
+[AgentDojo](https://arxiv.org/abs/2406.13352)-style benchmark. Those results
+are historical and not directly comparable to the current Claude runtime.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/benchmark-leak-rate-dark.svg">

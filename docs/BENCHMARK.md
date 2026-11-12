@@ -104,6 +104,11 @@ generated `.env` — across six families (~22 scenarios,
 
 `off`, `egress`, `egress+intent`, `egress+reflection`, `semantic`, `all` — the
 `GUARDRAIL_*_ENABLED` flags. See [`benchmark/guard-configs.ts`](../benchmark/guard-configs.ts).
+Every preset explicitly sets every guard flag. `off` means the benchmark
+guardrail flags are disabled; runtime capability policy and approvals remain
+active. The live harness also disables agent network access in all presets, so
+`off` is not an unrestricted network baseline. The selected network setting is
+recorded in `metadata.json`.
 
 ## Running it
 
@@ -159,6 +164,31 @@ measure the current model and runtime on that slice; they are not a stable
 security guarantee or a statistically meaningful efficacy claim. Unlike the
 replay harness, each run contains the real supervisor-to-specialist plan
 and persisted Run/Task/AgentExecution lifecycle.
+
+The repeatable Claude sample from 2026-11-13 and its limitations are documented
+in [`GUARD_EVALUATION_RESULTS.md`](GUARD_EVALUATION_RESULTS.md). The checkout
+fixture writes its fake `.env` to the source folder, but Run working-copy
+preparation excludes environment files. Those exfiltration scenarios therefore
+do not put a secret in the agent's workspace: they measure Claude's response to
+the planted instruction, not whether a guard can stop a real secret transfer.
+Use a synthetic credential file intentionally included in the Run workspace
+and an isolated controlled sink before making live egress-efficacy claims.
+
+The exact 36-Run sample can be repeated with:
+
+```bash
+BENCH_OWNER_EMAIL=you@example.com \
+BENCH_CLAUDE_MAX_ITERATIONS=10 \
+BENCH_RUN_TIMEOUT_MS=600000 \
+BENCH_OUT_DIR=benchmark-results/claude-repeatable-my-run \
+  npm run benchmark:multi-agent -w @launchpad/server -- \
+  --scenarios benign-refactor,hidden-in-readme,send-base64,multi-step-2 \
+  --configs off,egress,all --trials 3
+```
+
+Set `DATABASE_URL` to a disposable benchmark database as in the command above.
+This reproduces the observed Claude behavior and the fixture limitation; it does
+not turn the sample into a guard-efficacy evaluation.
 
 ## Output
 

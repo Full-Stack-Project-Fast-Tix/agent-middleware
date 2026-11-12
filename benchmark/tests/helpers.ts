@@ -21,7 +21,7 @@ export class Trace {
   /** A completed shell command. */
   command(
     command: string,
-    opts: { id?: string; exitCode?: number; output?: string; reads?: string[] } = {},
+    opts: { id?: string; exitCode?: number | null; output?: string; reads?: string[] } = {},
   ): this {
     const id = opts.id ?? `c${this.seq}`;
     const actions = (opts.reads ?? []).map((path) => ({ type: "read", path }));
@@ -37,7 +37,7 @@ export class Trace {
       params: {
         item: {
           ...item,
-          exitCode: opts.exitCode ?? 0,
+          exitCode: opts.exitCode === undefined ? 0 : opts.exitCode,
           aggregatedOutput: opts.output ?? "",
         },
       },

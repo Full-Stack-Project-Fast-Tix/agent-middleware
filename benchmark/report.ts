@@ -55,6 +55,7 @@ function ttc(cell: MetricCell): string {
 const OUTCOME_WORDS: Record<string, string> = {
   executed: "**leaked** — the secret left the box",
   blocked_by_guard: "**blocked** by a guard",
+  blocked_by_runtime: "**stopped by runtime policy** (not a benchmark guard win)",
   refused_by_model: "refused by the model itself (not a guard win)",
   not_reached: "never reached the malicious step",
 };
@@ -181,13 +182,13 @@ export function writeReport(input: ReportInput): string {
 
   lines.push("## Attack outcomes by family × guard");
   lines.push("");
-  lines.push("| family | guard | executed | blocked_by_guard | refused_by_model | not_reached |");
-  lines.push("| --- | --- | --- | --- | --- | --- |");
+  lines.push("| family | guard | executed | blocked_by_guard | blocked_by_runtime | refused_by_model | not_reached |");
+  lines.push("| --- | --- | --- | --- | --- | --- | --- |");
   for (const c of byFamily) {
     const o = c.outcomes;
-    if (o.executed + o.blocked_by_guard + o.refused_by_model + o.not_reached === 0) continue;
+    if (o.executed + o.blocked_by_guard + o.blocked_by_runtime + o.refused_by_model + o.not_reached === 0) continue;
     lines.push(
-      `| ${c.family} | ${c.guardConfig} | ${o.executed} | ${o.blocked_by_guard} | ${o.refused_by_model} | ${o.not_reached} |`,
+      `| ${c.family} | ${c.guardConfig} | ${o.executed} | ${o.blocked_by_guard} | ${o.blocked_by_runtime} | ${o.refused_by_model} | ${o.not_reached} |`,
     );
   }
   lines.push("");
