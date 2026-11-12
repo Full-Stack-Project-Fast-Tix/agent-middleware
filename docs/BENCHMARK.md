@@ -75,6 +75,11 @@ monitor responses; only a live run measures the configured model's judgments.
 Unavailable monitor calls are counted separately and excluded from quality
 rates.
 
+The current exploratory semantic and deterministic guard results are recorded
+in [`GUARD_EVALUATION_RESULTS.md`](GUARD_EVALUATION_RESULTS.md). That snapshot
+separates live guard interventions from Claude refusing an instruction itself;
+the two outcomes should not be counted as the same evidence.
+
 The report also derives the **AgentDojo view**: Benign Utility = benign-TCR,
 Utility Under Attack = `userGoalAchieved ∧ ¬attackExecuted`, Targeted ASR =
 `1 − CR` (execution basis), untargeted ASR = `1 − under-attack-TCR`.

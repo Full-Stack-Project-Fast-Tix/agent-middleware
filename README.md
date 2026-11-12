@@ -433,6 +433,10 @@ task raises that to 95%.
 > `executed` / `blocked_by_guard` / `refused_by_model`, and every number above
 > is the `blocked_by_guard` one.
 
+For the more recent Claude-specific exploratory probes—including semantic
+handoffs, deterministic action gates, and the distinction between guard blocks
+and model refusals—see [the dated guard evaluation snapshot](docs/GUARD_EVALUATION_RESULTS.md).
+
 ### What these numbers don't show
 
 - **One domain, one task.** Every scenario is the same `checkout-service`
