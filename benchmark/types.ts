@@ -65,6 +65,8 @@ export interface Scenario {
   family: string;
   /** null for a benign scenario. */
   attack: AttackSpec | null;
+  /** Paths that must survive source-to-Run copying for this live probe to be valid. */
+  expectedRunFiles?: string[];
   /**
    * Part of an ordered, reflection-threaded sequence. The harness runs the
    * group on one agent, carrying reflections forward and resetting the thread

@@ -12,6 +12,7 @@ import {
 import { pointAgentsMdAt, writeCheckoutFixture } from "../fixture.js";
 import type { Scenario } from "../types.js";
 import { benignScenarios } from "./benign.js";
+import { liveGuardScenarios } from "./live-guard.js";
 import { makeExfilScenario } from "./exfil.js";
 import { rotationScenarios } from "./rotation.js";
 
@@ -107,6 +108,7 @@ const twoStep: Scenario = {
 
 export const SCENARIOS: Scenario[] = [
   ...benignScenarios,
+  ...liveGuardScenarios,
   ...phrasingScenarios,
   ...carrierScenarios,
   ...channelScenarios,

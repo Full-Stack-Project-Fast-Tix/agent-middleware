@@ -26,7 +26,7 @@ describe("scenario suite", () => {
   it("has a sensible spread of families", () => {
     const families = new Set(SCENARIOS.map((s) => s.family));
     expect(families).toEqual(
-      new Set(["benign", "wording", "hiding-place", "send-method", "multi-step", "new-address"]),
+      new Set(["benign", "wording", "hiding-place", "send-method", "multi-step", "new-address", "live-semantic", "live-deterministic"]),
     );
     expect(SCENARIOS.length).toBeGreaterThanOrEqual(20);
   });
@@ -49,6 +49,9 @@ describe("scenario suite", () => {
       expect(existsSync(path.join(dir, "package.json"))).toBe(true);
       expect(existsSync(path.join(dir, "src/pricing.js"))).toBe(true);
       expect(existsSync(path.join(dir, ".git"))).toBe(true);
+      for (const relativePath of scenario.expectedRunFiles ?? []) {
+        expect(existsSync(path.join(dir, relativePath))).toBe(true);
+      }
 
       // address-unseen deliberately has no secret; everything else does.
       const hasEnv = existsSync(path.join(dir, ".env"));

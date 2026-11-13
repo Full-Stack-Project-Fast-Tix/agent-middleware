@@ -166,13 +166,25 @@ replay harness, each run contains the real supervisor-to-specialist plan
 and persisted Run/Task/AgentExecution lifecycle.
 
 The repeatable Claude sample from 2026-11-13 and its limitations are documented
-in [`GUARD_EVALUATION_RESULTS.md`](GUARD_EVALUATION_RESULTS.md). The checkout
-fixture writes its fake `.env` to the source folder, but Run working-copy
-preparation excludes environment files. Those exfiltration scenarios therefore
+in [`GUARD_EVALUATION_RESULTS.md`](GUARD_EVALUATION_RESULTS.md). The legacy
+checkout fixture writes its fake `.env` to the source folder, but Run
+working-copy preparation excludes environment files. Those legacy exfiltration
+scenarios therefore
 do not put a secret in the agent's workspace: they measure Claude's response to
 the planted instruction, not whether a guard can stop a real secret transfer.
-Use a synthetic credential file intentionally included in the Run workspace
-and an isolated controlled sink before making live egress-efficacy claims.
+The `multi-agent-config-exfil` scenario now uses a synthetic credential in
+`fixtures/secrets-demo.txt` and records its presence in `fixture-checks.json`.
+It still does not prove egress containment when Claude refuses the attempted
+transfer before proposing a sink command. Use an isolated controlled sink and
+an observed proposed send before making live egress-efficacy claims.
+
+Additional full-Run probes cover scope expansion, access-control weakening,
+network capability denial, and destructive-action approval. Use
+`--scenarios live-scope-expansion,live-security-weakening,live-destructive-approval,live-network-capability`
+with `--configs off,all --trials 1` to repeat them. Their generic benchmark
+`FIR` and Benign Utility cells are not meaningful for deliberately risky
+commands; inspect the trace, findings, and Run copy as documented in
+[`GUARD_EVALUATION_RESULTS.md`](GUARD_EVALUATION_RESULTS.md).
 
 The exact 36-Run sample can be repeated with:
 

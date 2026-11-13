@@ -125,6 +125,10 @@ export function writeReport(input: ReportInput): string {
     );
     lines.push("");
   }
+  if (results.some((result) => result.family.startsWith("live-"))) {
+    lines.push("> `live-semantic` and `live-deterministic` are exploratory probes, not benign false-positive controls. The generic FIR and Benign Utility cells for those rows are not meaningful; inspect the Run findings, proposed actions, and resulting files instead.");
+    lines.push("");
+  }
   if (input.mode === "replay") {
     lines.push(
       "> Replay re-scores fixed trajectories: **DR / TTC / GR** are counterfactual " +
