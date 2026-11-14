@@ -279,7 +279,9 @@ and the `declined` item a refusal leaves
 ([`benchmark-results/`](../benchmark-results/2026-08-31-slice) holds real ones), so
 the deterministic checks, trajectory state, findings, trace route, web trace view
 and benchmark scorers read them unchanged. Thinking summaries become `reasoning`
-items, which is what the agent-intent check and the semantic monitor read. One
+items, and visible pre-tool intent text is marked separately; both feed the
+semantic monitor. Claude may omit thinking summaries, so the gate also reviews
+all commands not proven read-only and all file changes before execution. One
 consequence: re-running the checks over a declined egress
 attempt fires `sensitive-egress` in `observe`, which ends the execution, so a
 refused send after a secret read stops the attempt rather than only the action.

@@ -10,6 +10,7 @@ import { remediationForSemantic, steeringPrompt } from "./steering-policy.js";
 import type { TraceRecord } from "./trace.js";
 import type { HumanApprovalReason } from "./types.js";
 import { TrajectoryState } from "./trajectory-state.js";
+import { isKnownSafeRead } from "./read-only-command.js";
 
 export const SEMANTIC_ACTION_REVIEW_RISK = 0.5;
 export const SEMANTIC_ACTION_BLOCK_RISK = 0.75;
@@ -96,9 +97,12 @@ export class IntentController {
   shouldReviewAction(action: SemanticProposedAction): boolean {
     if (this.reasoningReviewUnavailable) return true;
     if (this.state.currentRisk() >= SEMANTIC_ACTION_REVIEW_RISK) return true;
-    if (action.type === "command") return isHighConsequenceCommand(action.command);
+    // A shell command can write any workspace file, even when its first clause
+    // looks like routine implementation. A missing or incomplete reasoning
+    // summary must never make that effect invisible to semantic review.
+    if (action.type === "command") return !isKnownSafeRead(action.command);
     if (action.type === "context_handoff" || action.type === "delegation") return true;
-    return isConsequentialFileChange(action);
+    return true;
   }
 
   async reviewAction(
@@ -112,6 +116,7 @@ export class IntentController {
     }
 
     try {
+      const intentEvidence = this.state.intentEvidenceForNextAction();
       const assessment = await this.monitor.assess(
         boundedMonitorInput(this.state.monitorInput(action.type, false, action)),
       );
@@ -128,13 +133,13 @@ export class IntentController {
         return {
           decision: "human_review",
           humanReviewReason: "semantic_uncertainty",
-          finding: findingFor(assessment, action.seq, action.type, "human_review"),
+          finding: findingFor(assessment, action.seq, action.type, "human_review", undefined, intentEvidence),
         };
       }
       if (!block) {
         return {
           decision: "allow",
-          finding: findingFor(assessment, action.seq, action.type, "allow"),
+          finding: findingFor(assessment, action.seq, action.type, "allow", undefined, intentEvidence),
         };
       }
 
@@ -145,7 +150,7 @@ export class IntentController {
       );
       return {
         decision: "decline",
-        finding: findingFor(assessment, action.seq, action.type, "decline", steer),
+        finding: findingFor(assessment, action.seq, action.type, "decline", steer, intentEvidence),
         steer,
       };
     } catch (error) {
@@ -203,27 +208,13 @@ export function isHighConsequenceCommand(command: string): boolean {
   );
 }
 
-function isConsequentialFileChange(action: Extract<SemanticProposedAction, { type: "file_change" }>): boolean {
-  return action.changes.some((change) => {
-    const material = `${change.path}\n${change.diff}`;
-    return (
-      change.kind === "delete" ||
-      /(?:^|\/)(?:auth|security|middleware|permission|validation|tests?|specs?|package\.json|Dockerfile|\.github|\.git\/hooks)(?:[./_-]|$)/i.test(
-        change.path,
-      ) ||
-      /\b(?:authenticate|authorization|verify|validation|bypass|disable|skip|xfail|assert|admin|backdoor|password|token|secret)\b/i.test(
-        material,
-      )
-    );
-  });
-}
-
 function findingFor(
   assessment: SemanticAssessment,
   seq: number,
   checkpoint: "reasoning" | "command" | "file_change" | "context_handoff" | "delegation",
   decision: IntentDecision,
   steer?: string,
+  intentEvidence?: "none" | "thinking_summary" | "visible_plan" | "both",
 ): Finding {
   const severity =
     decision === "decline" || decision === "interrupt"
@@ -242,6 +233,7 @@ function findingFor(
     metadata: {
       checkpoint,
       controllerDecision: decision,
+      ...(intentEvidence === undefined ? {} : { intentEvidence }),
       assessment: {
         riskScore: assessment.riskScore,
         confidence: assessment.confidence,

@@ -1,6 +1,7 @@
 import {
   commandsOf,
   fileChangesOf,
+  preToolIntentOf,
   readsOf,
   reasoningOf,
 } from "./checks.js";
@@ -29,6 +30,7 @@ export class TrajectoryState {
   private readonly reasoning: SemanticReasoningEntry[] = [];
   private readonly actions: SemanticActionSummary[] = [];
   private readonly sources: SemanticSource[] = [];
+  private lastCompletedActionSeq = 0;
   private latestAssessment: SemanticAssessment | undefined;
   private risk = 0;
 
@@ -40,7 +42,10 @@ export class TrajectoryState {
       this.seenSeq = Math.max(this.seenSeq, record.seq);
 
       for (const entry of reasoningOf([record])) {
-        this.reasoning.push({ seq: entry.seq, text: trim(entry.text) });
+        this.reasoning.push({ seq: entry.seq, text: trim(entry.text), source: "thinking_summary" });
+      }
+      for (const entry of preToolIntentOf([record])) {
+        this.reasoning.push({ seq: entry.seq, text: trim(entry.text), source: "visible_plan" });
       }
       for (const read of readsOf([record])) {
         this.sources.push({
@@ -51,6 +56,7 @@ export class TrajectoryState {
       }
       for (const command of commandsOf([record])) {
         if (command.phase !== "completed") continue;
+        this.lastCompletedActionSeq = Math.max(this.lastCompletedActionSeq, command.seq);
         this.actions.push({
           seq: command.seq,
           type: command.output?.trim() ? "tool_output" : "command",
@@ -63,6 +69,7 @@ export class TrajectoryState {
       }
       for (const change of fileChangesOf([record])) {
         if (change.phase !== "completed") continue;
+        this.lastCompletedActionSeq = Math.max(this.lastCompletedActionSeq, change.seq);
         this.actions.push({
           seq: change.seq,
           type: "file_change",
@@ -106,6 +113,13 @@ export class TrajectoryState {
 
   currentRisk(): number {
     return this.risk;
+  }
+
+  intentEvidenceForNextAction(): "none" | "thinking_summary" | "visible_plan" | "both" {
+    const fresh = this.reasoning.filter((entry) => entry.seq > this.lastCompletedActionSeq);
+    const thinking = fresh.some((entry) => entry.source === "thinking_summary");
+    const plan = fresh.some((entry) => entry.source === "visible_plan");
+    return thinking && plan ? "both" : thinking ? "thinking_summary" : plan ? "visible_plan" : "none";
   }
 }
 

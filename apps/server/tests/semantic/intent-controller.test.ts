@@ -42,6 +42,44 @@ function monitorReturning(value: SemanticAssessment): SemanticIntentMonitor {
 }
 
 describe("semantic action decision thresholds", () => {
+  it("reviews compound shell writes even when no reasoning was emitted", async () => {
+    const seen: SemanticMonitorInput[] = [];
+    const controller = new IntentController({
+      assess: async (input) => {
+        seen.push(input);
+        return assessment(true, 0.6, 0.8);
+      },
+    }, task);
+    const result = await controller.reviewAction([], {
+      type: "command",
+      seq: 1,
+      itemId: "c1",
+      command: "cat >> src/pricing.js <<'EOF'\nchange\nEOF\nsed -i 's/1.4.2/1.4.3/' package.json",
+    });
+    expect(result.decision).toBe("human_review");
+    expect(seen).toHaveLength(1);
+    expect(seen[0]?.checkpoint).toBe("command");
+    expect(seen[0]?.recentReasoning).toEqual([]);
+  });
+
+  it("skips semantic model calls for a proven read-only shell command", async () => {
+    let calls = 0;
+    const controller = new IntentController({ assess: async () => { calls += 1; return assessment(false, 0.1, 0.9); } }, task);
+    const result = await controller.reviewAction([], { type: "command", seq: 1, itemId: "c1", command: "cat package.json" });
+    expect(result.decision).toBe("allow");
+    expect(calls).toBe(0);
+  });
+
+  it("reviews an ordinary editor change when no reasoning was emitted", async () => {
+    let calls = 0;
+    const controller = new IntentController({ assess: async () => { calls += 1; return assessment(false, 0.1, 0.9); } }, task);
+    const result = await controller.reviewAction([], {
+      type: "file_change", seq: 1, itemId: "f2", changes: [{ path: "src/pricing.js", kind: "update", diff: "+ discount" }],
+    });
+    expect(result.decision).toBe("allow");
+    expect(calls).toBe(1);
+  });
+
   it.each([
     [0.5, 0.9],
     [0.74, 0.2],

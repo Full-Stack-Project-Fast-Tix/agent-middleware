@@ -263,6 +263,19 @@ export function agentMessagesOf(trace: TraceRecord[]): Array<{ seq: number; text
   return messages;
 }
 
+/** Visible intent text emitted by the model before tools, distinct from a thinking summary. */
+export function preToolIntentOf(trace: TraceRecord[]): Array<{ seq: number; text: string }> {
+  const messages: Array<{ seq: number; text: string }> = [];
+  for (const record of trace) {
+    if (record.method !== "item/completed") continue;
+    const item = readItem(record);
+    if (item?.type !== "agentMessage" || item.purpose !== "pretool_intent") continue;
+    const text = asString(item.text);
+    if (text !== null) messages.push({ seq: record.seq, text });
+  }
+  return messages;
+}
+
 /**
  * The agent's own reasoning narration, one entry per completed reasoning item,
  * in order. This is what the model said it was thinking, not ground truth: a

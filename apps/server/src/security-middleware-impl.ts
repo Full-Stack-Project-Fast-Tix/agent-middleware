@@ -11,7 +11,7 @@ import {
   type SecurityFindingDraft,
 } from "@launchpad/shared";
 import type { AppConfig } from "./config.js";
-import { runChecks, reasoningOf, type Check, type Finding } from "./checks.js";
+import { runChecks, reasoningOf, preToolIntentOf, type Check, type Finding } from "./checks.js";
 import {
   classifyEgress,
   DEFAULT_SENSITIVE_MARKERS,
@@ -328,8 +328,9 @@ class StatefulExecutionGuard implements ExecutionGuard {
       return this.decision("block", findings, { stop: "execution", steer: null });
     }
 
-    if (this.semantic && reasoningOf([record]).length > 0) {
-      const reasoning = reasoningOf([record])[0]!;
+    const intentEntry = reasoningOf([record])[0] ?? preToolIntentOf([record])[0];
+    if (this.semantic && intentEntry !== undefined) {
+      const reasoning = intentEntry;
       const cheapSignal = findings.some((finding) => finding.check === "agent-intent" && finding.seq === reasoning.seq);
       if (this.semantic.shouldReviewReasoning(cheapSignal)) {
         const snapshot = [...this.trace];

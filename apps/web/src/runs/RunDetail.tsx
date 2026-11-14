@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { mayAnswerApproval, type Agent, type Approval } from "@launchpad/shared";
+import { mayAnswerApproval, type Agent, type Approval, type SecurityFinding } from "@launchpad/shared";
 import { MessageContent } from "../MessageContent";
 import { paths } from "../router";
 import { Button, ButtonLink, DecisionGlyph, ErrorState, Foreign, Loading, StatusBadge } from "../ui";
@@ -20,6 +20,25 @@ import { useCurrentWorkspace } from "../useCurrentWorkspace";
 
 /** Longer than this, a prompt starts folded, so the page opens on the run rather than the request. */
 const LONG_PROMPT = 240;
+
+function semanticReviewCoverage(findings: SecurityFinding[]) {
+  let intent = 0;
+  let action = 0;
+  let withoutIntent = 0;
+  for (const finding of findings) {
+    if (finding.check !== "semantic-intent") continue;
+    const metadata = finding.evidence?.metadata;
+    if (metadata === null || typeof metadata !== "object" || Array.isArray(metadata)) continue;
+    const details = metadata as Record<string, unknown>;
+    const checkpoint = details.checkpoint;
+    if (checkpoint === "reasoning") intent += 1;
+    if (checkpoint === "command" || checkpoint === "file_change") {
+      action += 1;
+      if (details.intentEvidence === "none") withoutIntent += 1;
+    }
+  }
+  return { intent, action, withoutIntent };
+}
 
 /**
  * One Run, live: its task graph, the gate line, the files that reached the gate,
@@ -108,6 +127,7 @@ export function RunDetail({ runId }: { runId: string }) {
   }
 
   const { run } = view;
+  const semanticCoverage = semanticReviewCoverage(view.findings);
   const waiting = pendingApprovals(view);
   // Only hides what the server would refuse. Until the role is known, it still offers the buttons.
   const role = workspaces?.find((workspace) => workspace.id === view.run.workspaceId)?.role;
@@ -250,6 +270,12 @@ export function RunDetail({ runId }: { runId: string }) {
             <span>{view.executions.length} executions</span>
             <span>{view.approvals.length} approvals</span>
             <span>{view.findings.length} findings</span>
+            {(semanticCoverage.intent > 0 || semanticCoverage.action > 0) && (
+              <span title="Reviews of exposed thinking summaries or visible plans, and reviews of proposed commands or file changes">
+                Semantic: {semanticCoverage.intent} intent, {semanticCoverage.action} action reviews
+                {semanticCoverage.withoutIntent > 0 ? ` (${semanticCoverage.withoutIntent} without exposed intent)` : ""}
+              </span>
+            )}
             <span>{view.executions.reduce((n, item) => n + (item.usage?.inputTokens ?? 0) + (item.usage?.outputTokens ?? 0), 0).toLocaleString()} tokens</span>
             <span>{run.startedAt && run.completedAt ? `${Math.max(0, Math.round((Date.parse(run.completedAt) - Date.parse(run.startedAt)) / 1000))}s elapsed` : "Duration unavailable"}</span>
             <span>{diffStatus === "loading" ? "Loading changes" : diffStatus === "unavailable" ? "Change count unavailable" : `${diff?.changedFileCount ?? 0} files changed`}</span>

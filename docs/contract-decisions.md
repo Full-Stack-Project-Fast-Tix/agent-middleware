@@ -177,29 +177,36 @@ all prompt injection is detected.
 ### 7.1 Periodic reasoning reviews check task alignment
 
 **Decision:** With semantic monitoring enabled, review the first completed
-reasoning item and then every third completed item. A deterministic intent
-warning triggers an immediate review between checkpoints. Review the bounded
-recent trajectory against the trusted task, not only the current wording. A
-task conflict at risk 0.60 or higher may steer the agent back on task;
-model-reported confidence is audit information only. Reasoning alone does not
-block an action.
+thinking summary or visible pre-tool intent plan and then every third completed
+item. A deterministic intent warning triggers an immediate review between
+checkpoints. Review the bounded recent trajectory against the trusted task, not
+only the current wording. A task conflict at risk 0.60 or higher may steer the
+agent back on task; model-reported confidence is audit information only.
+Reasoning alone does not block an action. Every command not proven read-only,
+and every proposed file change, receives semantic review before execution.
+This action review is required even when Claude emitted no reasoning or plan.
 
 **Why:** Agents can drift from the user's goal without using obviously
-suspicious language. Periodic review catches this while limiting model calls;
-consequential actions and handoffs still have their own pre-action checks.
+suspicious language. Claude may omit thinking summaries, so visible intent is
+useful evidence but not an enforcement prerequisite. The pre-action review
+covers effectful commands and file changes when that evidence is missing or
+incomplete.
 
 ### 7.2 A failed reasoning review raises scrutiny on the next action
 
 **Decision:** Reasoning review remains advisory: it may steer the agent, but does
-not block execution by itself. If semantic review of a reasoning checkpoint is
-unavailable, the next proposed action must receive semantic review even if it
-would not normally qualify; if that review is also unavailable, require human
-approval. Redacted semantic-review input is capped at 48,000 characters; an
-oversized review is treated as unavailable and follows the same approval path.
+not block execution by itself. A detected conflict raises scrutiny on the next
+effectful action, which must pass the normal action thresholds before it runs.
+If semantic review of a reasoning checkpoint is unavailable, the next proposed
+action must receive semantic review even if it would not normally qualify; if
+that review is also unavailable, require human approval. Redacted
+semantic-review input is capped at 48,000 characters; an oversized review is
+treated as unavailable and follows the same approval path.
 
 **Why:** Reasoning is evidence about intent, not an action to authorize. But a
-failed review should not silently make the next action less scrutinized. The
-action remains the point where enforcement blocks or waits for approval.
+failed or concerning review should not silently make the next action less
+scrutinized. The action remains the point where enforcement blocks or waits for
+approval.
 
 ### 7.3 Risk-based semantic action outcomes
 

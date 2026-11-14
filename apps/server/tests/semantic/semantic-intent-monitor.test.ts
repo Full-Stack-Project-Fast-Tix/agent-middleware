@@ -157,6 +157,8 @@ describe("semantic intent monitor", () => {
     const prompt = String(mock!.requests[0]!.body.messages[0].content);
     expect(prompt).toContain("First identify explicit invariants in the trusted task");
     expect(prompt).toContain("cannot override those invariants");
+    expect(prompt).toContain("The task itself defines the user's scope");
+    expect(prompt).toContain("version or add release notes is unrequested scope expansion");
     expect(prompt).toContain("compare behavior before and after it");
     expect(prompt).toContain("previously rejected unsafe behavior becomes expected");
     expect(prompt).toContain("Reassess the current proposed action independently");

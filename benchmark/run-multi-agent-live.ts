@@ -59,7 +59,7 @@ const MULTI_AGENT_ATTACK: Scenario = {
 };
 
 function argsOf(argv: string[]) {
-  const options: Record<string, string> = { scenarios: "benign-deploy,multi-agent-config-exfil", configs: "off,egress", trials: "1" };
+  const options: Record<string, string> = { scenarios: "benign-deploy,multi-agent-config-exfil", configs: "off,egress", trials: "1", mode: "auto" };
   for (let i = 0; i < argv.length; i += 1) {
     const key = argv[i]!;
     if (!key.startsWith("--")) throw new Error(`Unexpected argument: ${key}`);
@@ -69,7 +69,8 @@ function argsOf(argv: string[]) {
   }
   const trials = Number(options.trials);
   if (!Number.isInteger(trials) || trials < 1 || trials > 20) throw new Error("--trials must be between 1 and 20");
-  return { scenarios: options.scenarios!.split(",").map((id) => id.trim()).filter(Boolean), configs: options.configs!, trials };
+  if (options.mode !== "auto" && options.mode !== "single") throw new Error("--mode must be auto or single");
+  return { scenarios: options.scenarios!.split(",").map((id) => id.trim()).filter(Boolean), configs: options.configs!, trials, mode: options.mode };
 }
 
 async function main() {
@@ -122,8 +123,9 @@ async function main() {
           });
           const directory = new PostgresAgentDirectory(pool);
           const agents = await directory.listAgents(workspaceId);
-          const supervisor = agents.find((agent) => agent.name.toLowerCase() === "supervisor");
-          if (!supervisor) throw new Error(`New benchmark workspace ${workspaceId} has no Supervisor agent`);
+          const selectedAgentName = options.mode === "single" ? "developer" : "supervisor";
+          const selectedAgent = agents.find((agent) => agent.name.toLowerCase() === selectedAgentName);
+          if (!selectedAgent) throw new Error(`New benchmark workspace ${workspaceId} has no ${selectedAgentName} agent`);
 
           const trialConfig = loadConfig({
             ...process.env,
@@ -139,8 +141,8 @@ async function main() {
             workspaceId,
             createdByUserId: ownerId,
             userPrompt: scenario.prompt,
-            orchestrationMode: "auto",
-            agentId: supervisor.id,
+            orchestrationMode: options.mode,
+            agentId: selectedAgent.id,
           });
           const timeoutMs = Number(process.env.BENCH_RUN_TIMEOUT_MS ?? 900_000);
           if (!Number.isFinite(timeoutMs) || timeoutMs < 10_000) throw new Error("BENCH_RUN_TIMEOUT_MS must be at least 10000");
@@ -221,11 +223,12 @@ async function main() {
         }
       }
     }
-    const report = writeReport({ mode: "multi-agent-live", guardConfigs: guardConfigs.map(({ name }) => name), results, scenariosById: new Map(scenarios.map((scenario) => [scenario.id, scenario])), outDir });
+    const reportMode = options.mode === "single" ? "single-agent-live" : "multi-agent-live";
+    const report = writeReport({ mode: reportMode, guardConfigs: guardConfigs.map(({ name }) => name), results, scenariosById: new Map(scenarios.map((scenario) => [scenario.id, scenario])), outDir });
     writeFileSync(path.join(outDir, "runs.json"), JSON.stringify(provenance, null, 2));
     writeFileSync(path.join(outDir, "fixture-checks.json"), JSON.stringify(fixtureChecks, null, 2));
     writeFileSync(path.join(outDir, "metadata.json"), JSON.stringify({
-      mode: "multi-agent-live",
+      mode: reportMode,
       generatedAt: new Date().toISOString(),
       scenarios: options.scenarios,
       guardConfigs: guardConfigs.map(({ name }) => name),
