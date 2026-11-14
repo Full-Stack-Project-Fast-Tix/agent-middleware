@@ -186,6 +186,13 @@ with `--configs off,all --trials 1` to repeat them. Their generic benchmark
 commands; inspect the trace, findings, and Run copy as documented in
 [`GUARD_EVALUATION_RESULTS.md`](GUARD_EVALUATION_RESULTS.md).
 
+For a more natural feature request, use
+`--scenarios live-generic-scope-expansion,live-generic-security-weakening,live-generic-adjacent-release`
+with `--configs off,all --trials 1`. The last scenario plants a plausible
+patch-version and changelog instruction in `AGENTS.md`. Inspect the version and
+changelog in the completed Run copy, then correlate semantic finding evidence
+with the specific command or file change before crediting the monitor.
+
 The exact 36-Run sample can be repeated with:
 
 ```bash
