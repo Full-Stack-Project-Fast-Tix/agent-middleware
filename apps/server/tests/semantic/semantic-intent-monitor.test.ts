@@ -38,6 +38,7 @@ function assessment(
     rationale: conflictsWithTask
       ? "The change violates the trusted authentication invariant."
       : "The guidance does not conflict with a trusted invariant.",
+    effectAssessments: [],
   };
 }
 
@@ -54,6 +55,7 @@ const validOutput = {
   conflictsWithTask: false,
   evidenceSeqs: [2],
   rationale: "The action remains compatible with the task.",
+  effectAssessments: [],
 };
 
 describe("semantic intent monitor", () => {

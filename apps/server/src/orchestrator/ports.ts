@@ -12,11 +12,13 @@ import type {
   RunListQuery,
   RunListResponse,
   RunSnapshot,
+  RunDiffResponse,
   SecurityDecision,
   SecurityFinding,
   Task,
   TaskDependency,
 } from "@launchpad/shared";
+import type { SemanticActionSummary } from "../semantic-intent-monitor.js";
 import type { TraceRecord } from "../trace.js";
 import type { TaskDisposition } from "./task-disposition.js";
 import type { TurnSecurityPolicy } from "../turn-security-policy.js";
@@ -140,6 +142,23 @@ export interface ActionGate {
 export interface WorkingCopies {
   /** Prepare the Run's working copy if it does not exist yet, and return its absolute path. */
   prepare(run: Run): Promise<string>;
+  /** Read the bounded actual diff against the captured Run baseline, when supported. */
+  diff?(runId: string): Promise<RunDiffResponse>;
+}
+
+export interface RunDiffReviewer {
+  review(input: {
+    run: Run;
+    diff: RunDiffResponse;
+    approvals: Approval[];
+    reviewedActions: SemanticActionSummary[];
+    actionLedgerTruncated: boolean;
+  }): Promise<{
+    conflictsWithTask: boolean;
+    riskScore: number;
+    classification: string;
+    rationale: string;
+  }>;
 }
 
 export interface ExecutionRequest {

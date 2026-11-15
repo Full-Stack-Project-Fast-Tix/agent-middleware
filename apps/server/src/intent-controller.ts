@@ -1,6 +1,7 @@
 import type { Finding } from "./checks.js";
 import type {
   SemanticAssessment,
+  SemanticProposedEffect,
   SemanticIntentMonitor,
   SemanticProposedAction,
   TrustedTaskContext,
@@ -117,8 +118,10 @@ export class IntentController {
 
     try {
       const intentEvidence = this.state.intentEvidenceForNextAction();
+      const monitorInput = this.state.monitorInput(action.type, false, action);
+      monitorInput.proposedEffects = proposedEffectsFor(action);
       const assessment = await this.monitor.assess(
-        boundedMonitorInput(this.state.monitorInput(action.type, false, action)),
+        boundedMonitorInput(monitorInput),
       );
       this.reasoningReviewUnavailable = false;
       this.state.recordAssessment(assessment);
@@ -173,6 +176,82 @@ function boundedMonitorInput(input: Parameters<SemanticIntentMonitor["assess"]>[
     throw new Error("semantic review input exceeds the configured size limit");
   }
   return redacted;
+}
+
+function proposedEffectsFor(action: SemanticProposedAction): SemanticProposedEffect[] {
+  switch (action.type) {
+    case "command":
+      return splitShellEffects(action.command).map((summary, index) => ({
+        index,
+        kind: "command" as const,
+        summary,
+      }));
+    case "file_change":
+      if (action.changes.length <= 24) {
+        return action.changes.map((change, index) => ({
+          index,
+          kind: "file_change" as const,
+          summary: change.kind + " " + change.path + "\n" + change.diff.slice(0, 1_200),
+        }));
+      }
+      return [
+        ...action.changes.slice(0, 23).map((change, index) => ({
+          index,
+          kind: "file_change" as const,
+          summary: change.kind + " " + change.path + "\n" + change.diff.slice(0, 1_200),
+        })),
+        {
+          index: 23,
+          kind: "file_change",
+          summary: "Remaining file changes: " + action.changes.slice(23).map(({ kind, path }) => kind + " " + path).join(", "),
+        },
+      ];
+    case "context_handoff":
+      return [{ index: 0, kind: "context_handoff", summary: action.content.slice(0, 2_000) }];
+    case "delegation":
+      return [{
+        index: 0,
+        kind: "delegation",
+        summary: (action.title + "\n" + action.objective).slice(0, 2_000),
+      }];
+  }
+}
+
+/** Split common top-level shell clauses without splitting quoted text or substitutions. */
+function splitShellEffects(command: string): string[] {
+  const pieces: string[] = [];
+  let start = 0;
+  let quote: "'" | "\"" | null = null;
+  let escaped = false;
+  let depth = 0;
+  for (let index = 0; index < command.length; index += 1) {
+    const char = command[index]!;
+    if (escaped) { escaped = false; continue; }
+    if (char === "\\" && quote !== "'") { escaped = true; continue; }
+    if (quote !== null) {
+      if (char === quote) quote = null;
+      continue;
+    }
+    if (char === "'" || char === "\"") { quote = char; continue; }
+    if (char === "(") { depth += 1; continue; }
+    if (char === ")" && depth > 0) { depth -= 1; continue; }
+    if (depth > 0) continue;
+    const separatorLength =
+      (char === "&" && command[index + 1] === "&") ||
+      (char === "|" && command[index + 1] === "|") ? 2
+      : char === ";" || char === "|" || char === "\n" ? 1 : 0;
+    if (separatorLength === 0) continue;
+    const piece = command.slice(start, index).trim();
+    if (piece !== "") pieces.push(piece);
+    index += separatorLength - 1;
+    start = index + 1;
+  }
+  const tail = command.slice(start).trim();
+  if (tail !== "") pieces.push(tail);
+  const bounded = pieces.length > 23
+    ? [...pieces.slice(0, 23), "Additional clauses: " + pieces.slice(23).join(" ; ")]
+    : pieces;
+  return (bounded.length === 0 ? [command] : bounded).map((piece) => piece.slice(0, 1_200));
 }
 
 /**
@@ -240,6 +319,9 @@ function findingFor(
         classification: assessment.classification,
         apparentObjective: assessment.apparentObjective,
         conflictsWithTask: assessment.conflictsWithTask,
+        ...(assessment.effectAssessments === undefined ? {} : {
+          effectAssessments: assessment.effectAssessments.slice(0, 24),
+        }),
       },
     },
   };

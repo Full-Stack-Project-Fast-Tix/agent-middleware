@@ -848,11 +848,13 @@ false negative puts a live credential on a projector.
 
 ### Semantic intent guard
 
-- **One model call, and it can be wrong.** The assessment is schema-checked, not
-  fact-checked. For proposed actions, conflicts scoring 0.50–0.74 require human
-  review; conflicts scoring 0.75 or higher are declined. Model-reported
-  confidence is retained for audit and does not suppress review or decline. A
-  deterministic `violation` always wins.
+- **Model judgments can be wrong.** Assessments are schema-checked, not
+  fact-checked. Proposed actions are reviewed before execution; file changes
+  and common compound shell clauses receive separate effect assessments. A
+  conflicting effect's risk is not averaged with an aligned effect. Conflicts
+  scoring 0.50–0.74 require human review; conflicts scoring 0.75 or higher are
+  declined. Model-reported confidence is audit information and does not
+  suppress review or decline. A deterministic `violation` always wins.
 - **Scope is task-bound.** The monitor is instructed to treat actionable,
   out-of-scope recommendations and handoffs as scope expansion, and to score
   their likely effect if followed. It can still misjudge the conflict or its
@@ -863,14 +865,19 @@ false negative puts a live credential on a projector.
 - **Reasoning steering is asynchronous.** It can nudge the Agent early but does
   not freeze the agent. The real boundary is the next state-changing operation,
   which pauses for approval.
-- **Gated is not reviewed.** A low-risk edit passes on the deterministic checks
-  and a wait for pending reasoning, with no second model call. That is
-  deliberate — but it means the semantic model does not see every action.
-- **Audit backstop, not rollback.** If an effect completes without passing its
-  approval gate, the turn is recorded and interrupted; a change already written
-  is not undone.
-- **Out of scope.** Cross-turn semantic memory, final-response DLP, and completion
-  verification are out of scope.
+- **Read-only is not always semantically reviewed.** Commands proven to be
+  safe reads can pass without an action-level semantic call. Every other
+  command and each proposed file change is reviewed before execution.
+- **Final-diff backstop, not rollback.** In password mode with semantic
+  monitoring enabled, the actual bounded Run diff is checked against the
+  original task before a changed Run can complete. A detected scope conflict,
+  unavailable review, or incomplete diff fails the Run and prevents it from
+  seeding follow-up work. Changes already written remain in that failed Run
+  copy for inspection; this does not undo them. The extra review adds model
+  latency and cost.
+- **Still out of scope.** Cross-run semantic memory and final-response DLP
+  remain unfinished. The final diff review checks task scope, not whether the
+  implementation is correct or whether tests prove the feature works.
 
 > The **egress-intent** check that used to correlate a narrated exfiltration
 > intent with a later outbound command was removed on 2026-08-30 — see the note

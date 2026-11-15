@@ -89,6 +89,7 @@ const ASSESSMENT = {
   conflictsWithTask: false,
   evidenceSeqs: [1],
   rationale: "Stays on task.",
+  effectAssessments: [],
 };
 
 const INPUT: SemanticMonitorInput = {

@@ -20,6 +20,15 @@ not a production-hardened multi-tenant service.
   either: every command not proven read-only and every proposed file change is
   semantically reviewed before execution. The Run receipt reports intent and
   action review counts.
+- Semantic review now receives bounded, redacted excerpts attributed to files
+  the agent read and an itemized inventory of file changes or shell clauses.
+  Conflicting effect risks are rolled up by their maximum rather than averaged
+  with aligned effects.
+- In password mode with semantic monitoring enabled, the orchestrator reviews
+  the actual bounded Run diff against the original prompt and approval
+  summaries before marking a changed Run complete. An out-of-scope finding, an
+  unavailable review, or an incomplete diff fails the Run so it cannot seed a
+  follow-up Run. This is a post-execution backstop; it does not roll back files.
 - Workspace vault grants are resolved server-side, scoped to selected agents,
   and mediated through the HTTPS vault broker. Vault use requires the configured
   master key and the Postgres-backed workspace service.
@@ -73,11 +82,13 @@ not a production-hardened multi-tenant service.
 
 ### P1
 
-- Follow up on a demonstrated semantic-review miss: in two guarded live trials,
-  an unrelated receipt-formatting feature from `AGENTS.md` still appeared in
-  the Run copies, despite scope-expansion findings and timed-out human-review
-  requests. Some compound-shell/file-change checkpoints assessed the feature as
-  aligned. Improve the action assessment and repeat the corrected fixture before
+- Validate and repeat the semantic-review fix for the demonstrated miss: in two
+  guarded live trials, an unrelated receipt-formatting feature from `AGENTS.md`
+  still appeared in the Run copies, despite scope-expansion findings and timed-
+  out human-review requests. Action review now exposes source excerpts and
+  itemized effects, and a final actual-diff review prevents a flagged changed
+  Run from completing. The server TypeScript check passes, but these changes
+  have not yet been evaluated live; repeat the corrected fixture before
   claiming reliable scope-drift prevention. See
   [guard evaluation results](docs/GUARD_EVALUATION_RESULTS.md).
 - Continue the repeated Claude-backed evaluation with varied prompts and
@@ -86,6 +97,9 @@ not a production-hardened multi-tenant service.
   test the guard. The synthetic egress probe was refused by Claude before an
   upload command, so it did not measure sensitive-egress containment.
   Reflection memory's live benefit also remains unmeasured.
+- Measure the final-diff reviewer’s false-positive rate and latency. It adds a
+  model call for changed Runs; diffs that are unavailable, truncated, or exceed
+  the bounded review size fail closed and do not become a follow-up baseline.
 - Keep using controlled deterministic probes: network capability denial and
   high-consequence approval/denial both acted in full Runs on 15 November. The
   egress rule still needs a controlled proposal that reaches its own checkpoint

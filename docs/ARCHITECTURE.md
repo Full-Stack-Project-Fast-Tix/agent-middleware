@@ -40,10 +40,16 @@ verbatim trace
 ```
 
 The original prompt and configured Agent instructions are trusted task context.
-Repository files, tool output, reasoning narration, commands, and diffs are
-lower-authority evidence. Semantic inference never talks to the Runtime
-directly; the middleware's `ActionGate` is the only live enforcement point. Derived
-findings are persisted and do not modify the append-only raw trace.
+Repository files, bounded read excerpts, tool output, reasoning narration,
+commands, and diffs are lower-authority evidence. Semantic action review
+receives an itemized effect list; a conflicting effect's risk is not averaged
+away by an aligned effect. In password mode, the actual bounded Run diff is
+reviewed against the original prompt and approval summaries before a changed
+Run can complete. An incomplete or unavailable final review fails the Run so
+its workspace does not seed the next Run. This is a post-execution backstop,
+not rollback. Semantic inference never talks to the Runtime directly; the
+middleware's ActionGate is the only live enforcement point. Derived findings
+are persisted and do not modify the append-only raw trace.
 
 ### Multi-agent runs
 

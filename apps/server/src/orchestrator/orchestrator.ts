@@ -17,7 +17,9 @@ import {
   type OrchestrationMode,
   type ProposedAction,
   type Run,
+  type RunDiffResponse,
   type RunStatus,
+  type SecurityFinding,
   type SecurityDecision,
   type Task,
   type TaskDependency,
@@ -26,10 +28,12 @@ import {
 } from "@launchpad/shared";
 import { HttpError, RunCancelledError, traceOf, usageOf } from "../errors.js";
 import { redactSensitiveText } from "../redaction/index.js";
+import { isKnownSafeRead } from "../read-only-command.js";
+import type { SemanticActionSummary } from "../semantic-intent-monitor.js";
 import type { ExecutionGuard, ResolvedPolicy, SecurityMiddleware } from "../security-middleware.js";
 import { validatePlan } from "./plan.js";
 import type { Planner } from "./planner.js";
-import type { ActionGate, AgentDirectory, AuditFor, ExecutionRuntime, RunStore, VaultGrant, WorkingCopies } from "./ports.js";
+import type { ActionGate, AgentDirectory, AuditFor, ExecutionRuntime, RunDiffReviewer, RunStore, VaultGrant, WorkingCopies } from "./ports.js";
 import { pickLaunches, tasksToMarkReady, tasksToSkip, type LaunchCandidate } from "./scheduler.js";
 import { buildTaskPrompt, type TaskInput, type WithheldInput } from "./task-prompt.js";
 
@@ -51,6 +55,7 @@ import { buildTaskPrompt, type TaskInput, type WithheldInput } from "./task-prom
 type Answer = Exclude<ApprovalStatus, "pending">;
 type Phase = "planning" | "running";
 type TaskResult = "completed" | "failed" | "retry" | "cancelled";
+const MAX_FINAL_REVIEW_ACTIONS = 48;
 
 export interface OrchestratorLimits {
   /** Most tasks a supervisor plan may contain. Each one is a paid agent run. */
@@ -80,6 +85,8 @@ export interface OrchestratorOptions {
   planner: Planner;
   runtime: ExecutionRuntime;
   workingCopies: WorkingCopies;
+  /** Optional post-run backstop over actual files, separate from pre-action authorization. */
+  finalDiffReviewer?: RunDiffReviewer;
   limits?: Partial<OrchestratorLimits>;
   now?: () => string;
   newId?: () => string;
@@ -117,6 +124,9 @@ interface RunState {
   /** Executions in flight, by task id. */
   inflight: Map<string, Promise<void>>;
   vaultGrantsByAgent: Record<string, VaultGrant[]>;
+  /** Bounded record of actions that passed the gate, used to contextualize the final diff audit. */
+  reviewedActions: SemanticActionSummary[];
+  reviewedActionsTruncated: boolean;
   /** Serialises approval bookkeeping so Run.waiting_approval always matches the pending approvals. */
   lock: Promise<void>;
   done: Promise<void>;
@@ -143,6 +153,7 @@ export class Orchestrator {
   private readonly planner: Planner;
   private readonly runtime: ExecutionRuntime;
   private readonly workingCopies: WorkingCopies;
+  private readonly finalDiffReviewer: RunDiffReviewer | undefined;
   private readonly limits: OrchestratorLimits;
   private readonly now: () => string;
   private readonly newId: () => string;
@@ -166,6 +177,7 @@ export class Orchestrator {
     this.planner = options.planner;
     this.runtime = options.runtime;
     this.workingCopies = options.workingCopies;
+    this.finalDiffReviewer = options.finalDiffReviewer;
     const limits = { ...DEFAULT_ORCHESTRATOR_LIMITS, ...options.limits };
     // Below 1, the scheduler could never launch anything and would stall.
     this.limits = {
@@ -245,6 +257,8 @@ export class Orchestrator {
       phase: "running",
       inflight: new Map(),
       vaultGrantsByAgent: input.vaultGrantsByAgent ?? {},
+      reviewedActions: [],
+      reviewedActionsTruncated: false,
       lock: Promise.resolve(),
       done: Promise.resolve(),
     };
@@ -375,7 +389,7 @@ export class Orchestrator {
       // A cancel either gets in first, and the Run ends cancelled, or finds it finished.
       await this.locked(state, async () => {
         this.throwIfCancelled(state);
-        await this.finish(run);
+        await this.finish(state, run);
       });
     } catch (error) {
       // Stop anything still running before closing the Run's books.
@@ -562,7 +576,7 @@ export class Orchestrator {
     }
   }
 
-  private async finish(run: Run): Promise<void> {
+  private async finish(state: RunState, run: Run): Promise<void> {
     const tasks = await this.store.listTasks(run.id);
     const failed = tasks.filter((task) => task.status === "failed");
     if (failed.length > 0) {
@@ -574,8 +588,111 @@ export class Orchestrator {
       });
       return;
     }
+    if (this.finalDiffReviewer !== undefined && this.workingCopies.diff !== undefined) {
+      let diff: RunDiffResponse | null = null;
+      try {
+        diff = await this.workingCopies.diff(run.id);
+      } catch {
+        await this.failFinalDiffReview(
+          run,
+          null,
+          "semantic-final-diff-unavailable",
+          "AgentGuard could not complete the final workspace review. Inspect the Run artifacts; this Run will not seed follow-up work.",
+          "medium",
+        );
+        return;
+      }
+      if (!diff.baselineAvailable || diff.truncated) {
+        await this.failFinalDiffReview(
+          run,
+          diff,
+          "semantic-final-diff-incomplete",
+          "The final workspace diff was incomplete, so AgentGuard could not verify the actual changes. Inspect the Run diff; this Run will not seed follow-up work.",
+          "medium",
+        );
+        return;
+      }
+      if (diff.changedFileCount > 0) {
+        if (state.reviewedActionsTruncated) {
+          await this.failFinalDiffReview(
+            run,
+            diff,
+            "semantic-final-diff-incomplete",
+            "The gated action history exceeded the final review limit, so AgentGuard could not verify how the actual changes were produced. Inspect the Run diff; this Run will not seed follow-up work.",
+            "medium",
+          );
+          return;
+        }
+        let assessment: Awaited<ReturnType<RunDiffReviewer["review"]>>;
+        try {
+          assessment = await this.finalDiffReviewer.review({
+            run,
+            diff,
+            approvals: await this.store.listApprovals(run.id),
+            reviewedActions: state.reviewedActions,
+            actionLedgerTruncated: state.reviewedActionsTruncated,
+          });
+        } catch {
+          await this.failFinalDiffReview(
+            run,
+            diff,
+            "semantic-final-diff-unavailable",
+            "AgentGuard could not complete the final workspace review. Inspect the Run artifacts; this Run will not seed follow-up work.",
+            "medium",
+          );
+          return;
+        }
+        if (assessment.conflictsWithTask && assessment.riskScore >= 0.5) {
+          await this.failFinalDiffReview(
+            run,
+            diff,
+            "semantic-final-scope-expansion",
+            "The final workspace diff may contain work outside the requested task. Inspect the actual changes; this Run will not seed follow-up work.",
+            assessment.riskScore >= 0.75 ? "high" : "medium",
+            assessment,
+          );
+          return;
+        }
+      }
+    }
     const dependencies = await this.store.listDependencies(run.id);
     await this.moveRun(run.id, "completed", { finalOutput: finalOutputOf(run, tasks, dependencies), completedAt: this.now() });
+  }
+
+  private async failFinalDiffReview(
+    run: Run,
+    diff: RunDiffResponse | null,
+    code: "semantic-final-diff-incomplete" | "semantic-final-diff-unavailable" | "semantic-final-scope-expansion",
+    message: string,
+    severity: SecurityFinding["severity"],
+    assessment?: { riskScore: number; classification: string },
+  ): Promise<void> {
+    const finding: SecurityFinding = {
+      id: this.newId(),
+      runId: run.id,
+      taskId: null,
+      executionId: null,
+      agentId: null,
+      layer: "semantic",
+      check: "semantic-final-diff",
+      code,
+      severity,
+      message,
+      facts: null,
+      evidence: {
+        ...(assessment === undefined ? {} : {
+          riskScore: assessment.riskScore,
+          classification: assessment.classification,
+        }),
+        changedFileCount: diff?.changedFileCount ?? null,
+        truncated: diff?.truncated ?? null,
+        paths: (diff?.changes ?? []).slice(0, 24).map((change) => redactSensitiveText(change.path).slice(0, 300)),
+      },
+      intervened: true,
+      createdAt: this.now(),
+    };
+    await this.store.addFinding(finding);
+    await this.moveRun(run.id, "failed", { error: message, completedAt: this.now() });
   }
 
   // ---------------------------------------------------------------------------
@@ -826,6 +943,9 @@ export class Orchestrator {
         const final = decision.outcome === "require_approval"
           ? await this.awaitApproval(state, launch, action, decision)
           : decision;
+        if (permits(final) && (action.type !== "command" || !isKnownSafeRead(action.command))) {
+          this.rememberReviewedAction(state, action, final.outcome);
+        }
         noteDecision(launch, final);
         await this.auditFor(launch, "security.decision", {
           source: "evaluate",
@@ -847,6 +967,34 @@ export class Orchestrator {
         return decision;
       },
     };
+  }
+
+  private rememberReviewedAction(state: RunState, action: ProposedAction, outcome: "allow" | "steer"): void {
+    if (state.reviewedActions.length >= MAX_FINAL_REVIEW_ACTIONS) {
+      state.reviewedActionsTruncated = true;
+      return;
+    }
+    let summary: string;
+    switch (action.type) {
+      case "command":
+        summary = `command (${isKnownSafeRead(action.command) ? "read" : "may mutate"}): ${bounded(redactSensitiveText(action.command), 300)}`;
+        break;
+      case "file_change":
+        summary = `file_change: ${action.changes.slice(0, 8).map((change) => `${change.kind} ${bounded(redactSensitiveText(change.path), 80)}`).join(", ")}`;
+        if (action.changes.length > 8) summary += `, plus ${action.changes.length - 8} more`;
+        break;
+      case "delegation":
+        summary = `delegation: ${bounded(redactSensitiveText(action.title), 100)} — ${bounded(redactSensitiveText(action.objective), 180)}`;
+        break;
+      case "context_handoff":
+        summary = `context_handoff ${action.fromTaskId} to ${action.toTaskId}: ${bounded(redactSensitiveText(action.content), 260)}`;
+        break;
+    }
+    state.reviewedActions.push({
+      seq: state.reviewedActions.length,
+      type: action.type,
+      summary: bounded(`${outcome}: ${summary}`, 400),
+    });
   }
 
   private async recordFindings(launch: Launch, decision: SecurityDecision): Promise<void> {

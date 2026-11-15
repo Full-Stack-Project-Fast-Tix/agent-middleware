@@ -1,9 +1,10 @@
 import { cp, mkdir, stat, readdir, readFile, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import path from "node:path";
-import type { Run } from "@launchpad/shared";
+import type { Run, RunDiffResponse } from "@launchpad/shared";
 import type { WorkingCopies } from "./ports.js";
 import { redactSensitiveText } from "../redaction/index.js";
+import { buildRunDiff } from "../run-diff.js";
 
 // One isolated copy of the project per Run:
 //
@@ -164,6 +165,16 @@ export class DirectoryWorkingCopies implements WorkingCopies {
     });
     await saveBaseline(target, path.dirname(target));
     return target;
+  }
+
+  async diff(runId: string): Promise<RunDiffResponse> {
+    const workspace = this.pathFor(runId);
+    const runDirectory = path.dirname(workspace);
+    return buildRunDiff(
+      workspace,
+      path.join(runDirectory, "diff-baseline.json"),
+      path.join(runDirectory, "diff.json"),
+    );
   }
 
   private isExcluded(entry: string): boolean {

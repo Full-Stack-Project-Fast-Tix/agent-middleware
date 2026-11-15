@@ -20,6 +20,7 @@ const MAX_REASONING = 6;
 const MAX_ACTIONS = 10;
 const MAX_SOURCES = 10;
 const MAX_TEXT = 2_000;
+const MAX_SOURCE_EXCERPT = 1_200;
 
 /**
  * Bounded semantic context derived from the raw trace. The JSONL trace remains
@@ -48,10 +49,12 @@ export class TrajectoryState {
         this.reasoning.push({ seq: entry.seq, text: trim(entry.text), source: "visible_plan" });
       }
       for (const read of readsOf([record])) {
+        const output = commandsOf([record]).find((command) => command.seq === read.seq)?.output ?? "";
         this.sources.push({
           seq: read.seq,
           path: trim(read.path),
           authority: "workspace_context",
+          ...(output.trim() === "" ? {} : { excerpt: trim(output, MAX_SOURCE_EXCERPT) }),
         });
       }
       for (const command of commandsOf([record])) {
@@ -127,7 +130,7 @@ function retainLast<T>(items: T[], maximum: number): void {
   if (items.length > maximum) items.splice(0, items.length - maximum);
 }
 
-function trim(text: string): string {
+function trim(text: string, maximum = MAX_TEXT): string {
   const normalized = text.trim();
-  return normalized.length <= MAX_TEXT ? normalized : normalized.slice(0, MAX_TEXT) + "…";
+  return normalized.length <= maximum ? normalized : normalized.slice(0, maximum) + "…";
 }

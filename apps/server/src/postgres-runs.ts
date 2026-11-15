@@ -16,6 +16,7 @@ import type { RunEventHub } from "./run-events.js";
 import type { RunRoutesOptions } from "./run-routes.js";
 import { createSecurityMiddleware } from "./security-middleware-impl.js";
 import { createSemanticIntentMonitor } from "./semantic-intent-monitor.js";
+import { reviewFinalRunDiff } from "./semantic-run-diff.js";
 import { WorkspaceVault } from "./workspace-vault.js";
 
 /**
@@ -27,13 +28,25 @@ export function createPostgresRuns(config: AppConfig, pool: pg.Pool, hub: RunEve
   const store = new PostgresRunStore(pool, hub);
   const agents = new PostgresAgentDirectory(pool);
   const vault = new WorkspaceVault(path.join(config.dataDirectory, "vault"), config.vaultMasterKey);
+  const semanticMonitor = config.semanticGuardEnabled ? createSemanticIntentMonitor(config) : null;
   const orchestrator = new Orchestrator({
     store,
     agents,
     middleware: createSecurityMiddleware({
       config,
       source: new PostgresSecuritySource(pool),
-      semanticMonitor: config.semanticGuardEnabled ? createSemanticIntentMonitor(config) : null,
+      semanticMonitor,
+    }),
+    ...(semanticMonitor === null ? {} : {
+      finalDiffReviewer: {
+        review: ({ run, diff, approvals, reviewedActions, actionLedgerTruncated }) => reviewFinalRunDiff(semanticMonitor, {
+          userPrompt: run.userPrompt,
+          diff,
+          approvals,
+          reviewedActions,
+          actionLedgerTruncated,
+        }),
+      },
     }),
     planner: createModelPlanner(config),
     limits: { maxRunTokens: config.runTokenBudget, approvalTtlMs: config.hitlTimeoutMs },
