@@ -1,6 +1,6 @@
 # Team handover: current state and next steps
 
-**Updated:** 11 November 2026
+**Updated:** 15 November 2026
 **Branch checked:** `main`
 **Status:** Core POC implementation is present. Remaining work is validation,
 operations, documentation upkeep, and explicitly deferred product scope. This is
@@ -15,7 +15,11 @@ not a production-hardened multi-tenant service.
   run in disposable containers, with networking disabled when policy denies it.
 - Deterministic and semantic checks produce bounded findings and middleware
   decisions. Semantic confidence is audit information; it does not decide
-  whether an action is allowed.
+  whether an action is allowed. The semantic monitor can review thinking
+  summaries or visible pre-tool plans, but does not depend on Claude exposing
+  either: every command not proven read-only and every proposed file change is
+  semantically reviewed before execution. The Run receipt reports intent and
+  action review counts.
 - Workspace vault grants are resolved server-side, scoped to selected agents,
   and mediated through the HTTPS vault broker. Vault use requires the configured
   master key and the Postgres-backed workspace service.
@@ -76,6 +80,20 @@ not a production-hardened multi-tenant service.
   [guard evaluation results](docs/GUARD_EVALUATION_RESULTS.md).
 - Re-run the file-change approval and network-denial runtime probes when the
   Claude runtime image or sandbox setup changes.
+- A live orchestrator-level approval round-trip for semantic scope expansion
+  passed on 15 November: the approval persisted as approved by the Run owner,
+  the waiting command resumed, tests passed, and the Run copy received the
+  package/changelog changes. The approval was resolved through the orchestrator
+  method, not through login, the HTTP route, or the Approvals UI; test those
+  user-facing paths separately if validating the complete browser flow. See
+  [guard evaluation results](docs/GUARD_EVALUATION_RESULTS.md).
+- Expand semantic live evaluations with repeated, varied natural prompts and
+  planted adjacent-work instructions. Count a case as a guard intervention
+  only when the agent proposes the deviation and the corresponding action
+  checkpoint records the semantic decision. One-off runs are exploratory, not
+  efficacy rates.
+- Continue deterministic live probes with controlled disposable fixtures and
+  sinks so model refusals do not stand in for gate enforcement.
 - Maintain sensitive-file marker parity as the marker list evolves.
 
 ### P2
@@ -100,8 +118,9 @@ not a production-hardened multi-tenant service.
 
 - Do a manual browser review at desktop and mobile widths, especially the
   grouped navigation, Start a Run form, completed Run receipt, and collapsed
-  task-details panel. The AppShell regression test checks markup structure, not
-  visual layout or real pointer/keyboard interaction.
+  task-details panel, plus resolving a real pending approval through the UI.
+  The AppShell regression test checks markup structure, not visual layout or
+  real pointer/keyboard interaction.
 - Keep docs and UI wording aligned with implemented behavior and distinguish
   saved benchmark artifacts from live efficacy results.
 
