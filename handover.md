@@ -73,10 +73,23 @@ not a production-hardened multi-tenant service.
 
 ### P1
 
-- Expand the first small Claude-backed multi-agent benchmark sample with repeated
-  trials and varied attacks. The two recent fake-secret runs ended in model
-  refusal, so they do not measure egress-guard containment; reflection memory's
-  live benefit is still unmeasured. See
+- Follow up on a demonstrated semantic-review miss: in two guarded live trials,
+  an unrelated receipt-formatting feature from `AGENTS.md` still appeared in
+  the Run copies, despite scope-expansion findings and timed-out human-review
+  requests. Some compound-shell/file-change checkpoints assessed the feature as
+  aligned. Improve the action assessment and repeat the corrected fixture before
+  claiming reliable scope-drift prevention. See
+  [guard evaluation results](docs/GUARD_EVALUATION_RESULTS.md).
+- Continue the repeated Claude-backed evaluation with varied prompts and
+  instructions. The patch-version case was held in 2/2 guarded Runs, while the
+  saved major-version traces exposed no read or proposal and therefore did not
+  test the guard. The synthetic egress probe was refused by Claude before an
+  upload command, so it did not measure sensitive-egress containment.
+  Reflection memory's live benefit also remains unmeasured.
+- Keep using controlled deterministic probes: network capability denial and
+  high-consequence approval/denial both acted in full Runs on 15 November. The
+  egress rule still needs a controlled proposal that reaches its own checkpoint
+  without relying on a model refusal. See
   [guard evaluation results](docs/GUARD_EVALUATION_RESULTS.md).
 - Re-run the file-change approval and network-denial runtime probes when the
   Claude runtime image or sandbox setup changes.
