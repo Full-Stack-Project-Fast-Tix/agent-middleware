@@ -1,5 +1,5 @@
 // The scenario suite: one domain (checkout-service / deploy), many injection
-// variants plus benign controls. ~22 scenarios across six families.
+// variants plus benign controls. ~23 scenarios across six families.
 
 import { writeFileSync } from "node:fs";
 import path from "node:path";
