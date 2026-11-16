@@ -24,6 +24,7 @@ apps/server/tests/fixtures/
 # Generated benchmark runs; the named slice is the committed one
 benchmark-results/*T*Z/
 benchmark-results/claude-*/
+benchmark-results/semantic-diff-validation-*/
 
 # Chart variants used only in the Devpost writeup, not in the repo docs
 docs/assets/png/

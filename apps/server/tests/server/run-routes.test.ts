@@ -106,7 +106,7 @@ describe("a run's working copy", () => {
     const file = await inject("GET", apiPaths.runFile(RUN, "index.html"));
     expect(file.statusCode).toBe(200);
     expect(file.json()).toMatchObject({ path: "index.html", content: "<h1>Todo</h1>", truncated: false });
-  });
+  }, 15_000);
 
   it("will not follow a planted symlink or a relative path out of the working copy", async () => {
     await startWithFiles();

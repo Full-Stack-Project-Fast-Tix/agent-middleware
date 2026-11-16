@@ -4,6 +4,7 @@ import type {
   FileChangeAction,
   OrchestrationMode,
   ProposedAction,
+  RunDiffResponse,
   RunEvent,
   SecurityDecision,
 } from "@launchpad/shared";
@@ -17,6 +18,7 @@ import type {
   ExecutionOutcome,
   ExecutionRequest,
   ExecutionRuntime,
+  RunDiffReviewer,
 } from "../../src/orchestrator/ports.js";
 import type { SecurityMiddleware } from "../../src/security-middleware.js";
 import { AGENTS, USER_ID, WORKSPACE_ID } from "../integration/harness/factories.js";
@@ -206,6 +208,9 @@ export function startHarness(options: {
   limits?: Partial<OrchestratorLimits>;
   /** A store with timing of its own, to reach interleavings the in-memory one never does. */
   store?: (hub: RunEventHub) => InMemoryRunStore;
+  /** Optional bounded actual diff for exercising the post-run semantic backstop. */
+  diff?: () => Promise<RunDiffResponse>;
+  finalDiffReviewer?: RunDiffReviewer;
 } = {}): Harness {
   const hub = new RunEventHub();
   const store = options.store?.(hub) ?? new InMemoryRunStore(hub);
@@ -227,7 +232,9 @@ export function startHarness(options: {
         prepared.push(run.id);
         return `/runs/${run.id}/workspace`;
       },
+      ...(options.diff === undefined ? {} : { diff: options.diff }),
     },
+    ...(options.finalDiffReviewer === undefined ? {} : { finalDiffReviewer: options.finalDiffReviewer }),
     limits: { approvalTtlMs: 60_000, ...options.limits },
     onError: (error) => errors.push(error),
   });
