@@ -11,28 +11,41 @@ const SESSION_KEY = "agentguard.session";
 
 function savedSession(): string {
   try {
-    return window.sessionStorage.getItem(SESSION_KEY) ?? "";
+    return window.localStorage.getItem(SESSION_KEY) ?? "";
   } catch {
     return "";
   }
 }
 
-// Only until this tab closes, and only for a signed-in session: a shared token
-// stays in memory, because it does not expire.
+// Shared by this browser's tabs until the session expires or ends, and only for
+// a signed-in session: a shared token stays in memory, because it does not expire.
 let authToken = savedSession();
 
 export function setAuthToken(token: string, options: { remember?: boolean } = {}): void {
   authToken = token.trim();
   try {
-    if (options.remember && authToken !== "") window.sessionStorage.setItem(SESSION_KEY, authToken);
-    else window.sessionStorage.removeItem(SESSION_KEY);
+    if (options.remember && authToken !== "") window.localStorage.setItem(SESSION_KEY, authToken);
+    else window.localStorage.removeItem(SESSION_KEY);
   } catch {
     // Storage unavailable: reloading the page then signs out.
   }
 }
 
-/** Whether this tab holds a session from before a reload, which may have expired. */
+/** Whether this browser holds a session from an earlier page load, which may have expired. */
 export const hasSavedSession = (): boolean => authToken !== "";
+
+/**
+ * Reload when another tab signs in or out, so that no tab keeps working as
+ * someone who has left. Returns how to stop.
+ */
+export function followSessionInOtherTabs(reload: () => void = () => window.location.reload()): () => void {
+  const onStorage = (event: StorageEvent) => {
+    // A null key means the other tab cleared all of storage.
+    if ((event.key === SESSION_KEY || event.key === null) && savedSession() !== authToken) reload();
+  };
+  window.addEventListener("storage", onStorage);
+  return () => window.removeEventListener("storage", onStorage);
+}
 
 /** For requests that cannot go through `request`, such as the event stream. */
 export function authHeaders(): Record<string, string> {

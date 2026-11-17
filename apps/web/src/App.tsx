@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import type { User } from "@launchpad/shared";
-import { api, hasSavedSession, setAuthToken } from "./api";
+import { api, ApiError, followSessionInOtherTabs, hasSavedSession, setAuthToken } from "./api";
 import { AccountMenu } from "./AccountMenu";
 import { AgentsPage } from "./workspace/AgentsPage";
 import { CredentialsPage } from "./workspace/CredentialsPage";
@@ -112,6 +112,7 @@ export default function App() {
     navigate(paths.dashboard, { replace: true });
     setSession((previous) => ({ id: previous.id + 1, notice }));
   }, []);
+  useEffect(() => followSessionInOtherTabs(), []);
   return <AppSession key={session.id} notice={session.notice} onSignedOut={onSignedOut} />;
 }
 
@@ -130,7 +131,11 @@ function AppSession({ notice, onSignedOut }: { notice: string | null; onSignedOu
         if (!mounted) return;
         setAuthMethod(method);
         if (required && method === "password" && hasSavedSession()) {
-          const valid = await membersApi.me().then(() => true, () => false);
+          // Only a 401 says the session is over. Forgetting it on a passing failure would sign out every tab.
+          const valid = await membersApi.me().then(
+            () => true,
+            (reason: unknown) => !(reason instanceof ApiError && reason.status === 401),
+          );
           if (!mounted) return;
           if (valid) {
             setAuthRequired(false);
