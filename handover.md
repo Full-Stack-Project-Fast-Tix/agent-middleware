@@ -1,191 +1,187 @@
-# Team handover: current state and next steps
+# AgentGuard local POC handover
 
-**Updated:** 15 November 2026
-**Branch checked:** `main`
-**Status:** Core POC implementation is present. Remaining work is validation,
-operations, documentation upkeep, and explicitly deferred product scope. This is
-not a production-hardened multi-tenant service.
+Updated 17 November 2026. **Start here if you are taking over implementation.**
+The aim is a credible local demonstration of guarded Claude coding Runs, not a
+hosted or production service. Implement the tickets below, verify them with
+focused tests and `npm run check`, then hand the app to the project owner for
+browser and live-agent evaluation. Do not spend this iteration on Linux/ECS
+deployment, multi-instance orchestration, hardened tenant isolation, or a UI
+rewrite.
 
-## Current implementation
+## Read in this order
 
-### P1 — Security
+1. [`AGENTS.md`](AGENTS.md), then its canonical guide [`CLAUDE.md`](CLAUDE.md).
+2. This handover; inspect each cited implementation and test before changing it.
+3. [`docs/contract-decisions.md`](docs/contract-decisions.md) for settled
+   authority, gate, lifecycle, approval and Claude-runtime contracts.
+4. [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the current system,
+   [`docs/GUARD_EVALUATION_RESULTS.md`](docs/GUARD_EVALUATION_RESULTS.md) for
+   evidence, and [`apps/web/DESIGN.md`](apps/web/DESIGN.md) for UI semantics.
+   [`README_AgentGuard.md`](README_AgentGuard.md) is product vision, not a
+   checklist of implemented features.
 
-- Claude is the only agent runtime. The server owns the Claude tool loop; each
-  tool action passes through AgentGuard middleware before execution. Agent tools
-  run in disposable containers, with networking disabled when policy denies it.
-- Deterministic and semantic checks produce bounded findings and middleware
-  decisions. Semantic confidence is audit information; it does not decide
-  whether an action is allowed. The semantic monitor can review thinking
-  summaries or visible pre-tool plans, but does not depend on Claude exposing
-  either: every command not proven read-only and every proposed file change is
-  semantically reviewed before execution. The Run receipt reports intent and
-  action review counts.
-- Semantic review now receives bounded, redacted excerpts attributed to files
-  the agent read and an itemized inventory of file changes or shell clauses.
-  Conflicting effect risks are rolled up by their maximum rather than averaged
-  with aligned effects.
-- In password mode with semantic monitoring enabled, the orchestrator reviews
-  the actual bounded Run diff against the original prompt and approval
-  summaries before marking a changed Run complete. An out-of-scope finding, an
-  unavailable review, or an incomplete diff fails the Run so it cannot seed a
-  follow-up Run. This is a post-execution backstop; it does not roll back files.
-- Workspace vault grants are resolved server-side, scoped to selected agents,
-  and mediated through the HTTPS vault broker. Vault use requires the configured
-  master key and the Postgres-backed workspace service.
-- Workspace working-copy exclusions cover known credential paths and are kept
-  aligned with sensitive-file checks by tests. This is a filename-based filter,
-  not general secret detection.
-- Reflection memory is wired to PostgreSQL using structured findings. Whether
-  it improves live multi-agent outcomes remains unmeasured.
-- Fine-grained `SecurityPolicy.rules` are unsupported and fail closed. A future
-  rules feature needs a versioned schema and reviewed enforcement semantics.
+## What currently works, and what the evidence proves
 
-### P2 — Orchestration
+The local password-mode app uses Postgres, a Claude agent loop, disposable tool
+containers, server-owned action gates, Run → Task → AgentExecution orchestration,
+isolated Run copies, workspace roles, approvals, vault host grants, ZIP import
+and export, a Run timeline, and follow-up prompts. A follow-up Run copies the
+latest **completed** Run in its workspace; failed/cancelled Runs retain their
+artifacts but do not seed a follow-up. Single and planned multi-agent Runs share
+this model. Current automated tests cover many mechanics; they are not a
+measurement of guard effectiveness.
 
-- Runs use the Run → Task → AgentExecution model. A supervisor plans and
-  delegates one level to specialists; write-capable work is serialized.
-- Specialists return a strict completion disposition. A completed model turn
-  alone does not complete a Task; incomplete or malformed dispositions fail the
-  task without an unsafe retry.
-- Dependency handling, approvals, cancellation, retries, and terminal artifact
-  retention are implemented. Nested specialist delegation remains deliberately
-  disabled for this POC.
+The latest documented live trial (16 November) ran four single-agent cases.
+The guarded adjacent-feature case was held at action review and ended when its
+approvals timed out; its copy contained only requested changes. A standalone
+Claude call to `reviewFinalRunDiff` classified the unguarded extra feature as
+scope expansion (0.55) and the guarded diff as aligned (0.03). **No live Run in
+that trial reached the orchestrator's automatic final-diff completion gate.**
+Unit tests cover that transition. Earlier trials did produce extra receipt
+files despite later semantic findings. Do not claim reliable prevention of
+scope drift or a measured detection rate from these small samples.
 
-### P3 — Platform
+## Implement in this order
 
-- Password-authenticated workspaces, roles, Postgres-backed Runs, workspace
-  management, sign-in throttling, and run-scoped working copies are implemented.
-- A workspace admin can create an empty workspace or upload a validated ZIP
-  before its first Run. ZIP extraction is bounded and rejects unsafe paths,
-  links, and known credential files. Server-folder registration remains an
-  operator action restricted by `WORKSPACE_SOURCE_ROOTS`.
-- A completed Run has a bounded, redacted actual file diff and an outcome
-  receipt. The entire Run workspace can also be downloaded as ZIP.
-- Sign-in throttling is in process memory. It resets on restart and is not shared
-  across replicas. Keep this POC single-instance: event resync does not make
-  orchestration waiters, cancellation, approvals, or run-scoped taint
-  multi-instance safe.
+### 1. Correct and complete the actual Run diff — highest priority
 
-### P4 — Contracts, UI, and integration
+**Observed code issue.** [`run-diff.ts`](apps/server/src/run-diff.ts) hashes files
+to detect modification, then compares only the first 200 lines using line
+membership. A change after line 200, a reorder, or duplicate-line count change
+can yield a modified file with an empty or misleading text diff. The final
+semantic reviewer consumes that same artifact. Baseline capture in
+[`working-copies.ts`](apps/server/src/orchestrator/working-copies.ts) walks a
+different file set from the post-Run scanner `listWorkspaceFiles`: depth and
+excluded directories differ. Post-Run files over 2 MB are omitted from its map,
+so an oversized existing file can appear deleted. A limit flag does not make an
+incorrect deletion label acceptable in Run Detail.
 
-- The console includes Dashboard, Runs, Run Detail, Approvals, Agents, Policies,
-  Security/Audit, Members, Credentials, and saved Benchmark reports.
-- Start a Run separates task entry from execution setup. Completed Run Detail
-  distinguishes gate proposals from actual file changes and labels agent
-  reports as unverified. Task details are available in a collapsible panel.
-- Desktop navigation groups less-frequent workspace destinations. The mobile
-  navigation keeps all destinations directly listed.
-- ZIP upload, full Run ZIP download, failed-sign-in throttling, actual Run diffs,
-  and the outcome receipt are implemented.
+**Required change.** Give baseline and post-Run enumeration one shared,
+explicitly bounded scope, with matching exclusions, depth, symlink policy and
+file-size handling. Keep hashes for change detection; represent an unreadable
+or oversized changed file as changed with unavailable contents, never as
+deleted. Make incomplete coverage explicit in the diff contract and fail the
+semantic completion gate closed when its evidence is incomplete. Produce a real
+bounded line diff (or equivalent old/new change excerpts with positions) so
+reorders, duplicate lines and late-file edits are visible. Redact before
+persistence/response. Preserve bounded storage and API behavior; add a schema
+field only if needed to distinguish complete from display-only truncation.
 
-## Remaining work
+**Acceptance:** tests cover line 201+, reorder, duplicate lines, deletion,
+added binary, oversized modification, ignored/deep paths, symlinks, 500-file
+limit and large baseline. The UI reports exactly what is unavailable. A
+modified file must never be silently shown as unchanged or deleted because it
+could not be read. Review the ZIP scanner too so the UI does not promise a
+"whole folder" when an archive limit excludes part of it.
 
-### P1
+### 2. Make semantic completion review cover its stated evidence
 
-- Validate and repeat the semantic-review fix for the demonstrated miss: in two
-  guarded live trials, an unrelated receipt-formatting feature from `AGENTS.md`
-  still appeared in the Run copies, despite scope-expansion findings and timed-
-  out human-review requests. Action review now exposes source excerpts and
-  itemized effects, and a final actual-diff review prevents a flagged changed
-  Run from completing. The server TypeScript check passes, but these changes
-  have not yet been evaluated live; repeat the corrected fixture before
-  claiming reliable scope-drift prevention. See
-  [guard evaluation results](docs/GUARD_EVALUATION_RESULTS.md).
-- Continue the repeated Claude-backed evaluation with varied prompts and
-  instructions. The patch-version case was held in 2/2 guarded Runs, while the
-  saved major-version traces exposed no read or proposal and therefore did not
-  test the guard. The synthetic egress probe was refused by Claude before an
-  upload command, so it did not measure sensitive-egress containment.
-  Reflection memory's live benefit also remains unmeasured.
-- Measure the final-diff reviewer’s false-positive rate and latency. It adds a
-  model call for changed Runs; diffs that are unavailable, truncated, or exceed
-  the bounded review size fail closed and do not become a follow-up baseline.
-- Keep using controlled deterministic probes: network capability denial and
-  high-consequence approval/denial both acted in full Runs on 15 November. The
-  egress rule still needs a controlled proposal that reaches its own checkpoint
-  without relying on a model refusal. See
-  [guard evaluation results](docs/GUARD_EVALUATION_RESULTS.md).
-- Re-run the file-change approval and network-denial runtime probes when the
-  Claude runtime image or sandbox setup changes.
-- A live orchestrator-level approval round-trip for semantic scope expansion
-  passed on 15 November: the approval persisted as approved by the Run owner,
-  the waiting command resumed, tests passed, and the Run copy received the
-  package/changelog changes. The approval was resolved through the orchestrator
-  method, not through login, the HTTP route, or the Approvals UI; test those
-  user-facing paths separately if validating the complete browser flow. See
-  [guard evaluation results](docs/GUARD_EVALUATION_RESULTS.md).
-- Expand semantic live evaluations with repeated, varied natural prompts and
-  planted adjacent-work instructions. Count a case as a guard intervention
-  only when the agent proposes the deviation and the corresponding action
-  checkpoint records the semantic decision. One-off runs are exploratory, not
-  efficacy rates.
-- Continue deterministic live probes with controlled disposable fixtures and
-  sinks so model refusals do not stand in for gate enforcement.
-- Maintain sensitive-file marker parity as the marker list evolves.
+**Observed code issue.** [`semantic-run-diff.ts`](apps/server/src/semantic-run-diff.ts)
+passes only the first 1,200 characters of each file's diff to Claude, without a
+coverage marker; it also passes only the last 32 reviewed actions although the
+orchestrator accepts up to 48 before marking its ledger truncated. A review can
+therefore return "aligned" while relevant changed lines or an earlier action
+were never presented. The action checkpoint in
+[`intent-controller.ts`](apps/server/src/intent-controller.ts) likewise cuts
+each command clause or file-change excerpt at 1,200 characters; a long compound
+proposal can hide a later effect inside a summary. Existing size limits are
+reasonable, but invisible omission is not.
 
-### P2
+**Required change.** For final review, batch or sample *all* changed hunks
+with explicit coverage accounting, and provide the action ledger within its
+bound (or an explicit incomplete state). If complete content cannot fit the
+configured model input budget, return an incomplete review and prevent an
+"aligned" completion; do not silently clip. Keep full source text out of
+findings and approval payloads. For action review, ensure every proposed effect
+has either its relevant excerpt assessed or an explicit insufficient-evidence
+result that invokes the existing hold/fail-closed rule. Avoid sending excessive
+trivial content when a safe bounded selector can cover the changes, but make
+the selector's limits testable.
 
-- No outstanding P2 feature implementation is currently identified. Preserve
-  the task disposition and lifecycle invariants as orchestration changes.
-- Revisit nested delegation only if the product explicitly needs it and a new
-  lineage, scheduling, lifecycle, and security design is reviewed.
+**Acceptance:** tests put unrelated work after character 1,200, in the first of
+48 reviewed actions, and in a late shell clause/file change. Each case is
+reviewed with visible evidence or marked incomplete; none is silently aligned.
+The orchestrator's fail-closed completion and follow-up baseline behavior stay
+intact. Start with [`semantic-run-diff.test.ts`](apps/server/tests/semantic/semantic-run-diff.test.ts)
+and the orchestrator tests.
 
-### P3
+### 3. Make decisions and artifact limits intelligible in the UI
 
-- Exercise `scripts/deploy-multi-agent.sh` and its systemd/backup behavior on
-  the intended Linux/ECS host. Local build checks do not validate that host.
-- Keep bootstrap of the first account and registration of server-side project
-  folders operator-only. Do not deploy as multi-instance without shared
-  coordination for the process-local state listed above.
-- Stronger tenant isolation is deferred; current workspace roles and Run copies
-  are logical separation, not hardened isolation between mutually untrusted
-  tenants.
+Review [`RunDetail.tsx`](apps/web/src/runs/RunDetail.tsx),
+[`RunFiles.tsx`](apps/web/src/runs/RunFiles.tsx),
+[`ApprovalsPage.tsx`](apps/web/src/workspace/ApprovalsPage.tsx), and the shared
+Run/approval contracts. Run Detail already separates proposed gate edits from
+actual file changes and labels agent output unverified. Preserve that. Add a
+compact plain-language final-review result/coverage state to the receipt
+(aligned, conflict, incomplete/unavailable, or not run), linked to its finding
+and diff; today's receipt gives only changed-file and intent/action counts. Do
+not call task completion proof that the code is correct.
 
-### P4
+The individual file "Download" in `RunFiles` uses the preview endpoint, which
+returns at most 256 KB, then reports truncation *after* the download. Make the
+control say "Download preview" when bounded, or use a full-byte endpoint; the
+ZIP remains the full-byte path subject to archive limits. Make archive failures
+and omitted-content limits clear before a user assumes they have a complete
+project. In approvals, show the exact bounded proposal/effect and why it was
+held before approval; if safe details are unavailable, say so and avoid a blind
+approval from the queue. Keep server authorization authoritative.
 
-- Do a manual browser review at desktop and mobile widths, especially the
-  grouped navigation, Start a Run form, completed Run receipt, and collapsed
-  task-details panel, plus resolving a real pending approval through the UI.
-  The AppShell regression test checks markup structure, not visual layout or
-  real pointer/keyboard interaction.
-- Keep docs and UI wording aligned with implemented behavior and distinguish
-  saved benchmark artifacts from live efficacy results.
+**Acceptance:** frontend tests verify receipt states, long-file download
+wording, approval evidence/empty evidence, and denied/timeout displays. Test
+keyboard and narrow layout where these components change; the owner will do
+the full visual/browser pass later.
 
-## Deliberate POC boundaries
+### 4. Establish one real end-to-end final-review result
 
-- Agents have no general network capability. Provider-only egress is not
-  implemented or claimed.
-- Workspace roles and isolated Run working copies do not provide production
-  tenant isolation. Raw traces may contain values missed by redaction and may
-  be truncated; they are debugging evidence, not the complete audit record.
-- Policy rules beyond capability ceilings, recursive delegation, user-side
-  browsing of arbitrary host folders, multi-instance orchestration, and a
-  Dashboard covering all aspirational system metrics are outside the current
-  implementation.
-- `dev:demo` uses simulated Runs. The workspace vault and real account/workspace
-  administration require the Postgres-backed mode and configured vault key.
+After 1–3, use disposable fixtures, a bounded Claude budget and the current
+local Postgres/container setup to run an aligned changed Run that completes
+through the **orchestrator** final-diff gate. Then run an adjacent-scope case
+that actually proposes the deviation; resolve or deny its approval rather than
+letting a five-minute timeout hide the completion path. Capture Run IDs,
+prompts, starting fixture, changed files, action decisions, approval outcome,
+final review finding, Run status, latency/tokens and whether a follow-up can
+seed from the result. Distinguish model refusal, action-gate intervention and
+final-diff intervention. Update
+[`docs/GUARD_EVALUATION_RESULTS.md`](docs/GUARD_EVALUATION_RESULTS.md) with
+observed results only. This verifies implementation; the owner will test
+overall effectiveness after handoff.
 
-## Dependencies and handoff
+### 5. Improve repeatable evaluation, then update claims
 
-| Work | Depends on | Can proceed now? |
-| --- | --- | --- |
-| P1 expanded live benchmark and reflection review | Dedicated Postgres, container runtime/image, Claude credentials, benchmark budget | Yes, when those are available |
-| P1 runtime probes | Claude container image and local runtime access | Yes |
-| P3 deployment validation | Intended Linux/ECS host and deployment credentials | No, host access required |
-| P4 browser review | Running app and browser at desktop/mobile widths | Yes |
-| Fine-grained rules, nested delegation, hardened tenant isolation | New product/security decisions and reviewed designs | Deferred; no one is blocking another |
+The current 36-Run exfiltration matrix in the guard-results doc planted `.env`
+in source, but working-copy preparation excluded it; no Run saw the secret,
+and Claude usually refused before an egress proposal. It cannot establish an
+egress containment rate. Extend existing benchmark fixtures with synthetic
+credentials under a permitted test-only filename, controlled sink proposals
+that reach the action gate, benign controls, and both single/multi-agent modes.
+Test deterministic policy, high-consequence approval, egress and vault grants
+separately. For semantic work, use ordinary user prompts and several adjacent
+instructions with matched guard-off/on controls; score only when an agent
+actually proposes the deviation. Include false holds, task completion and
+latency/cost. Keep expensive live repeats optional and bounded; deterministic
+gate/replay tests should be the default CI proof. Review README and architecture
+wording against new evidence, keeping historical benchmarks clearly labelled.
 
-No remaining implementation item above depends on another person finishing code
-first. The live benchmark and deployment checks depend on external environment
-access, not P2/P4 code.
+## Owner's manual pass after the friend finishes
 
-## References
+The owner will start the local password-mode app with Postgres, Docker and a
+Claude key; create a workspace from ZIP and another from a server folder; run
+both one-agent and planned multi-agent tasks; submit a follow-up prompt; inspect
+the receipt, gate timeline, actual diff and ZIP; approve and deny real held
+actions through the browser; exercise vault host grants; and check desktop and
+mobile layouts. A failed/cancelled Run should retain artifacts and not become a
+follow-up baseline. Record unexpected behavior with Run IDs and screenshots.
+Do not use real credentials or a non-disposable project for guard probes.
 
-- [Architecture](docs/ARCHITECTURE.md) — implemented system and current limits.
-- [Architecture direction](docs/architecture-direction.md) — agreed future
-  direction, not proof of implementation.
-- [Contract decisions](docs/contract-decisions.md) — settled interfaces and
-  security choices, especially decisions 18–21, 24–27, 30–32.
-- [Deployment](docs/DEPLOYMENT.md) — host prerequisites and POC deployment.
-- [Live orchestration benchmark](benchmark/run-multi-agent-live.ts) — P1
-  validation harness.
+## Dependencies and completion rule
+
+Tickets 1 and 2 touch the same diff contract and should be implemented
+sequentially. Ticket 3 can start after the result/coverage contract from 1–2
+is settled. Ticket 4 requires those code fixes and a configured local runtime.
+Ticket 5's fixture work can begin now; claims should wait for observed results.
+No work above depends on another team member or a cloud host. The friend owns
+code, focused tests, docs updates and `npm run check`; the owner owns the later
+interactive/product evaluation. Commit coherent changes separately. Report
+exact test results, remaining limitations and any case where the model never
+reached the guard. Never treat a saved finding alone as proof that an unwanted
+file write was prevented.

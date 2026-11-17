@@ -26,7 +26,8 @@ that stops it was written by the guard, not by the model.
 > This is a proof of concept. By default it is single-user with a shared token;
 > `APP_AUTH_MODE=password` adds user accounts and workspace roles (see
 > [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)). Workspace roles provide
-> logical separation, but there is no hardened tenant isolation or sandbox.
+> logical separation and a constrained tool container, but not hardened tenant
+> isolation or a guarantee that every unsafe action is contained.
 > Do not point it at production data or real credentials.
 > Multi-agent run copies omit common environment-secret and credential-file
 > patterns, but that filename-based filter is not general secret detection.
@@ -970,6 +971,8 @@ Dockerfile / Dockerfile.claude-runtime / docker-compose.yml
 
 ## Documentation
 
+- [Local POC implementation handover](handover.md) — prioritized remaining
+  changes and the owner's later manual test pass
 - [Architecture](docs/ARCHITECTURE.md) — components, deployment profiles,
   extension seams
 - [Architecture direction](docs/architecture-direction.md) — the agreed
