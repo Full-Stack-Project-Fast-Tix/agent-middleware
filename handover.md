@@ -1,6 +1,6 @@
 # AgentGuard local POC handover
 
-Updated 17 November 2026. **Start here if you are taking over implementation.**
+Updated 18 November 2026. **Start here if you are taking over implementation.**
 The aim is a credible local demonstration of guarded Claude coding Runs, not a
 hosted or production service. Implement the tickets below, verify them with
 focused tests and `npm run check`, then hand the app to the project owner for
@@ -12,6 +12,8 @@ rewrite.
 
 1. [`AGENTS.md`](AGENTS.md), then its canonical guide [`CLAUDE.md`](CLAUDE.md).
 2. This handover; inspect each cited implementation and test before changing it.
+   Then follow [`docs/LOCAL_POC_IMPLEMENTATION_SPEC.md`](docs/LOCAL_POC_IMPLEMENTATION_SPEC.md)
+   for resolved design choices, additional UI work and automated acceptance criteria.
 3. [`docs/contract-decisions.md`](docs/contract-decisions.md) for settled
    authority, gate, lifecycle, approval and Claude-runtime contracts.
 4. [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the current system,
@@ -87,7 +89,7 @@ each command clause or file-change excerpt at 1,200 characters; a long compound
 proposal can hide a later effect inside a summary. Existing size limits are
 reasonable, but invisible omission is not.
 
-**Required change.** For final review, batch or sample *all* changed hunks
+**Required change.** For final review, batch all changed hunks
 with explicit coverage accounting, and provide the action ledger within its
 bound (or an explicit incomplete state). If complete content cannot fit the
 configured model input budget, return an incomplete review and prevent an
@@ -131,7 +133,12 @@ wording, approval evidence/empty evidence, and denied/timeout displays. Test
 keyboard and narrow layout where these components change; the owner will do
 the full visual/browser pass later.
 
-### 4. Establish one real end-to-end final-review result
+### 4. Prepare repeatable end-to-end final-review validation
+
+Implement this as automated orchestrator tests and a checked-in opt-in live
+harness. The owner will run the paid live cases afterward. Missing credentials
+must not block completing the implementation and automated verification.
+The following describes the live procedure the harness should support.
 
 After 1–3, use disposable fixtures, a bounded Claude budget and the current
 local Postgres/container setup to run an aligned changed Run that completes
