@@ -25,6 +25,7 @@ apps/server/tests/fixtures/
 benchmark-results/*T*Z/
 benchmark-results/claude-*/
 benchmark-results/semantic-diff-validation-*/
+benchmark-results/stage3-*/
 
 # Chart variants used only in the Devpost writeup, not in the repo docs
 docs/assets/png/

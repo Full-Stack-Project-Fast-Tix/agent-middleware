@@ -255,6 +255,19 @@ approval matrix in the policy tests. No new paid live evidence has been recorded
 
 ## Owner's manual pass after the friend finishes
 
+### Stage 3 status, 19 November
+
+The two wrap-up commits have been pushed. Real Postgres persistence/configuration
+checks passed 60/60 after fixing the Windows CRLF test fixture. Eight controlled
+Postgres/Docker Runs passed single/multi-agent copy continuity and deterministic
+approval/network checks; a synthetic encrypted-vault/real HTTPS broker check
+passed too. These controlled Runs used scripted actions and no semantic model.
+The first live Claude Run failed with HTTP 401 for the configured API key before
+any coding or final review. Replace `ANTHROPIC_API_KEY` locally to resume the
+live matrix. Stage 3 is partially verified, not complete. See
+[`GUARD_EVALUATION_RESULTS.md`](docs/GUARD_EVALUATION_RESULTS.md) for exact Run IDs,
+scope and the remaining live checks. Stage 4 browser validation is still pending.
+
 ### Wrap-up stages 1–2 follow-up
 
 The 500/501-file boundary now exercises one scanner fixture instead of copying
