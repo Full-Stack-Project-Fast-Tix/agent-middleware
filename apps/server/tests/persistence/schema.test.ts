@@ -220,7 +220,7 @@ describe.skipIf(!url)("migration 001", () => {
       const { rows } = await db.query<{ name: string }>("SELECT name FROM schema_migrations ORDER BY name");
       for (const { name } of rows) {
         const sql = await readFile(path.join(MIGRATIONS_DIR, name), "utf8");
-        await writeFile(path.join(dir, name), sql.replaceAll("\n", "\r\n"));
+        await writeFile(path.join(dir, name), sql.replaceAll("\r\n", "\n").replaceAll("\n", "\r\n"));
       }
       try {
         expect(await migrate(db, dir)).toEqual([]);
