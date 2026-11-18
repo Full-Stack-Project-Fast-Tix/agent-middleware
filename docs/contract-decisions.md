@@ -771,6 +771,98 @@ setting empty, which is the default, nothing changes from decision 15: only
 `db:admin` sets folders. Changing an existing workspace's folder stays
 operator-only.
 
+## 33. Action review itemizes every part of a proposal
+
+**Decision (18 November 2026):** Semantic action review splits a proposal into
+effects without clipping or merging: each top-level shell clause (with its
+separator, and with any heredoc body kept in the clause that reads it), each
+changed file, a handoff's content, or a delegation's title and objective.
+Text longer than 2,000 characters becomes several effects (`C3.P2`, `F1.P4`)
+split at line ends. The full text travels once, in the effects; the proposed
+action points to them. A proposal that needs more than 24 effects is held for
+a person (`semantic_unavailable`, finding `semantic-review-incomplete`) with no
+model call, and the 48,000-character input cap of decision 7.2 still applies.
+An itemized result must assess every effect exactly once or the review counts
+as unavailable; the worst conflicting effect sets the outcome. Thresholds
+(0.50 review, 0.75 decline) and the role of confidence are unchanged.
+
+**Why:** Each clause or file excerpt used to be cut at 1,200 characters and
+clauses past the 23rd merged into one clipped summary, so a late effect could
+sit in a part no assessment covered.
+
+## 34. One bounded scan for both sides of the Run diff
+
+**Decision (18 November 2026):** The baseline (captured once, right after the
+copy is made) and the final scan (after execution stops) are the same walk in
+`workspace-snapshot.ts`, with the limits and exclusions in `SNAPSHOT_LIMITS`
+and `SNAPSHOT_EXCLUDED_DIRECTORIES` of `packages/shared/src/review.ts`. A scan
+that stops says why (`file_limit`, `depth_limit`, `traversal_limit`,
+`hash_budget`, `directory_unreadable`); reaching a limit exactly is not a stop.
+Links are recorded by target and never followed. Credential-named paths
+(`credential-names.ts`, shared with the copy's exclusions) are hashed so a
+change shows, but their contents are never captured. A present file too large
+or unreadable to hash is changed when its size differs and `uncertain`
+otherwise; absence is claimed only from a complete scan or a direct look at the
+path. The diff is a line diff with positions; past its work bound it shows the
+changed region as one replacement, which is coarser but never hides a line.
+The artifact (`RUN_DIFF_VERSION` 2) is written atomically next to the copy,
+outside it, once execution has stopped, and served unchanged afterwards. The
+route answers 409 while a Run is active. A missing, corrupt or older baseline
+gives an unavailable comparison with an unknown count; nothing ever captures a
+replacement baseline. An older cached artifact is shown as legacy and claims no
+coverage.
+
+**Why:** The previous diff compared the first 200 lines as sets, walked a
+different file set on each side, and listed a present file over 2 MB as deleted.
+
+## 35. The final review concludes only from complete evidence, and is saved
+
+**Decision (18 November 2026):** The final review returns `incomplete`, before
+any model call, unless the diff is version 2 with an available baseline, a
+complete inventory, no uncertain entry, complete content for every change, an
+untruncated list, at most 36 changed files, a complete action ledger (48
+entries) and at most 8 approvals, and its effects fit 8 calls of 60,000
+characters. Every changed hunk becomes one or more effects (`F2.H1`,
+`F2.H1.P3`) with ids that never collide across batches; each batch must assess
+each of its effects exactly once. A conflict found in any batch stands. The
+outcome is saved on `Run.finalReview` (migration 007) for every terminal path:
+`aligned`, `no_changes` and `disabled` complete the Run; `conflict` (0.50 or
+more), `incomplete` and `unavailable` fail it with a finding and keep it from
+seeding follow-up work; a Run that ends first gets `not_run`. The review's own
+model usage is recorded there, separate from agent execution usage. It runs
+outside the Run's lock with an abort signal, so a cancel stops it and the Run
+ends cancelled, never completed. Nothing is rolled back.
+
+**Why:** Each file's diff was cut at 1,200 characters and only the last 32 of
+48 actions were sent, with no marker, so "aligned" could mean "not shown".
+Recording only failures made a missing finding look like a pass.
+
+## 36. An approval covers exactly its proposal
+
+**Decision (18 November 2026):** Approvals save redacted, bounded proposal
+details (command text, file diffs up to 4,000 characters each and 12,000 in
+total, handoff content, delegation objective) with `complete: true` only when
+nothing was cut. Approving an approval with no saved details is refused (409);
+deny and timeout remain. The final review sees approvals loaded by the server,
+never agent claims. An approved proposal covers a conflicting change only if it
+is complete, names that path (file changes), the reviewer cites it as an exact
+match, and the risk is below 0.75; anything else stays a conflict and records
+`approval_unmatched`. Denied, timed-out and cancelled approvals grant nothing.
+Deterministic restrictions still run first and no approval overrides them. The
+gated-action ledger records which approval an action ran under.
+
+## 37. Run evidence in the console
+
+**Decision (18 November 2026):** The per-file download is a redacted text
+preview of at most 256 KB and is labelled so; the ZIP is the full-byte path
+within its limits and reports, by response header, how many excluded folders,
+credential-named entries and links it left out. A follow-up Run keeps the agent
+(single) or supervisor (auto) the finished Run used when it is still eligible,
+and otherwise asks; it never switches silently to the workspace default. The
+form names the latest completed Run the follow-up starts from, which may not be
+the Run on the page. Supervisors offered by the forms are agents whose
+effective policy can delegate. One active Run per workspace (409) is unchanged.
+
 ## Guidance for P3's schema
 
 These points are implementation guidance, not part of the contract:

@@ -3,6 +3,11 @@
 18 November 2026. Planned behavior to implement, not a claim that these fixes
 exist. Read with [the handover](../handover.md) and canonical `CLAUDE.md`.
 
+> **Status:** implemented on 18 November 2026 except the paid live runs and the
+> manual browser pass; the handover's ticket **Status** notes give the code and
+> test evidence and the remaining limits. Settled choices are recorded as
+> contract decisions 33–37.
+
 ## Scope and decisions
 
 Implement the five handover tickets with the details below. Keep Claude only,

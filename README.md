@@ -411,6 +411,14 @@ The complete result and reproducible command are in
 [`docs/BENCHMARK.md`](docs/BENCHMARK.md). Raw traces and per-run artifacts are
 local under `benchmark-results/` and ignored by Git.
 
+An opt-in live harness for the orchestrator's final review and a corrected
+egress probe (a synthetic credential under a filename the Run copy keeps, a
+`.invalid` sink) is checked in: `AGENTGUARD_LIVE_EVAL=1 npm run
+eval:final-review -w @launchpad/server` with `DATABASE_URL`,
+`BENCH_OWNER_EMAIL` and `ANTHROPIC_API_KEY` set. It scores model refusal,
+action not reached, gate intervention, final-diff detection, false holds and
+task completion separately. No results from it are recorded yet.
+
 ### Historical GPT-5.1 benchmark
 
 An earlier version of this project recorded 630 live runs (42 scenarios × 3
@@ -850,9 +858,11 @@ false negative puts a live credential on a projector.
 ### Semantic intent guard
 
 - **Model judgments can be wrong.** Assessments are schema-checked, not
-  fact-checked. Proposed actions are reviewed before execution; file changes
-  and common compound shell clauses receive separate effect assessments. A
-  conflicting effect's risk is not averaged with an aligned effect. Conflicts
+  fact-checked. Proposed actions are reviewed before execution; every file
+  change and shell clause (long ones in several parts, none clipped) receives
+  its own effect assessment, and a proposal too large to itemize in one review
+  is held for a person. A conflicting effect's risk is not averaged with an
+  aligned effect. Conflicts
   scoring 0.50–0.74 require human review; conflicts scoring 0.75 or higher are
   declined. Model-reported confidence is audit information and does not
   suppress review or decline. A deterministic `violation` always wins.
@@ -870,12 +880,17 @@ false negative puts a live credential on a projector.
   safe reads can pass without an action-level semantic call. Every other
   command and each proposed file change is reviewed before execution.
 - **Final-diff backstop, not rollback.** In password mode with semantic
-  monitoring enabled, the actual bounded Run diff is checked against the
-  original task before a changed Run can complete. A detected scope conflict,
-  unavailable review, or incomplete diff fails the Run and prevents it from
-  seeding follow-up work. Changes already written remain in that failed Run
-  copy for inspection; this does not undo them. The extra review adds model
-  latency and cost.
+  monitoring enabled, every changed line of the Run's actual diff is checked
+  against the original task, the gated actions and the approvals before a
+  changed Run can complete. It concludes only from complete evidence: binary,
+  over-2 MB, unreadable or credential-named changed files, links, more than 36
+  changed files, or changes too large for its input budget make the review
+  incomplete, which fails the Run. A detected scope conflict (risk 0.50 or
+  more) or an unavailable review fails it too, and none of these seeds
+  follow-up work. Changes already written remain in that failed Run copy for
+  inspection; this does not undo them. An approval covers only its exact
+  proposal. The outcome, its coverage and the review's own token use are shown
+  on the Run receipt; the extra review adds model latency and cost.
 - **Still out of scope.** Cross-run semantic memory and final-response DLP
   remain unfinished. The final diff review checks task scope, not whether the
   implementation is correct or whether tests prove the feature works.

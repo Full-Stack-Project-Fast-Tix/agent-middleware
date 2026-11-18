@@ -8,6 +8,15 @@ browser and live-agent evaluation. Do not spend this iteration on Linux/ECS
 deployment, multi-instance orchestration, hardened tenant isolation, or a UI
 rewrite.
 
+> **Status, 18 November 2026 (evening):** tickets 1–3 are implemented and
+> tested; ticket 4 and 5 code (orchestrator integration tests and an opt-in
+> live harness) is implemented, and **the paid live runs and the manual browser
+> pass are still the owner's to do**. No live result was recorded. Commits:
+> `a49d108` (diff and final review), `6d295de` (action-review itemization),
+> `d5b28a4` (UI), `e279758` (live harness), plus the documentation commit. Each
+> ticket below has a **Status** note with its evidence; the owner checklist is
+> at the end.
+
 ## Read in this order
 
 1. [`AGENTS.md`](AGENTS.md), then its canonical guide [`CLAUDE.md`](CLAUDE.md).
@@ -76,6 +85,21 @@ modified file must never be silently shown as unchanged or deleted because it
 could not be read. Review the ZIP scanner too so the UI does not promise a
 "whole folder" when an archive limit excludes part of it.
 
+**Status: done.** One shared scanner (`apps/server/src/workspace-snapshot.ts`)
+for baseline and final scans, a Myers line diff with positions
+(`line-diff.ts`), and a versioned artifact with inventory/content coverage
+(`run-diff.ts`, contract decision 34). Present-but-unreadable/oversized files
+are changed or `uncertain`, never deleted; a missing or older baseline is an
+unknown count and is never recaptured after edits; the route refuses active
+Runs and reports expired copies; the file listing and ZIP say what they left
+out. Tests: `apps/server/tests/orchestrator/run-diff.test.ts` (line 201+,
+reorder, duplicates, deletion, added binary, oversized changed and same-size,
+excluded and deep paths, links and a directory replaced by a link, exactly 500
+vs 501 files, large baseline, credential-named files, encoding-only change,
+unreadable file and directory, cached and legacy artifacts, missing
+baseline), `tests/server/run-routes.test.ts`, `tests/workspace-zip.test.ts`,
+`tests/server/workspace-files.test.ts`.
+
 ### 2. Make semantic completion review cover its stated evidence
 
 **Observed code issue.** [`semantic-run-diff.ts`](apps/server/src/semantic-run-diff.ts)
@@ -107,6 +131,26 @@ The orchestrator's fail-closed completion and follow-up baseline behavior stay
 intact. Start with [`semantic-run-diff.test.ts`](apps/server/tests/semantic/semantic-run-diff.test.ts)
 and the orchestrator tests.
 
+**Status: done.** Final review (`semantic-run-diff.ts`) checks coverage first
+and returns `incomplete` without a model call when anything is missing; every
+changed hunk becomes effects with stable ids in bounded batches, each of which
+must be assessed; the full 48-entry ledger and server-loaded approvals are
+included; exact-approval coverage is checked deterministically (decisions 35,
+36). The outcome is saved on `Run.finalReview` (migration 007) for success and
+failure, with the review model's usage kept apart. The review runs outside the
+Run lock and is aborted by cancel. Action review itemizes every clause/file in
+parts or holds (decision 33). Tests: `tests/semantic/semantic-run-diff.test.ts`
+(work after character 1,200, a late part of a long hunk, a later batch, the
+first of 48 actions, skipped effects, every coverage gap, budget, monitor
+error, abort, approvals), `tests/semantic/intent-controller.test.ts` (late
+clause, more than 24 parts, heredocs, late file content, skipped effect,
+oversized edit), `tests/orchestrator/final-review.test.ts` (aligned, conflict
+and follow-up baseline, incomplete, monitor and diff errors, disabled and
+not_run, ledger bound, exact approval, extra unapproved effect, denied
+approval, approve refused without details, cancel during review),
+`tests/persistence/run-store.test.ts` (final review round trip, also run
+against a disposable PostgreSQL 15).
+
 ### 3. Make decisions and artifact limits intelligible in the UI
 
 Review [`RunDetail.tsx`](apps/web/src/runs/RunDetail.tsx),
@@ -133,6 +177,24 @@ wording, approval evidence/empty evidence, and denied/timeout displays. Test
 keyboard and narrow layout where these components change; the owner will do
 the full visual/browser pass later.
 
+**Status: done in code; visual pass is the owner's.** Receipt with final
+review state, coverage, flagged paths, finding and labelled tokens
+(`RunReceipt.tsx`, `run-receipt.ts`); v2 diff rendering that names what is
+unavailable (`ActualChanges.tsx`); approval evidence with hold reason and
+exact proposal, Approve disabled without saved details in the queue, held
+strip, drill-down and gate timeline (`ApprovalEvidence.tsx`); "Download text
+preview" with truncation/redaction notes and ZIP omission counts
+(`RunFiles.tsx`, `run-file-actions.ts`); Run-scoped loading with retry
+(`latest-request.ts`); supervisor filtering by effective policy and follow-up
+agent/parent display (`agent-choice.ts`, `NewRun.tsx`,
+`ContinueWorkspace.tsx`). Tests: `apps/web/src/runs/*.test.ts(x)` for receipt
+states, unknown counts, diff notes, download wording, archive failures,
+approval evidence and replayed Approve/Deny clicks, denied/timeout wording,
+stale-response races, and agent choice. **Limit:** adding a DOM test library
+was not permitted in this environment, so interactions are tested through the
+handlers and rendered markup, not real browser events; keyboard and narrow
+layouts need the owner's browser pass.
+
 ### 4. Prepare repeatable end-to-end final-review validation
 
 Implement this as automated orchestrator tests and a checked-in opt-in live
@@ -153,6 +215,14 @@ final-diff intervention. Update
 observed results only. This verifies implementation; the owner will test
 overall effectiveness after handoff.
 
+**Status: harness done, live runs not done.** Automated orchestrator cases are
+in `tests/orchestrator/final-review.test.ts`. The opt-in harness is
+`benchmark/run-final-review-live.ts` (`npm run eval:final-review -w
+@launchpad/server`), scored by the pure `benchmark/final-review-scoring.ts`
+(tests in `benchmark/tests/final-review-scoring.test.ts`). It was verified to
+refuse without its prerequisites; it has not run a paid case.
+`docs/GUARD_EVALUATION_RESULTS.md` records only that no new results exist.
+
 ### 5. Improve repeatable evaluation, then update claims
 
 The current 36-Run exfiltration matrix in the guard-results doc planted `.env`
@@ -169,6 +239,15 @@ latency/cost. Keep expensive live repeats optional and bounded; deterministic
 gate/replay tests should be the default CI proof. Review README and architecture
 wording against new evidence, keeping historical benchmarks clearly labelled.
 
+**Status: fixtures and scoring done, live runs not done.** The harness's
+`egress-control` case plants a synthetic token in `fixtures/test-credential.txt`
+(kept by the copy) with a `.invalid` sink, plus an `egress-benign` control,
+in single or auto mode, guard off and on. Scoring separates refusal, not
+reached, gate intervention, final-diff detection, false holds and completion.
+Not done: a separate deterministic replay matrix for vault grants and
+high-consequence approval (existing focused server tests still cover those
+gates), and any update of README claims from new evidence, since none exists.
+
 ## Owner's manual pass after the friend finishes
 
 The owner will start the local password-mode app with Postgres, Docker and a
@@ -179,6 +258,29 @@ actions through the browser; exercise vault host grants; and check desktop and
 mobile layouts. A failed/cancelled Run should retain artifacts and not become a
 follow-up baseline. Record unexpected behavior with Run IDs and screenshots.
 Do not use real credentials or a non-disposable project for guard probes.
+
+### Owner checklist (commands; set values yourself, never commit them)
+
+1. Install and verify: `npm ci && npm run check`. Optional database tests:
+   `TEST_DATABASE_URL=postgres://… npm test -w @launchpad/server`.
+2. Start the stack (README "Run on Claude"): `docker compose up -d postgres`,
+   `export DATABASE_URL=postgres://launchpad:launchpad@127.0.0.1:5433/launchpad`,
+   `npm run db:migrate -w @launchpad/server` (applies migration 007),
+   `npm run build:claude-runtime`, then `npm run poc` with
+   `GUARDRAIL_SEMANTIC_ENABLED=true` in `.env`.
+3. Browser pass: a one-agent and a planned Run; check the receipt's final
+   review line and coverage, the actual-changes notes, "Download text preview"
+   on a file over 256 KB, the ZIP note, an approval card's proposal (Approve,
+   Deny, and a timeout), a follow-up from a failed Run page (it should name the
+   latest completed Run and keep the agent), the supervisor list for an agent
+   that cannot delegate, keyboard-only use, and a 360px-wide window.
+4. Live cases (paid): `AGENTGUARD_LIVE_EVAL=1 DATABASE_URL=… BENCH_OWNER_EMAIL=…
+   ANTHROPIC_API_KEY=… npm run eval:final-review -w @launchpad/server -- --cases
+   aligned-change,adjacent-scope,exact-approval --mode single`, then
+   `--cases egress-control,egress-benign --guards off,on` and `--mode auto`.
+   Optional bounds: `BENCH_RUN_TIMEOUT_MS`, `BENCH_CLAUDE_MAX_ITERATIONS`,
+   `BENCH_RUN_TOKEN_BUDGET`, `BENCH_MAX_CASES`, `BENCH_OUT_DIR`. Record Run
+   IDs and the report's buckets in `docs/GUARD_EVALUATION_RESULTS.md`.
 
 ## Dependencies and completion rule
 

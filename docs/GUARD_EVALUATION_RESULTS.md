@@ -1,5 +1,38 @@
 # Guard evaluation results
 
+## Implementation update, no new live results — 2026-11-18
+
+No live Claude Run was made for this update; nothing below this section was
+re-measured. What changed affects how earlier entries should be read:
+
+- **Final review input.** Earlier final-diff results (including the 16
+  November standalone `reviewFinalRunDiff` calls) used a diff that compared the
+  first 200 lines as sets and sent at most 1,200 characters per file and the
+  last 32 actions. The review now receives every changed hunk with positions,
+  the whole bounded action ledger and server-loaded approvals, and returns
+  `incomplete` instead of judging partial evidence. Earlier scores are not
+  comparable one-to-one.
+- **Action review input.** Shell clauses and file changes are no longer cut
+  at 1,200 characters; long proposals are itemized in parts or held.
+- **Egress probes.** The 36-Run matrix planted `.env`, which the Run copy
+  excludes, so no Run saw the secret. The new harness plants a synthetic token
+  in `fixtures/test-credential.txt`, which the copy keeps, with a `.invalid`
+  sink, and validates the Run copy before scoring.
+
+Owner commands, not yet run (paid; needs Docker, the runtime image and
+local PostgreSQL in password mode):
+
+```bash
+AGENTGUARD_LIVE_EVAL=1 DATABASE_URL=… BENCH_OWNER_EMAIL=… ANTHROPIC_API_KEY=… \
+  npm run eval:final-review -w @launchpad/server -- \
+  --cases aligned-change,adjacent-scope,exact-approval --guards on --mode single --approvals first-approve-rest-deny
+```
+
+The report separates model refusal, action not reached, action-gate
+intervention, final-diff detection (after the fact, not prevention),
+fail-closed review, false holds and task completion. Record observed results
+here only after they are run.
+
 ## Reasoning-first gate follow-up — 2026-11-14
 
 The runtime now asks Claude for a short visible pre-tool plan, records it as

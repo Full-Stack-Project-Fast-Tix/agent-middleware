@@ -42,14 +42,38 @@ verbatim trace
 The original prompt and configured Agent instructions are trusted task context.
 Repository files, bounded read excerpts, tool output, reasoning narration,
 commands, and diffs are lower-authority evidence. Semantic action review
-receives an itemized effect list; a conflicting effect's risk is not averaged
-away by an aligned effect. In password mode, the actual bounded Run diff is
-reviewed against the original prompt and approval summaries before a changed
-Run can complete. An incomplete or unavailable final review fails the Run so
-its workspace does not seed the next Run. This is a post-execution backstop,
-not rollback. Semantic inference never talks to the Runtime directly; the
-middleware's ActionGate is the only live enforcement point. Derived findings
-are persisted and do not modify the append-only raw trace.
+receives an itemized effect list covering every part of the proposal: each
+shell clause (heredoc bodies stay with their command), each changed file, and
+any text longer than one effect split into parts with stable ids, none
+clipped. A proposal needing more than 24 effects, or more than the 48,000
+character input limit, is held for a person without a model call; an itemized
+result must assess every effect, and a conflicting effect's risk is not
+averaged away by an aligned effect.
+
+In password mode, once every execution has stopped, the Run's actual diff is
+reviewed against the original prompt, the bounded gated-action ledger and the
+server-loaded approvals before a changed Run can complete
+([`semantic-run-diff.ts`](../apps/server/src/semantic-run-diff.ts)). The
+review first checks coverage: a missing or older baseline, a stopped scan, an
+entry that could not be compared, changed content not fully available
+(binary, over 2 MB, unreadable, credential-named or link entries), more than
+36 changed files, an over-long action ledger, or changes too large for its
+input budget make it `incomplete` without any model call. Otherwise every
+changed hunk becomes one or more effects in bounded batches, and each must
+come back assessed. An approval covers a conflicting change only when it was
+approved, its saved proposal is complete, a file-change approval names that
+path, the reviewer says the change is exactly that proposal, and the risk is
+below the 0.75 block threshold. The outcome (`aligned`, `conflict`,
+`incomplete`, `unavailable`, `no_changes`, `not_run` or `disabled`), its
+coverage counts, risk, safe rationale and the review model's own usage are
+saved on `Run.finalReview` for success and failure alike. A conflict at 0.50
+or more, incomplete evidence or an unavailable review fails the Run, so its
+copy does not seed the next Run; this is a post-execution backstop, not
+rollback. The review runs outside the Run's lock and a cancel aborts it, so a
+cancelled Run never completes afterwards. Semantic inference never talks to
+the Runtime directly; the middleware's ActionGate is the only live
+enforcement point. Derived findings are persisted and do not modify the
+append-only raw trace.
 
 ### Multi-agent runs
 
@@ -224,16 +248,38 @@ Remaining implementation and validation gaps:
   was decided against (decision 23). The
   integration harness still runs on `InMemoryRunStore`; the fuzz suite and the
   store suite are what exercise Postgres.
-- **P3/P4:** a bounded baseline is captured for each Run and a redacted actual
-  file diff is saved and shown in Run Detail after completion. This is separate
-  from the gate timeline, which records proposed changes and decisions; an
-  allowed proposal does not prove that a change was applied. Command text is
-  saved redacted and bounded in audit metadata (contract decision 14).
+- **P3/P4:** the baseline and the final scan are the same bounded walk
+  ([`workspace-snapshot.ts`](../apps/server/src/workspace-snapshot.ts)):
+  500 files, 16 levels, 20,000 directory entries, 2 MB hashed per file and
+  128 MB in total, 256 KB of text per file and 2 MB of baseline text, with
+  `node_modules`, `.git`, `dist`, `build`, `.next` and `coverage` excluded on
+  both sides. Links are recorded by target and never followed;
+  credential-named paths are hashed but their contents are never captured. A
+  line diff with positions ([`line-diff.ts`](../apps/server/src/line-diff.ts),
+  [`run-diff.ts`](../apps/server/src/run-diff.ts)) is written atomically next
+  to the copy once execution has stopped, as a versioned artifact with
+  separate inventory and content coverage. A present file that could not be
+  read is changed or uncertain, never deleted, and a missing or older
+  baseline is reported as such (an unknown count), never replaced by one
+  captured after edits. The diff route answers only for ended Runs. This is
+  separate from the gate timeline, which records proposed changes and
+  decisions; an allowed proposal does not prove that a change was applied.
+  Command text is saved redacted and bounded in audit metadata (contract
+  decision 14).
 
 The password-mode console includes workspace Agents, Policies, Credentials and
 Members management, Approvals, Security findings and audit history, and saved
-Benchmarks reports. The New Run form previews an agent's effective permissions
-and supports per-agent vault grants.
+Benchmarks reports. The New Run form previews an agent's effective permissions,
+offers as supervisors only agents whose effective policy can delegate, and
+supports per-agent vault grants. Run Detail's receipt states how the Run ended,
+what changed (unknown when it cannot be compared), the saved final review and
+its coverage, and agent execution tokens labelled as excluding planning and
+review calls. Approval cards show the hold reason and the exact redacted
+proposal; Approve is unavailable when no proposal was saved, and the server
+refuses it too. The per-file control downloads a redacted text preview of at
+most 256 KB; the ZIP carries full bytes within its limits and reports what it
+left out. A follow-up keeps the agent the Run used (or asks for one) and names
+the latest completed Run it will start from.
 Workspace routes check membership and enforce role/version rules in the server;
 the UI only reflects those permissions. Benchmark reports are read from
 committed results and are not live measurements or runs initiated by the UI.

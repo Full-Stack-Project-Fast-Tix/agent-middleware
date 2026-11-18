@@ -249,6 +249,10 @@ These outrank looks.
   "Not verified by AgentGuard".
 - Keep the honest wording at the gate: "Allowed by the gate" does not mean applied, "The command text
   was not saved" is never a blank, and held, denied and "did not run" stay distinct.
+- Unknown stays unknown: a Run with no saved final review, or a diff with no baseline, is never shown as
+  aligned or as zero changes. An aligned final review is a model's judgment of scope, not correctness.
+- Offer Approve only when the saved proposal can be shown; Deny stays available. A per-file download is a
+  "text preview", never the file; the ZIP is the full-byte path and says what it left out.
 - No secrets or raw trace content in new API or SSE payloads.
 
 ## Quality floor
