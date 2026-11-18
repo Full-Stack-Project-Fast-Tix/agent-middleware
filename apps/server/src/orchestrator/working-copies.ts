@@ -1,6 +1,6 @@
 import { cp, mkdir, stat } from "node:fs/promises";
 import path from "node:path";
-import type { Run, RunDiffResponse } from "@launchpad/shared";
+import { SNAPSHOT_EXCLUDED_DIRECTORIES, type Run, type RunDiffResponse } from "@launchpad/shared";
 import type { WorkingCopies } from "./ports.js";
 import { isCredentialName } from "../credential-names.js";
 import { loadOrComputeRunDiff } from "../run-diff.js";
@@ -30,8 +30,12 @@ import { captureSnapshot, writeJsonAtomic } from "../workspace-snapshot.js";
 // credential-names.ts, not secret detection: a credential under any other name
 // is still copied.
 
-/** Never copied: rebuildable dependencies, tool and VCS state, and local credential stores. */
-export const DEFAULT_EXCLUDED_NAMES = ["node_modules", ".codex", ".git"] as const;
+/**
+ * Never copied: rebuildable dependencies, tool and VCS state (and, through
+ * credential-names.ts, local credential stores). The same names are the only
+ * folders the diff does not scan, so the review's blind spot never seeds a Run.
+ */
+export const DEFAULT_EXCLUDED_NAMES = SNAPSHOT_EXCLUDED_DIRECTORIES;
 
 export interface WorkspaceSources {
   /** The project's files on this host, or null for a workspace that starts empty. */

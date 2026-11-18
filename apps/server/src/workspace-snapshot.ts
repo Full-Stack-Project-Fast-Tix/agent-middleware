@@ -249,20 +249,27 @@ export async function readFileInside(root: string, relative: string, maxBytes: n
 }
 
 /**
- * Whether anything exists at `relative` reached only through real directories.
- * A path whose parent was replaced by a link counts as absent there.
+ * Whether anything exists at `relative` reached only through real directories:
+ * "absent" only when the filesystem says so (ENOENT, ENOTDIR) or a parent is no
+ * longer a real directory (an agent replaced it with a file or link); "unknown"
+ * for any other error, such as a directory that cannot be read.
  */
-export async function existsInside(root: string, relative: string): Promise<boolean> {
-  if (!isSafeRelative(relative)) return false;
+export async function presenceInside(root: string, relative: string): Promise<"present" | "absent" | "unknown"> {
+  if (!isSafeRelative(relative)) return "unknown";
   let current = root;
   const segments = relative.split("/");
   for (let index = 0; index < segments.length; index += 1) {
     current = path.join(current, segments[index]!);
-    const info = await lstat(current).catch(() => null);
-    if (info === null) return false;
-    if (index < segments.length - 1 && !info.isDirectory()) return false;
+    let info;
+    try {
+      info = await lstat(current);
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      return code === "ENOENT" || code === "ENOTDIR" ? "absent" : "unknown";
+    }
+    if (index < segments.length - 1 && !info.isDirectory()) return "absent";
   }
-  return true;
+  return "present";
 }
 
 function isSafeRelative(relative: string): boolean {

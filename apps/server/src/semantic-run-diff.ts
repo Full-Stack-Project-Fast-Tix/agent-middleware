@@ -47,6 +47,7 @@ export const FINAL_REVIEW_EFFECTS_PER_CALL = 24;
 /** Approvals given to the reviewer; more is an incomplete ledger. */
 export const FINAL_REVIEW_MAX_APPROVALS = 8;
 const MAX_APPROVAL_CHARS = 1_600;
+const PROPOSAL_CUT = "[proposal cut for length]";
 const APPROVAL_SEQ_BASE = 100;
 
 export type FinalReviewOutcome = Omit<FinalReview, "reviewedAt" | "findingId">;
@@ -125,7 +126,11 @@ export async function reviewFinalRunDiff(monitor: SemanticIntentMonitor, input: 
 
   // 2. Every hunk, as effects with stable ids.
   const effects = diff.changes.flatMap((change, fileIndex) => effectsOf(change, fileIndex));
-  const approvalRefs = new Map<string, Approval>(approvals.map((approval, index) => [`A${index + 1}`, approval]));
+  const approvalRefs = new Map<string, { approval: Approval; cut: boolean }>(approvals.map((approval, index) => {
+    const ref = `A${index + 1}`;
+    // Exactly what the reviewer is shown for this reference: a cut proposal cannot authorize.
+    return [ref, { approval, cut: approvalSummary(ref, approval).endsWith(PROPOSAL_CUT) }];
+  }));
   const context = [
     ...input.reviewedActions.map((action, index) => ({ seq: index, type: action.type, summary: action.summary })),
     ...approvals.map((approval, index): SemanticActionSummary => ({
@@ -181,11 +186,13 @@ export async function reviewFinalRunDiff(monitor: SemanticIntentMonitor, input: 
         approvalRef: (item.approvalRef ?? "").trim(),
       });
     });
-    const batchHasConflictingEffect = batch.some((_, index) => conflicts(byIndex.get(index)!));
+    // The highest risk the itemized conflicts account for in this batch.
+    const itemizedRisk = Math.max(0, ...batch.map((_, index) => byIndex.get(index)!).filter(conflicts).map((item) => item.riskScore));
     if (conflicts(assessment)) {
       rationales.unshift(assessment.rationale);
-      // An overall conflict that no itemized effect explains still counts.
-      if (!batchHasConflictingEffect) unexplained.push(assessment);
+      // An overall conflict riskier than every itemized one is not explained by
+      // them, so it stands on its own and no approval of an item can cover it.
+      if (assessment.riskScore > itemizedRisk) unexplained.push(assessment);
     } else {
       rationales.push(assessment.rationale);
     }
@@ -197,9 +204,9 @@ export async function reviewFinalRunDiff(monitor: SemanticIntentMonitor, input: 
   let unmatched = false;
   for (const item of assessed) {
     if (!conflicts(item)) continue;
-    const approval = item.approvalRef === "" ? undefined : approvalRefs.get(item.approvalRef);
-    if (approval !== undefined && approvalCovers(approval, item)) {
-      applied.add(approval.id);
+    const cited = item.approvalRef === "" ? undefined : approvalRefs.get(item.approvalRef);
+    if (cited !== undefined && !cited.cut && approvalCovers(cited.approval, item)) {
+      applied.add(cited.approval.id);
       continue;
     }
     if (item.approvalRef !== "") unmatched = true;
@@ -304,7 +311,7 @@ function approvalSummary(ref: string, approval: Approval): string {
     `${complete ? "" : " proposal=INCOMPLETE (cannot authorize any effect)"}`;
   const proposal = details === null ? "No proposal details were saved." : JSON.stringify(details);
   const text = `${header}\nProposal: ${proposal}`;
-  return text.length <= MAX_APPROVAL_CHARS ? text : `${bounded(text, MAX_APPROVAL_CHARS - 40)} [proposal cut for length]`;
+  return text.length <= MAX_APPROVAL_CHARS ? text : `${bounded(text, MAX_APPROVAL_CHARS - 40)} ${PROPOSAL_CUT}`;
 }
 
 /** Whether the saved proposal says it is the whole proposal. Older approvals that do not say so are not. */
@@ -316,15 +323,25 @@ function approvalCovers(approval: Approval, item: Assessed): boolean {
   if (approval.status !== "approved") return false;
   if (item.riskScore >= SEMANTIC_ACTION_BLOCK_RISK) return false;
   if (!proposalComplete(approval.safeDetails)) return false;
-  if (approvalSummary("A", approval).endsWith("[proposal cut for length]")) return false;
   if (approval.actionType === "file_change") {
     const files = Array.isArray(approval.safeDetails?.files) ? approval.safeDetails.files : [];
-    return files.some((file) =>
-      file !== null && typeof file === "object" &&
-      ((file as { path?: unknown }).path === item.effect.path || (file as { movePath?: unknown }).movePath === item.effect.path),
-    );
+    const target = copyRelative(item.effect.path);
+    return files.some((file) => {
+      if (file === null || typeof file !== "object") return false;
+      const { path, movePath } = file as { path?: unknown; movePath?: unknown };
+      return (typeof path === "string" && copyRelative(path) === target) || (typeof movePath === "string" && copyRelative(movePath) === target);
+    });
   }
   return approval.actionType === "command";
+}
+
+/**
+ * A path as the diff names it, relative to the copy. Agents propose editor
+ * paths inside the container, where the copy is mounted at /workspace.
+ */
+export function copyRelative(proposed: string): string {
+  const withoutMount = proposed.startsWith("/workspace/") ? proposed.slice("/workspace/".length) : proposed;
+  return withoutMount.replace(/^(?:\.\/)+/, "");
 }
 
 function sumOrNull(total: number | null, value: number | null | undefined): number | null {

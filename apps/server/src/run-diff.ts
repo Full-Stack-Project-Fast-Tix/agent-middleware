@@ -17,7 +17,7 @@ import { redactSensitiveText } from "./redaction/index.js";
 import {
   SnapshotRootMissingError,
   captureSnapshot,
-  existsInside,
+  presenceInside,
   readBaseline,
   readFileInside,
   sha256,
@@ -231,8 +231,8 @@ async function compareEntry(
     return { path: filePath, kind: "uncertain", entryType: after.type, content: "unavailable", reasons, hunks: [], size: after.size };
   }
   if (before !== undefined) {
-    // Absence is established by a complete scan, or by looking at the path itself.
-    const gone = finalComplete || !(await existsInside(root, filePath));
+    // Absence is established by a complete scan, or by the filesystem saying so for the path itself.
+    const gone = finalComplete || (await presenceInside(root, filePath)) === "absent";
     if (!gone) {
       return { path: filePath, kind: "uncertain", entryType: before.type, content: "unavailable", reasons: [], hunks: [], size: before.size };
     }

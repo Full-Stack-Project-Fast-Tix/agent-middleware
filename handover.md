@@ -97,8 +97,14 @@ reorder, duplicates, deletion, added binary, oversized changed and same-size,
 excluded and deep paths, links and a directory replaced by a link, exactly 500
 vs 501 files, large baseline, credential-named files, encoding-only change,
 unreadable file and directory, cached and legacy artifacts, missing
-baseline), `tests/server/run-routes.test.ts`, `tests/workspace-zip.test.ts`,
-`tests/server/workspace-files.test.ts`.
+baseline, nested build output, a parent that became unreadable),
+`tests/server/run-routes.test.ts`, `tests/workspace-zip.test.ts`,
+`tests/server/workspace-files.test.ts`. An independent review found that
+nested `build`/`dist` folders were excluded from the diff yet carried into
+follow-up Runs, that an overall block-level verdict could be dropped when an
+approved item conflicted, that `/workspace/...` approval paths never matched,
+and that an unreadable parent could read as a deletion; all four are fixed
+with regression tests.
 
 ### 2. Make semantic completion review cover its stated evidence
 

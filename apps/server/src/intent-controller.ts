@@ -341,14 +341,21 @@ export function splitShellEffects(command: string): Array<{ text: string; separa
       if (char === quote) quote = null;
       continue;
     }
+    // A comment runs to the end of its line: quotes or "<<" inside it start nothing.
+    if (char === "#" && (index === 0 || /[\s;&|()]/.test(command[index - 1]!))) {
+      const lineEnd = command.indexOf("\n", index);
+      index = (lineEnd === -1 ? command.length : lineEnd) - 1;
+      continue;
+    }
     if (char === "'" || char === "\"") { quote = char; continue; }
     if (char === "(") { depth += 1; continue; }
     if (char === ")" && depth > 0) { depth -= 1; continue; }
     if (depth > 0) continue;
     if (char === "<" && command[index + 1] === "<" && command[index + 2] !== "<") {
-      const match = /^<<(-?)[ \t]*(['"]?)([A-Za-z_][A-Za-z0-9_]*)\2/.exec(command.slice(index));
+      // The delimiter word may be quoted in parts (<<'EOF', <<E"OF", <<\EOF); the shell removes the quoting.
+      const match = /^<<(-?)[ \t]*((?:[A-Za-z0-9_.-]|'[^'\n]*'|"[^"\n]*"|\\.)+)/.exec(command.slice(index));
       if (match !== null) {
-        heredocs.push({ delimiter: match[3]!, stripTabs: match[1] === "-" });
+        heredocs.push({ delimiter: match[2]!.replace(/'([^']*)'|"([^"]*)"|\\(.)/g, "$1$2$3"), stripTabs: match[1] === "-" });
         index += match[0].length - 1;
         continue;
       }

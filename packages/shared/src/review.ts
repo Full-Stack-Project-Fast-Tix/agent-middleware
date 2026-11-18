@@ -35,8 +35,13 @@ export const SNAPSHOT_LIMITS = {
   maxBaselineTextBytes: 2 * 1024 * 1024,
 } as const;
 
-/** Directories neither scan lists: dependencies, VCS internals and build output. Changes inside them are not compared. */
-export const SNAPSHOT_EXCLUDED_DIRECTORIES = ["node_modules", ".git", "dist", "build", ".next", "coverage"] as const;
+/**
+ * Directories neither scan lists, at any depth: dependencies, VCS internals and
+ * tool state. They are exactly the folders a Run copy never carries forward, so
+ * nothing the review cannot see can seed a follow-up Run. Build output is
+ * carried forward, so it is scanned like any other folder.
+ */
+export const SNAPSHOT_EXCLUDED_DIRECTORIES = ["node_modules", ".git", ".codex"] as const;
 
 /** Bounds on what the diff artifact stores. */
 export const RUN_DIFF_LIMITS = {

@@ -238,6 +238,17 @@ describe("final review and exact approvals", () => {
     expect(snapshot.run.finalReview).toMatchObject({ status: "aligned", approvalsApplied: [approved!.id] });
   });
 
+  it("matches an approval of the runtime's /workspace/... editor path to the copy-relative diff", async () => {
+    const containerBump = { ...bump, changes: [{ ...bump.changes[0]!, path: "/workspace/package.json" }] };
+    const { run, events } = await start({
+      diff: async () => diffOf([bumpHunk]),
+      finalDiffReviewer: realReviewer(scriptedMonitor({ "package.json": { approvalRef: "A1" } })),
+    }, { actions: [containerBump] });
+    const [approved] = await approveEach(run.id, 1);
+    const snapshot = await settle(run.id, events);
+    expect(snapshot.run).toMatchObject({ status: "completed", finalReview: { status: "aligned", approvalsApplied: [approved!.id] } });
+  });
+
   it("fails when an unapproved change rides along with the approved one", async () => {
     const { run, events } = await start({
       diff: async () => diffOf([changelogHunk, bumpHunk]),

@@ -259,6 +259,42 @@ describe("final review and approvals", () => {
     }
   });
 
+  it("keeps an overall block-level conflict that the covered item does not account for", async () => {
+    const commandApproval = approval({ actionType: "command", reason: "high_consequence", safeDetails: { command: "npm version patch", cwd: null, complete: true } });
+    const { monitor: inner } = judgingMonitor((summary) => (summary.includes("package.json") ? { conflict: true, approvalRef: "A1" } : {}));
+    const monitor: SemanticIntentMonitor = {
+      assess: async (input) => ({ ...(await inner.assess(input)), conflictsWithTask: true, riskScore: 0.9, classification: "data_exfiltration" }),
+    };
+    const outcome = await review(monitor, makeDiff([versionBump]), { approvals: [commandApproval] });
+    expect(outcome).toMatchObject({ status: "conflict", riskScore: 0.9, classification: "data_exfiltration" });
+  });
+
+  it("matches a file approval proposed with the container path /workspace/... to the copy-relative diff path", async () => {
+    const containerPath = approval({
+      safeDetails: { files: [{ path: "/workspace/package.json", kind: "update", diff: "x", diffComplete: true }], complete: true },
+    });
+    const { monitor } = judgingMonitor(bumpConflicts);
+    expect(await review(monitor, makeDiff([versionBump]), { approvals: [containerPath] })).toMatchObject({ status: "aligned", approvalsApplied: [APPROVAL_ID] });
+  });
+
+  it("never lets a proposal cut for the reviewer authorize anything, right at the length limit", async () => {
+    let cutSeen = false;
+    for (let length = 1_400; length <= 1_700 && !cutSeen; length += 1) {
+      const long = approval({ actionType: "command", reason: "high_consequence", safeDetails: { command: "x".repeat(length), cwd: null, complete: true } });
+      const { monitor, inputs } = judgingMonitor((summary) => (summary.includes("package.json") ? { conflict: true, approvalRef: "A1" } : {}));
+      const outcome = await review(monitor, makeDiff([versionBump]), { approvals: [long] });
+      const shown = inputs[0]!.recentActions.find((action) => action.seq === 100)!.summary;
+      if (shown.endsWith("[proposal cut for length]")) {
+        cutSeen = true;
+        expect(outcome.approvalsApplied).toEqual([]);
+        expect(outcome.status).toBe("conflict");
+      } else {
+        expect(outcome.approvalsApplied).toEqual([APPROVAL_ID]);
+      }
+    }
+    expect(cutSeen).toBe(true);
+  });
+
   it("never accepts an approval claim made in agent text", async () => {
     const { monitor, inputs } = judgingMonitor((summary) => (summary.includes("package.json") ? { conflict: true } : {}));
     const outcome = await review(monitor, makeDiff([versionBump]), {

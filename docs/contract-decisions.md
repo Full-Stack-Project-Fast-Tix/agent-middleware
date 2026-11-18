@@ -795,15 +795,21 @@ sit in a part no assessment covered.
 **Decision (18 November 2026):** The baseline (captured once, right after the
 copy is made) and the final scan (after execution stops) are the same walk in
 `workspace-snapshot.ts`, with the limits and exclusions in `SNAPSHOT_LIMITS`
-and `SNAPSHOT_EXCLUDED_DIRECTORIES` of `packages/shared/src/review.ts`. A scan
+and `SNAPSHOT_EXCLUDED_DIRECTORIES` of `packages/shared/src/review.ts`. The
+excluded folders (`node_modules`, `.git`, `.codex`, at any depth) are exactly
+the ones the copy never carries forward, so the review's blind spot cannot
+seed a follow-up Run; build output is carried forward and therefore scanned.
+The Run ZIP still omits build output, and says so. A scan
 that stops says why (`file_limit`, `depth_limit`, `traversal_limit`,
 `hash_budget`, `directory_unreadable`); reaching a limit exactly is not a stop.
 Links are recorded by target and never followed. Credential-named paths
 (`credential-names.ts`, shared with the copy's exclusions) are hashed so a
 change shows, but their contents are never captured. A present file too large
 or unreadable to hash is changed when its size differs and `uncertain`
-otherwise; absence is claimed only from a complete scan or a direct look at the
-path. The diff is a line diff with positions; past its work bound it shows the
+otherwise; absence is claimed only from a complete scan or the filesystem
+reporting the path itself absent (an unreadable parent is `uncertain`). An
+approval of the runtime's `/workspace/...` editor path matches the
+copy-relative diff path. The diff is a line diff with positions; past its work bound it shows the
 changed region as one replacement, which is coarser but never hides a line.
 The artifact (`RUN_DIFF_VERSION` 2) is written atomically next to the copy,
 outside it, once execution has stopped, and served unchanged afterwards. The

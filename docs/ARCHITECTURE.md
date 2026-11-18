@@ -252,8 +252,9 @@ Remaining implementation and validation gaps:
   ([`workspace-snapshot.ts`](../apps/server/src/workspace-snapshot.ts)):
   500 files, 16 levels, 20,000 directory entries, 2 MB hashed per file and
   128 MB in total, 256 KB of text per file and 2 MB of baseline text, with
-  `node_modules`, `.git`, `dist`, `build`, `.next` and `coverage` excluded on
-  both sides. Links are recorded by target and never followed;
+  `node_modules`, `.git` and `.codex` excluded on both sides at any depth.
+  Those are exactly the folders a copy never carries forward, so nothing the
+  review cannot see seeds a follow-up Run; build output is scanned. Links are recorded by target and never followed;
   credential-named paths are hashed but their contents are never captured. A
   line diff with positions ([`line-diff.ts`](../apps/server/src/line-diff.ts),
   [`run-diff.ts`](../apps/server/src/run-diff.ts)) is written atomically next
