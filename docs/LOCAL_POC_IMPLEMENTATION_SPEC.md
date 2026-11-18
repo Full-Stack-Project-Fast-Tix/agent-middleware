@@ -1,5 +1,11 @@
 # Local POC implementation specification
 
+Implementation follow-up: stages 1–2 now use a 64 MB streamed per-file hashing
+limit, four batched action-review calls, full path-relevant approval evidence,
+and a shared Run model admission ledger with reserved final-review capacity.
+See architecture and contract decisions for current bounds; the original
+planning values below describe the starting requirements, not current limits.
+
 18 November 2026. Planned behavior to implement, not a claim that these fixes
 exist. Read with [the handover](../handover.md) and canonical `CLAUDE.md`.
 

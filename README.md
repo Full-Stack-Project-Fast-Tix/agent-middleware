@@ -860,7 +860,7 @@ false negative puts a live credential on a projector.
 - **Model judgments can be wrong.** Assessments are schema-checked, not
   fact-checked. Proposed actions are reviewed before execution; every file
   change and shell clause (long ones in several parts, none clipped) receives
-  its own effect assessment, and a proposal too large to itemize in one review
+  its own effect assessment in up to four bounded review calls, and a proposal too large for that budget
   is held for a person. A conflicting effect's risk is not averaged with an
   aligned effect. Conflicts
   scoring 0.50–0.74 require human review; conflicts scoring 0.75 or higher are
@@ -883,7 +883,7 @@ false negative puts a live credential on a projector.
   monitoring enabled, every changed line of the Run's actual diff is checked
   against the original task, the gated actions and the approvals before a
   changed Run can complete. It concludes only from complete evidence: binary,
-  over-2 MB, unreadable or credential-named changed files, links, more than 36
+  text over 256 KB, unreadable or credential-named changed files, links, more than 36
   changed files, or changes too large for its input budget make the review
   incomplete, which fails the Run. A detected scope conflict (risk 0.50 or
   more) or an unavailable review fails it too, and none of these seeds

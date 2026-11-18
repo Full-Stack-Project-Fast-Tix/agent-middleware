@@ -857,6 +857,33 @@ match, and the risk is below 0.75; anything else stays a conflict and records
 Deterministic restrictions still run first and no approval overrides them. The
 gated-action ledger records which approval an action ran under.
 
+### 18 November follow-up: practical review limits
+
+Action review now batches at most four calls, each with up to 24 effects and
+48,000 input characters; it holds only when complete evidence exceeds that
+budget. All batches must pass before the proposal may execute. Final review
+includes full saved approval evidence relevant to each batch's paths, without
+the old 1,600-character summary cap. Commands remain indivisible approval
+evidence; an oversized context returns incomplete rather than clipping.
+Saved file-approval evidence is bounded at 32,000 characters per file and
+128,000 total; incomplete saved proposals cannot authorize scope expansion.
+
+Snapshots now hash up to 64 MB per file using 64 KB buffers, bounded by 128 MB
+per scan and a five-second per-file deadline checked between reads. Unchanged
+large assets can be established as unchanged; changed undisplayable content
+still fails final review closed. Eight concurrent reads preserve deterministic
+budget allocation and file ordering. ZIP exclusions remain dependencies, VCS,
+build output, credentials and links; the archive is not the full reviewed tree.
+
+All production model clients share a per-Run admission ledger, reserving input
+UTF-8 bytes plus a 16,000-token protocol/schema allowance and maximum output.
+Unknown usage retains the reservation. Ordinary calls cannot consume the final
+20% reserve (capped at 128,000); final-review calls can. Provider-reported usage
+settles successful calls, including cache tokens. This bounds admission
+conservatively, not actual billing; unexpected provider usage can exceed an
+estimate, after which subsequent calls are refused. Test adapters may omit the
+optional ledger. `Run.finalReview.modelBudget` records its terminal snapshot.
+
 ## 37. Run evidence in the console
 
 **Decision (18 November 2026):** The per-file download is a redacted text

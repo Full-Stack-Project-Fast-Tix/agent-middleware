@@ -45,8 +45,8 @@ commands, and diffs are lower-authority evidence. Semantic action review
 receives an itemized effect list covering every part of the proposal: each
 shell clause (heredoc bodies stay with their command), each changed file, and
 any text longer than one effect split into parts with stable ids, none
-clipped. A proposal needing more than 24 effects, or more than the 48,000
-character input limit, is held for a person without a model call; an itemized
+clipped. Action review packs up to four calls of at most 24 effects and 48,000
+input characters each. A proposal beyond this bounded budget is held for a person; an itemized
 result must assess every effect, and a conflicting effect's risk is not
 averaged away by an aligned effect.
 
@@ -56,7 +56,7 @@ server-loaded approvals before a changed Run can complete
 ([`semantic-run-diff.ts`](../apps/server/src/semantic-run-diff.ts)). The
 review first checks coverage: a missing or older baseline, a stopped scan, an
 entry that could not be compared, changed content not fully available
-(binary, over 2 MB, unreadable, credential-named or link entries), more than
+(binary, text over 256 KB, unreadable, credential-named or link entries), more than
 36 changed files, an over-long action ledger, or changes too large for its
 input budget make it `incomplete` without any model call. Otherwise every
 changed hunk becomes one or more effects in bounded batches, and each must
@@ -227,7 +227,16 @@ demo. For the two acting roles, an attempt's bounded, redacted raw trace is read
 `GET /api/runs/:runId/executions/:executionId/trace`, under the same workspace
 check as the other run routes.
 
-Each Run has a token budget (`RUN_TOKEN_BUDGET`). Expired Run files and traces
+Each Run has a shared model token budget (`RUN_TOKEN_BUDGET`) across planner,
+agent execution, semantic action/reasoning calls and final review. Before a call,
+its UTF-8 input bytes plus a 16,000-token protocol/schema allowance and maximum
+output are reserved synchronously, including concurrent calls. Reported usage
+(including cache tokens) replaces that reservation; unknown/failed usage keeps
+the conservative charge. Twenty percent, capped at 128,000 tokens, is reserved
+for final review when enabled. It is an admission estimate, not a provider billing
+guarantee; an unexpectedly larger reported charge stops subsequent admissions.
+The final receipt saves the ledger separately from per-execution token counts.
+Expired Run files and traces
 are removed after `RUN_ARTIFACT_RETENTION_DAYS` (contract decision 18), except
 the latest successfully completed workspace copy, which remains available as
 the starting point for its next Run. Rows stay, and reading an expired trace
@@ -250,8 +259,9 @@ Remaining implementation and validation gaps:
   store suite are what exercise Postgres.
 - **P3/P4:** the baseline and the final scan are the same bounded walk
   ([`workspace-snapshot.ts`](../apps/server/src/workspace-snapshot.ts)):
-  500 files, 16 levels, 20,000 directory entries, 2 MB hashed per file and
-  128 MB in total, 256 KB of text per file and 2 MB of baseline text, with
+  500 files, 16 levels, 20,000 directory entries, 64 MB streamed hashes per file and
+  128 MB in total, at most eight concurrent file reads, a five-second deadline
+  checked between 64 KB reads, 256 KB of text per file and 2 MB of baseline text, with
   `node_modules`, `.git` and `.codex` excluded on both sides at any depth.
   Those are exactly the folders a copy never carries forward, so nothing the
   review cannot see seeds a follow-up Run; build output is scanned. Links are recorded by target and never followed;

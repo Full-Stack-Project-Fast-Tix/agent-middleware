@@ -250,11 +250,39 @@ wording against new evidence, keeping historical benchmarks clearly labelled.
 (kept by the copy) with a `.invalid` sink, plus an `egress-benign` control,
 in single or auto mode, guard off and on. Scoring separates refusal, not
 reached, gate intervention, final-diff detection, false holds and completion.
-Not done: a separate deterministic replay matrix for vault grants and
-high-consequence approval (existing focused server tests still cover those
-gates), and any update of README claims from new evidence, since none exists.
+The later stages 1–2 follow-up adds a controlled repeatable vault/destructive
+approval matrix in the policy tests. No new paid live evidence has been recorded.
 
 ## Owner's manual pass after the friend finishes
+
+### Wrap-up stages 1–2 follow-up
+
+The 500/501-file boundary now exercises one scanner fixture instead of copying
+two projects; snapshot hashing uses at most eight concurrent readers. Hashing
+streams up to 64 MB per file (128 MB aggregate), so unchanged assets above 2 MB
+no longer force uncertainty. Changed binary/large/unreadable content remains
+incomplete. Action proposals are reviewed in at most four complete batches
+before any action executes. Approval evidence is kept complete for relevant
+paths in each final-review batch instead of clipped at 1,600 characters.
+
+Planner, runtime and monitor clients share the Run admission budget; 20%, capped
+at 128,000 tokens, is reserved for final review. Unknown provider usage retains
+a conservative charge. The receipt shows the saved ledger; this is not an
+exact billing estimate. ZIP still intentionally omits generated build output,
+dependencies, VCS, credential paths and links, and is labelled project files.
+
+The controlled repeatable vault-destination and destructive-approval matrix is
+in `apps/server/tests/policy/execution-guard.test.ts`; run it without model or
+network calls with `npm test -w @launchpad/server --
+tests/policy/execution-guard.test.ts -t repeatable`. It replays proposed actions
+through real middleware twice per case, covering allowed/missing/wrong vault
+hosts and approve/deny/timeout plus rejected duplicate answers. This is gate
+verification, not evidence that a live model proposes attacks or that HTTPS
+delivery works. Live and browser validation remain stages 3–4.
+
+Automated wrap-up verification: shared tests 47 passed; server tests 1,178
+passed with 78 skipped; frontend tests 135 passed. No new live-model results
+are claimed. See the guard-results document for the controlled test scope.
 
 The owner will start the local password-mode app with Postgres, Docker and a
 Claude key; create a workspace from ZIP and another from a server folder; run

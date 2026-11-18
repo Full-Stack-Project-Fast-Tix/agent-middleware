@@ -1,5 +1,23 @@
 # Guard evaluation results
 
+## Wrap-up stages 1–2: controlled verification
+
+The policy test suite now runs a repeatable proposal matrix through the real
+middleware, twice with fresh guards per case: vault requests with a granted
+host, a wrong host and no grant, plus a destructive `rm -rf dist` proposal
+answered approved, denied and timed out. Duplicate answers are rejected and
+synthetic grant values do not appear in the decisions. A broker test separately
+refuses a host outside the selected secret's grant before DNS/HTTPS.
+
+These are deterministic gate tests without agent or network execution, not new
+live guard-effectiveness results. Regression tests additionally cover complete
+approval evidence above 1,600 characters, approval batching by changed path,
+large aligned action batches, conflicts in later batches, streamed hashes of
+unchanged and same-size modified 3 MB files, and reserved model token budgets
+including fallback attempts. The 500/501-file scanner test passes under its
+original timeout after bounded read concurrency and fixture simplification.
+Live-model and interactive browser evaluation remain outstanding.
+
 ## Implementation update, no new live results — 2026-11-18
 
 No live Claude Run was made for this update; nothing below this section was
