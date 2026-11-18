@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile, symlink } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -9,6 +9,7 @@ import { createApp } from "../../src/app.js";
 import { loadConfig } from "../../src/config.js";
 import type { RunRoutesOptions } from "../../src/run-routes.js";
 import { traceFilePath } from "../../src/trace.js";
+import { captureSnapshot, writeJsonAtomic } from "../../src/workspace-snapshot.js";
 
 // Authorisation in the run routes. A run or approval in a workspace the caller
 // may not access must look exactly like one that does not exist, and must not
@@ -124,25 +125,51 @@ describe("a run's working copy", () => {
     expect((await inject("GET", apiPaths.runFile(RUN, "index.html"))).statusCode).toBe(403);
   });
 
-  it("serves the saved redacted actual diff to workspace members", async () => {
+  /** A Run directory whose baseline was taken by the real scanner before `edit` changed the copy. */
+  async function diffApp(status: string, edit: (workspace: string) => Promise<void>, completedAt: string | null = null) {
     directory = await mkdtemp(path.join(tmpdir(), "run-diff-"));
     outside = await mkdtemp(path.join(tmpdir(), "run-diff-outside-"));
     const config = loadConfig({ NODE_ENV: "test", APP_DATA_DIR: directory });
     const runDirectory = path.join(config.dataDirectory, "runs", RUN);
     const workspace = path.join(runDirectory, "workspace");
     await mkdir(workspace, { recursive: true });
-    await writeFile(path.join(workspace, "added.ts"), "const apiKey = 'sk_live_ABCDEFGHIJKLMNOP1234';\n", "utf8");
-    await writeFile(path.join(runDirectory, "diff-baseline.json"), JSON.stringify({ files: { "old.ts": { hash: "old", text: "const old = true;", size: 17, display: "text" } }, truncated: false }));
+    await writeFile(path.join(workspace, "old.ts"), "const old = true;\n", "utf8");
+    await writeJsonAtomic(path.join(runDirectory, "diff-baseline.json"), await captureSnapshot(workspace, { retainText: true }));
+    await edit(workspace);
     app = await createApp(config, { runs: {
-      snapshot: async (id: string) => id === RUN ? ({ run: { id: RUN, workspaceId: MINE, status: "completed" }, executions: [], tasks: [], approvals: [], findings: [] } as unknown as RunSnapshot) : null,
+      snapshot: async (id: string) => id === RUN ? ({ run: { id: RUN, workspaceId: MINE, status, completedAt }, executions: [], tasks: [], approvals: [], findings: [] } as unknown as RunSnapshot) : null,
       currentUserId: () => VIEWER,
       workspaceRole: async (id: string) => id === MINE ? "auditor" : null,
+      artifactRetentionDays: 30,
     } as unknown as RunRoutesOptions });
+    return { runDirectory, workspace };
+  }
+
+  it("serves the saved redacted actual diff to workspace members", async () => {
+    await diffApp("completed", async (workspace) => {
+      await rm(path.join(workspace, "old.ts"));
+      await writeFile(path.join(workspace, "added.ts"), "const apiKey = 'sk_live_ABCDEFGHIJKLMNOP1234';\n", "utf8");
+    });
     const response = await inject("GET", apiPaths.runDiff(RUN));
     expect(response.statusCode).toBe(200);
     expect(response.body).not.toContain("sk_live_ABCDEFGHIJKLMNOP1234");
-    expect(response.json()).toMatchObject({ changedFileCount: 2, baselineAvailable: true });
+    expect(response.json()).toMatchObject({ version: 2, changedFileCount: 2, baseline: "available", coverage: { inventory: { status: "complete" } } });
     expect(response.json().changes.map((change: { kind: string }) => change.kind)).toEqual(["added", "deleted"]);
+  });
+
+  it("refuses the diff while a Run is active, and caches nothing until it ends", async () => {
+    const { runDirectory } = await diffApp("waiting_approval", async (workspace) => {
+      await writeFile(path.join(workspace, "old.ts"), "edited\n", "utf8");
+    });
+    expect((await inject("GET", apiPaths.runDiff(RUN))).statusCode).toBe(409);
+    await expect(readFile(path.join(runDirectory, "diff.json"))).rejects.toThrow();
+  });
+
+  it("reports a removed Run directory as expired after retention, with an unknown count", async () => {
+    const { runDirectory } = await diffApp("completed", async () => undefined, "2026-01-01T00:00:00.000Z");
+    await rm(runDirectory, { recursive: true, force: true });
+    const response = await inject("GET", apiPaths.runDiff(RUN));
+    expect(response.json()).toMatchObject({ baseline: "expired", changedFileCount: null, coverage: { inventory: { status: "unavailable" } } });
   });
 });
 

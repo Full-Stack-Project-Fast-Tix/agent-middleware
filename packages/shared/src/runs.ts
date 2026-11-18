@@ -2,6 +2,7 @@ import { z } from "zod";
 import { idSchema, lifecycleTimestampsShape, nonEmptyStringSchema, timestampSchema } from "./common.js";
 import { agentCapabilitiesSchema } from "./agents.js";
 import { executionStatusSchema, orchestrationModeSchema, runStatusSchema, taskStatusSchema } from "./enums.js";
+import { finalReviewSchema } from "./review.js";
 
 /**
  * Benchmark labels, unset for ordinary runs. Carried over from the single-agent
@@ -35,6 +36,12 @@ export const runSchema = z.object({
   /** Set the moment a cancel is requested; status becomes cancelled once work has stopped. */
   cancelRequestedAt: timestampSchema.nullable(),
   evaluation: runEvaluationSchema.nullable(),
+  /**
+   * The saved final review of the Run's actual changes, written before the Run
+   * ends. Null when none was recorded (Runs from before it existed): unknown,
+   * never aligned.
+   */
+  finalReview: finalReviewSchema.nullable(),
   ...lifecycleTimestampsShape,
 });
 export type Run = z.infer<typeof runSchema>;

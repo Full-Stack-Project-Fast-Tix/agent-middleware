@@ -29,8 +29,25 @@ function safeName(name: string): string {
   return name;
 }
 
+/** What a Run ZIP left out on purpose, so the UI can say so instead of implying a whole folder. */
+export interface ArchiveManifest {
+  files: number;
+  /** Folders never archived (dependencies, VCS and build output) that were present. */
+  excludedDirectories: number;
+  /** Credential-named files or folders that were present. */
+  credentialEntries: number;
+  /** Links (never archived or followed) and other non-regular entries. */
+  skippedEntries: number;
+}
+
 /** Builds a stored ZIP from full file bytes, retaining binary data and original relative paths. */
 export async function zipWorkspace(root: string, files?: WorkspaceEntry[]): Promise<Buffer> {
+  return (await zipWorkspaceWithManifest(root, files)).archive;
+}
+
+/** The ZIP and what it omitted. Throws, rather than archiving part of the folder, when a limit is exceeded. */
+export async function zipWorkspaceWithManifest(root: string, files?: WorkspaceEntry[]): Promise<{ archive: Buffer; manifest: ArchiveManifest }> {
+  const manifest: ArchiveManifest = { files: 0, excludedDirectories: 0, credentialEntries: 0, skippedEntries: 0 };
   let entries = files;
   if (entries === undefined) {
     entries = [];
@@ -38,16 +55,24 @@ export async function zipWorkspace(root: string, files?: WorkspaceEntry[]): Prom
     while (queue.length) {
       const current = queue.shift()!;
       for (const item of await readdir(current.directory, { withFileTypes: true })) {
-        if (IGNORED_DIRS.has(item.name)) continue;
+        if (IGNORED_DIRS.has(item.name)) {
+          manifest.excludedDirectories += 1;
+          continue;
+        }
         const absolute = path.join(current.directory, item.name);
         const relative = path.relative(root, absolute).split(path.sep).join("/");
-        if (isSensitive(relative)) continue;
+        if (isSensitive(relative)) {
+          manifest.credentialEntries += 1;
+          continue;
+        }
         if (item.isDirectory()) {
           if (current.depth >= 16) throw new Error("The workspace folder is nested too deeply to archive safely");
           queue.push({ directory: absolute, depth: current.depth + 1 });
         } else if (item.isFile()) {
           if (entries.length >= MAX_FILES) throw new Error(`The workspace contains more than ${MAX_FILES} files; the archive is limited to ${MAX_FILES}.`);
           entries.push({ path: relative, size: 0, modifiedAt: "" });
+        } else {
+          manifest.skippedEntries += 1;
         }
       }
     }
@@ -60,10 +85,17 @@ export async function zipWorkspace(root: string, files?: WorkspaceEntry[]): Prom
     const name = Buffer.from(safeName(entry.path), "utf8");
     if (name.length > 0xffff) throw new Error("A workspace file path is too long to archive");
     const target = resolveInside(root, entry.path);
-    const realFile = await realpath(target);
-    if (!realFile.startsWith(realRoot + path.sep)) continue;
+    const realFile = await realpath(target).catch(() => null);
+    // A link out of the copy, or a dangling one, is never followed.
+    if (realFile === null || !realFile.startsWith(realRoot + path.sep)) {
+      manifest.skippedEntries += 1;
+      continue;
+    }
     const info = await stat(realFile);
-    if (!info.isFile()) continue;
+    if (!info.isFile()) {
+      manifest.skippedEntries += 1;
+      continue;
+    }
     const content = await readFile(realFile);
     total += content.length;
     if (total > MAX_BYTES) throw new Error("The workspace exceeds the 100 MB archive limit");
@@ -91,5 +123,6 @@ export async function zipWorkspace(root: string, files?: WorkspaceEntry[]): Prom
   }
   result.writeUInt32LE(0x06054b50, offset); result.writeUInt16LE(records.length, offset + 8); result.writeUInt16LE(records.length, offset + 10);
   result.writeUInt32LE(centralSize, offset + 12); result.writeUInt32LE(centralOffset, offset + 16);
-  return result;
+  manifest.files = records.length;
+  return { archive: result, manifest };
 }

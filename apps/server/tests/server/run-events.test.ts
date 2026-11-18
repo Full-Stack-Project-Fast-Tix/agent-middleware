@@ -33,6 +33,7 @@ function runRow(id: string, status: Run["status"] = "running"): Run {
     error: null,
     cancelRequestedAt: null,
     evaluation: null,
+    finalReview: null,
     createdAt: now,
     updatedAt: now,
     startedAt: now,

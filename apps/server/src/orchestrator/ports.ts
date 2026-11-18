@@ -6,6 +6,7 @@ import type {
   AuditEvent,
   AuditEventType,
   ExecutionUsage,
+  FinalReview,
   OrchestrationMode,
   ProposedAction,
   Run,
@@ -146,19 +147,24 @@ export interface WorkingCopies {
   diff?(runId: string): Promise<RunDiffResponse>;
 }
 
+/** A final review's outcome, before the orchestrator stamps when it was saved and which finding it raised. */
+export type FinalReviewOutcome = Omit<FinalReview, "reviewedAt" | "findingId">;
+
+/**
+ * The post-execution review of the Run's actual diff. It returns an outcome
+ * for anything it can judge, including incomplete evidence, and rejects only
+ * when it could not run at all. `signal` aborts it when the Run is cancelled.
+ */
 export interface RunDiffReviewer {
   review(input: {
     run: Run;
     diff: RunDiffResponse;
+    /** Loaded by the server for this Run. */
     approvals: Approval[];
     reviewedActions: SemanticActionSummary[];
     actionLedgerTruncated: boolean;
-  }): Promise<{
-    conflictsWithTask: boolean;
-    riskScore: number;
-    classification: string;
-    rationale: string;
-  }>;
+    signal: AbortSignal;
+  }): Promise<FinalReviewOutcome>;
 }
 
 export interface ExecutionRequest {

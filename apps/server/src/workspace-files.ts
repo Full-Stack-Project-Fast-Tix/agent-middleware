@@ -110,21 +110,33 @@ export function resolveInside(root: string, relative: string): string {
 
 /** Every file in the workspace, breadth-first, bounded. */
 export async function listWorkspaceFiles(root: string): Promise<WorkspaceEntry[]> {
+  return (await listWorkspaceFilesBounded(root)).files;
+}
+
+/**
+ * The bounded listing and whether it stopped early: more than MAX_ENTRIES
+ * files, a directory deeper than MAX_DEPTH, or a directory it could not read.
+ * A listing that stopped must say so rather than look like the whole folder.
+ */
+export async function listWorkspaceFilesBounded(root: string): Promise<{ files: WorkspaceEntry[]; truncated: boolean }> {
   const entries: WorkspaceEntry[] = [];
+  let truncated = false;
   // Breadth-first rather than recursive descent: when the cap is reached, what
   // we have is the shallow files — the ones a person is actually looking for —
   // instead of everything under whichever directory happened to sort first.
   const queue: Array<{ dir: string; depth: number }> = [{ dir: root, depth: 0 }];
 
-  while (queue.length > 0 && entries.length < MAX_ENTRIES) {
+  walk: while (queue.length > 0) {
     const current = queue.shift();
     if (current === undefined) break;
 
     const contents = await readdir(current.dir, { withFileTypes: true }).catch(() => null);
-    if (contents === null) continue;
+    if (contents === null) {
+      truncated = true;
+      continue;
+    }
 
     for (const item of contents) {
-      if (entries.length >= MAX_ENTRIES) break;
       if (IGNORED.has(item.name)) continue;
 
       const absolute = path.join(current.dir, item.name);
@@ -132,9 +144,15 @@ export async function listWorkspaceFiles(root: string): Promise<WorkspaceEntry[]
 
       if (item.isDirectory()) {
         if (current.depth < MAX_DEPTH) queue.push({ dir: absolute, depth: current.depth + 1 });
+        else truncated = true;
         continue;
       }
       if (!item.isFile()) continue;
+      if (entries.length >= MAX_ENTRIES) {
+        // One more file than the cap: the listing is incomplete, not just full.
+        truncated = true;
+        break walk;
+      }
 
       const info = await stat(absolute).catch(() => null);
       if (info === null) continue;
@@ -148,7 +166,7 @@ export async function listWorkspaceFiles(root: string): Promise<WorkspaceEntry[]
   }
 
   entries.sort((a, b) => a.path.localeCompare(b.path));
-  return entries;
+  return { files: entries, truncated };
 }
 
 /** One file's contents, as text, truncated rather than refused when large. */

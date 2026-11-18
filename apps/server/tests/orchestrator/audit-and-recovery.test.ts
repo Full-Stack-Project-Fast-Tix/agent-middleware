@@ -182,6 +182,7 @@ describe("restart recovery", () => {
       error: null,
       cancelRequestedAt: cancelRequested ? now : null,
       evaluation: null,
+      finalReview: null,
       createdAt: now,
       updatedAt: now,
       startedAt: now,

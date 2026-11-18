@@ -260,6 +260,28 @@ for (const target of targets) {
       expect(await store.snapshot(randomUUID())).toBeNull();
     });
 
+    it("keeps a saved final review, success included, exactly as written", async () => {
+      const store = target.open(new RunEventHub(), () => LATER);
+      const run = await store.createRun(makeRun());
+      expect(run.finalReview).toBeNull();
+      const finalReview = {
+        status: "aligned" as const,
+        reasons: [],
+        reviewedAt: LATER,
+        coverage: { changedFiles: 2, effects: 3, assessedEffects: 3, modelCalls: 1, actions: 4, actionLedgerComplete: true, approvals: 1 },
+        riskScore: 0.1,
+        classification: "aligned",
+        rationale: "Fits the request.",
+        conflictingPaths: [],
+        approvalsApplied: ["00000000-0000-4000-8000-0000000000a1"],
+        findingId: null,
+        monitorUsage: { inputTokens: 1200, outputTokens: 80, durationMs: 950 },
+      };
+      const updated = await store.updateRun(run.id, { status: "completed", finalReview });
+      expect(updated.finalReview).toEqual(finalReview);
+      expect((await store.getRun(run.id))?.finalReview).toEqual(finalReview);
+    });
+
     it("stamps updatedAt on every update and publishes the stored entity", async () => {
       const hub = new RunEventHub();
       const store = target.open(hub, () => LATER);

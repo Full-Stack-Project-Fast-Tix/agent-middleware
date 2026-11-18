@@ -37,6 +37,7 @@ export const run: Run = {
   error: null,
   cancelRequestedAt: null,
   evaluation: null,
+  finalReview: null,
   createdAt: now,
   updatedAt: now,
   startedAt: now,

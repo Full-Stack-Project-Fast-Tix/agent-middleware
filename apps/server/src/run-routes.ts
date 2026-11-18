@@ -1,9 +1,10 @@
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
 import {
   createRunRequestSchema,
+  isTerminalRunStatus,
   mayAnswerApproval,
   putWorkspaceVaultSecretSchema,
   resolveApprovalRequestSchema,
@@ -23,10 +24,11 @@ import type { Orchestrator } from "./orchestrator/orchestrator.js";
 import type { RunAudit, VaultGrant } from "./orchestrator/ports.js";
 import { buildRunTimeline } from "./run-timeline.js";
 import { traceFilePath } from "./trace.js";
-import { listWorkspaceFiles, readWorkspaceFile, WorkspacePathError } from "./workspace-files.js";
-import { zipWorkspace } from "./workspace-zip.js";
+import { listWorkspaceFilesBounded, readWorkspaceFile, WorkspacePathError } from "./workspace-files.js";
+import { zipWorkspaceWithManifest } from "./workspace-zip.js";
 import type { WorkspaceVault } from "./workspace-vault.js";
-import { buildRunDiff } from "./run-diff.js";
+import { loadOrComputeRunDiff, unavailableRunDiff } from "./run-diff.js";
+import { runDiffPaths } from "./orchestrator/working-copies.js";
 
 // HTTP routes for the Run -> Task -> AgentExecution model, as specified in
 // packages/shared/src/api.ts:
@@ -40,8 +42,10 @@ import { buildRunDiff } from "./run-diff.js";
 //   POST /api/runs/:runId/cancel                                    -> 202 { run }
 //   POST /api/approvals/:approvalId/resolve  ResolveApprovalRequest -> { approval }
 //   GET  /api/runs/:runId/executions/:executionId/trace             -> JSON Lines
-//   GET  /api/runs/:runId/files                                     -> { files }
-//   GET  /api/runs/:runId/file?path=                                -> RunFileResponse
+//   GET  /api/runs/:runId/files                                     -> { files, truncated }
+//   GET  /api/runs/:runId/file?path=                                -> RunFileResponse (a 256 KB text preview)
+//   GET  /api/runs/:runId/archive                                   -> application/zip, full bytes within limits
+//   GET  /api/runs/:runId/diff                                      -> RunDiffResponse, once the Run has ended
 //
 // The SSE stream (GET /api/runs/:runId/events) is run-events-route.ts.
 // Authentication is the app's onRequest hook. Authorisation is the caller's
@@ -252,30 +256,45 @@ export function registerRunRoutes(app: FastifyInstance, options: RunRoutesOption
 
   app.get("/api/runs/:runId/files", async (request) => {
     const { runId } = runParams.parse(request.params);
-    return { files: await listWorkspaceFiles(await readableWorkingCopy(request, runId)) };
+    return listWorkspaceFilesBounded(await readableWorkingCopy(request, runId));
   });
 
   app.get("/api/runs/:runId/archive", async (request, reply) => {
     const { runId } = runParams.parse(request.params);
     const root = await readableWorkingCopy(request, runId);
-    const archive = await zipWorkspace(root).catch((error: unknown) => {
+    const { archive, manifest } = await zipWorkspaceWithManifest(root).catch((error: unknown) => {
       if (error instanceof Error && /limit|deeply|safely/.test(error.message)) throw new HttpError(413, error.message);
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") throw new HttpError(404, "This run's files are no longer available");
       throw error;
     });
-    return reply.header("content-disposition", `attachment; filename="agentguard-run-${runId}.zip"`).type("application/zip").send(archive);
+    return reply
+      .header("content-disposition", `attachment; filename="agentguard-run-${runId}.zip"`)
+      // Counts only, so the UI can say what the ZIP deliberately left out.
+      .header("x-archive-files", String(manifest.files))
+      .header("x-archive-excluded-directories", String(manifest.excludedDirectories))
+      .header("x-archive-credential-entries", String(manifest.credentialEntries))
+      .header("x-archive-skipped-entries", String(manifest.skippedEntries))
+      .type("application/zip")
+      .send(archive);
   });
 
+  /**
+   * The actual diff, computed once execution has stopped and then served as
+   * saved. While a Run is active its copy can still change, so asking is a 409
+   * and nothing is cached. A copy removed by retention is reported as expired.
+   */
   app.get("/api/runs/:runId/diff", async (request) => {
     const { runId } = runParams.parse(request.params);
     const { snapshot } = await readableSnapshot(request, runId);
-    const root = path.join(dataDirectory, "runs", runId, "workspace");
-    if (snapshot.run.status === "queued" || snapshot.run.status === "running") throw new HttpError(409, "The run diff is available after the run finishes");
-    const runDirectory = path.join(dataDirectory, "runs", runId);
-    return buildRunDiff(
-      root,
-      path.join(runDirectory, "diff-baseline.json"),
-      path.join(runDirectory, "diff.json"),
-    );
+    if (!isTerminalRunStatus(snapshot.run.status)) throw new HttpError(409, "The run diff is available after the run finishes");
+    const paths = runDiffPaths(path.join(dataDirectory, "runs", runId, "workspace"));
+    if ((await stat(path.dirname(paths.workspaceRoot)).catch(() => null)) === null) {
+      const completedAt = snapshot.run.completedAt === null ? null : Date.parse(snapshot.run.completedAt);
+      const days = options.artifactRetentionDays ?? 0;
+      const expired = completedAt !== null && days > 0 && Date.now() - completedAt > days * 86_400_000;
+      return unavailableRunDiff(expired ? "expired" : "missing", [expired ? "baseline_expired" : "baseline_missing"], null);
+    }
+    return loadOrComputeRunDiff(paths);
   });
 
   app.get("/api/runs/:runId/file", async (request) => {

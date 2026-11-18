@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import type { Approval, ProposedAction, Run, RunDiffResponse, RunSnapshot, SecurityDecision, Task } from "@launchpad/shared";
+import type { Approval, ProposedAction, Run, RunSnapshot, SecurityDecision, Task } from "@launchpad/shared";
 import { HttpError } from "../../src/errors.js";
 import { InMemoryRunStore } from "../../src/orchestrator/in-memory-run-store.js";
 import type { ExecutionGuard, SecurityMiddleware } from "../../src/security-middleware.js";
@@ -143,66 +143,17 @@ describe("single mode", () => {
   });
 });
 
-describe("final actual diff review", () => {
-  it("fails a changed run when the final review finds meaningful out-of-scope work", async () => {
-    const diff: RunDiffResponse = {
-      changes: [{ path: "src/receipt.js", kind: "added", diff: "+ export function formatReceipt() {}", display: "text" }],
-      changedFileCount: 1,
-      truncated: false,
-      baselineAvailable: true,
-    };
-    const { run, events } = await start("single", {
-      script: { [PROMPT]: { output: "The requested validation is complete." } },
-      diff: async () => diff,
-      finalDiffReviewer: {
-        review: async ({ diff: reviewedDiff, reviewedActions }) => {
-          expect(reviewedDiff.changes[0]?.path).toBe("src/receipt.js");
-          expect(reviewedActions).toEqual([]);
-          return {
-            conflictsWithTask: true,
-            riskScore: 0.55,
-            classification: "scope_expansion",
-            rationale: "An unrelated receipt helper was added.",
-          };
-        },
-      },
-    }, AGENTS.developer);
-
-    const snapshot = await settle(run.id, events);
-    expect(snapshot.run.status).toBe("failed");
-    expect(snapshot.findings).toContainEqual(expect.objectContaining({
-      layer: "semantic",
-      check: "semantic-final-diff",
-      code: "semantic-final-scope-expansion",
-      severity: "medium",
-      intervened: true,
-      evidence: expect.objectContaining({ riskScore: 0.55, classification: "scope_expansion" }),
-    }));
-    expect(runStatuses(events)).toEqual(["queued", "running", "failed"]);
-  });
-
-  it("fails closed if the actual diff is incomplete", async () => {
-    const { run, events } = await start("single", {
-      script: { [PROMPT]: { output: "The requested validation is complete." } },
-      diff: async () => ({ changes: [], changedFileCount: 0, truncated: true, baselineAvailable: true }),
-      finalDiffReviewer: { review: async () => { throw new Error("the reviewer must not be called"); } },
-    }, AGENTS.developer);
-
-    const snapshot = await settle(run.id, events);
-    expect(snapshot.run.status).toBe("failed");
-    expect(snapshot.findings).toContainEqual(expect.objectContaining({
-      code: "semantic-final-diff-incomplete",
-      intervened: true,
-    }));
-  });
-});
+// The final review of the actual diff has its own scenarios in final-review.test.ts.
 
 describe("auto mode", () => {
   it("plans, delegates, blocks exfiltration, pauses for approval and completes", async () => {
     const { run, events } = await start("auto");
     const pending = await waitFor(pendingApproval(run.id));
     expect(pending).toMatchObject({ actionType: "file_change", reason: "policy_required" });
-    expect(pending.safeDetails).toEqual({ files: [{ path: "src/signup.ts", kind: "update" }] });
+    expect(pending.safeDetails).toEqual({
+      files: [{ path: "src/signup.ts", kind: "update", diff: "+ validate(body)", diffComplete: true }],
+      complete: true,
+    });
     await harness.orchestrator.resolveApproval(pending.id, "approve", USER_ID);
     const snapshot = await settle(run.id, events);
 

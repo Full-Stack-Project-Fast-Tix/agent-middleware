@@ -9,6 +9,7 @@ import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
 import {
   listWorkspaceFiles,
+  listWorkspaceFilesBounded,
   readWorkspaceFile,
   writeWorkspaceFile,
   resolveInside,
@@ -190,5 +191,17 @@ describe("workspace writing", () => {
     await expect(
       writeWorkspaceFile(root, "huge.md", "a".repeat(2 * 1024 * 1024)),
     ).rejects.toThrow(WorkspacePathError);
+  });
+});
+
+describe("bounded listing", () => {
+  it("says when it stopped: exactly the cap is complete, one more file is not", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "ws-bounded-"));
+    for (let index = 0; index < MAX_ENTRIES; index += 1) await writeFile(path.join(root, `f${index}.txt`), "x");
+    expect(await listWorkspaceFilesBounded(root)).toMatchObject({ truncated: false });
+    await writeFile(path.join(root, "one-more.txt"), "x");
+    const listing = await listWorkspaceFilesBounded(root);
+    expect(listing.truncated).toBe(true);
+    expect(listing.files).toHaveLength(MAX_ENTRIES);
   });
 });

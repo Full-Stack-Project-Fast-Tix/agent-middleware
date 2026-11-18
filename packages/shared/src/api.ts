@@ -382,13 +382,21 @@ export function mayAnswerApproval(input: {
   return input.userId === input.runCreatedByUserId;
 }
 
-/** The files in a Run's working copy, for the roles that may read raw traces. */
+/**
+ * The files in a Run's working copy, for the roles that may read raw traces.
+ * The listing is bounded; `truncated` says it stopped before listing everything.
+ */
 export const runFilesResponseSchema = z.object({
   files: z.array(z.object({ path: z.string(), size: z.number().int().nonnegative(), modifiedAt: z.string() })),
+  truncated: z.boolean().default(false),
 });
 export type RunFilesResponse = z.infer<typeof runFilesResponseSchema>;
 
-/** One file as redacted text. `truncated` means it was too large to send whole. */
+/**
+ * One file as redacted text, for previewing. `truncated` means it was larger
+ * than the 256 KB preview and `content` is only its start. It is never the full
+ * bytes: the Run ZIP is the full-byte path.
+ */
 export const runFileResponseSchema = z.object({
   path: z.string(),
   content: z.string(),
@@ -397,13 +405,7 @@ export const runFileResponseSchema = z.object({
 });
 export type RunFileResponse = z.infer<typeof runFileResponseSchema>;
 
-export const runDiffResponseSchema = z.object({
-  changes: z.array(z.object({ path: z.string(), kind: z.enum(["added", "modified", "deleted"]), diff: z.string().nullable(), display: z.enum(["text", "binary", "large", "unavailable"]) })),
-  changedFileCount: z.number().int().nonnegative(),
-  truncated: z.boolean(),
-  baselineAvailable: z.boolean(),
-});
-export type RunDiffResponse = z.infer<typeof runDiffResponseSchema>;
+// The Run diff contract (runDiffResponseSchema) lives in ./review.ts with the final review.
 
 export const resolveApprovalRequestSchema = z.object({
   decision: approvalDecisionSchema,

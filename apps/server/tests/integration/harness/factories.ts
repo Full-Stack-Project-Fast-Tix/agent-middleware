@@ -33,6 +33,7 @@ export function makeRun(overrides: Partial<Run> = {}): Run {
     error: null,
     cancelRequestedAt: null,
     evaluation: null,
+    finalReview: null,
     createdAt: now,
     updatedAt: now,
     startedAt: null,

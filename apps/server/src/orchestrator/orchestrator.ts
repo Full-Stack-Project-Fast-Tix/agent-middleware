@@ -25,6 +25,9 @@ import {
   type TaskDependency,
   type TaskStatus,
   type ExecutionUsage,
+  type FinalReview,
+  type FinalReviewReason,
+  FINAL_REVIEW_MAX_ACTIONS,
 } from "@launchpad/shared";
 import { HttpError, RunCancelledError, traceOf, usageOf } from "../errors.js";
 import { redactSensitiveText } from "../redaction/index.js";
@@ -33,7 +36,7 @@ import type { SemanticActionSummary } from "../semantic-intent-monitor.js";
 import type { ExecutionGuard, ResolvedPolicy, SecurityMiddleware } from "../security-middleware.js";
 import { validatePlan } from "./plan.js";
 import type { Planner } from "./planner.js";
-import type { ActionGate, AgentDirectory, AuditFor, ExecutionRuntime, RunDiffReviewer, RunStore, VaultGrant, WorkingCopies } from "./ports.js";
+import type { ActionGate, AgentDirectory, AuditFor, ExecutionRuntime, FinalReviewOutcome, RunDiffReviewer, RunStore, VaultGrant, WorkingCopies } from "./ports.js";
 import { pickLaunches, tasksToMarkReady, tasksToSkip, type LaunchCandidate } from "./scheduler.js";
 import { buildTaskPrompt, type TaskInput, type WithheldInput } from "./task-prompt.js";
 
@@ -55,7 +58,6 @@ import { buildTaskPrompt, type TaskInput, type WithheldInput } from "./task-prom
 type Answer = Exclude<ApprovalStatus, "pending">;
 type Phase = "planning" | "running";
 type TaskResult = "completed" | "failed" | "retry" | "cancelled";
-const MAX_FINAL_REVIEW_ACTIONS = 48;
 
 export interface OrchestratorLimits {
   /** Most tasks a supervisor plan may contain. Each one is a paid agent run. */
@@ -225,6 +227,7 @@ export class Orchestrator {
         error: null,
         cancelRequestedAt: null,
         evaluation: null,
+        finalReview: null,
         createdAt: now,
         updatedAt: now,
         startedAt: null,
@@ -301,7 +304,7 @@ export class Orchestrator {
       if (this.active.has(run.id)) continue;
       this.workspaces.set(run.id, run.workspaceId);
       if (run.cancelRequestedAt !== null) await this.finishCancelled(run.id);
-      else await this.failRun(run.id, "The server restarted while this run was active; its work could not be resumed.");
+      else await this.failRun(run.id, "The server restarted while this run was active; its work could not be resumed.", "run_interrupted");
       recovered += 1;
     }
     return recovered;
@@ -386,10 +389,14 @@ export class Orchestrator {
         state.phase = "running";
       }
       await this.schedule(state, run);
+      this.throwIfCancelled(state);
+      // Outside the lock, so a cancel is not held up by a slow review: it aborts
+      // the reviewer, and the check below then ends the Run cancelled.
+      const review = await this.reviewFinalChanges(state, run);
       // A cancel either gets in first, and the Run ends cancelled, or finds it finished.
       await this.locked(state, async () => {
         this.throwIfCancelled(state);
-        await this.finish(state, run);
+        await this.finish(state, run, review);
       });
     } catch (error) {
       // Stop anything still running before closing the Run's books.
@@ -576,97 +583,90 @@ export class Orchestrator {
     }
   }
 
-  private async finish(state: RunState, run: Run): Promise<void> {
+  /**
+   * The final review of the Run's actual changes, once every execution has
+   * stopped. Null when a task failed, so the Run fails without one. Never
+   * completes a Run itself; finish() applies the outcome under the lock.
+   */
+  private async reviewFinalChanges(state: RunState, run: Run): Promise<FinalReviewOutcome | null> {
+    const tasks = await this.store.listTasks(run.id);
+    if (tasks.some((task) => task.status === "failed")) return null;
+    let diff: RunDiffResponse | null = null;
+    if (this.workingCopies.diff !== undefined) {
+      // A failure leaves it null, which a configured reviewer reports as unavailable.
+      diff = await this.workingCopies.diff(run.id).catch(() => null);
+    }
+    if (this.finalDiffReviewer === undefined) {
+      return emptyOutcome("disabled", ["semantic_review_disabled"], diff?.changedFileCount ?? null, state);
+    }
+    if (diff === null) {
+      return emptyOutcome("unavailable", ["diff_error"], null, state);
+    }
+    try {
+      return await this.finalDiffReviewer.review({
+        run,
+        diff,
+        approvals: await this.store.listApprovals(run.id),
+        reviewedActions: state.reviewedActions,
+        actionLedgerTruncated: state.reviewedActionsTruncated,
+        signal: state.abort.signal,
+      });
+    } catch {
+      // Aborted because the Run is being cancelled: let the cancel win.
+      if (state.cancelRequested) throw new RunCancelledError();
+      return emptyOutcome("unavailable", ["monitor_error"], diff.changedFileCount, state);
+    }
+  }
+
+  private async finish(state: RunState, run: Run, review: FinalReviewOutcome | null): Promise<void> {
     const tasks = await this.store.listTasks(run.id);
     const failed = tasks.filter((task) => task.status === "failed");
-    if (failed.length > 0) {
-      const first = failed[0]!;
-      const detail = `"${first.title}": ${first.error ?? "no error recorded"}`;
+    if (failed.length > 0 || review === null) {
+      const first = failed[0];
+      const detail = first === undefined ? "no error recorded" : `"${first.title}": ${first.error ?? "no error recorded"}`;
       await this.moveRun(run.id, "failed", {
-        error: failed.length === 1 ? `Task ${detail}` : `${failed.length} tasks failed. First: ${detail}`,
+        error: failed.length <= 1 ? `Task ${detail}` : `${failed.length} tasks failed. First: ${detail}`,
+        finalReview: this.notRun("run_failed"),
         completedAt: this.now(),
       });
       return;
     }
-    if (this.finalDiffReviewer !== undefined && this.workingCopies.diff !== undefined) {
-      let diff: RunDiffResponse | null = null;
-      try {
-        diff = await this.workingCopies.diff(run.id);
-      } catch {
-        await this.failFinalDiffReview(
-          run,
-          null,
-          "semantic-final-diff-unavailable",
-          "AgentGuard could not complete the final workspace review. Inspect the Run artifacts; this Run will not seed follow-up work.",
-          "medium",
-        );
-        return;
-      }
-      if (!diff.baselineAvailable || diff.truncated) {
-        await this.failFinalDiffReview(
-          run,
-          diff,
-          "semantic-final-diff-incomplete",
-          "The final workspace diff was incomplete, so AgentGuard could not verify the actual changes. Inspect the Run diff; this Run will not seed follow-up work.",
-          "medium",
-        );
-        return;
-      }
-      if (diff.changedFileCount > 0) {
-        if (state.reviewedActionsTruncated) {
-          await this.failFinalDiffReview(
-            run,
-            diff,
-            "semantic-final-diff-incomplete",
-            "The gated action history exceeded the final review limit, so AgentGuard could not verify how the actual changes were produced. Inspect the Run diff; this Run will not seed follow-up work.",
-            "medium",
-          );
-          return;
-        }
-        let assessment: Awaited<ReturnType<RunDiffReviewer["review"]>>;
-        try {
-          assessment = await this.finalDiffReviewer.review({
-            run,
-            diff,
-            approvals: await this.store.listApprovals(run.id),
-            reviewedActions: state.reviewedActions,
-            actionLedgerTruncated: state.reviewedActionsTruncated,
-          });
-        } catch {
-          await this.failFinalDiffReview(
-            run,
-            diff,
-            "semantic-final-diff-unavailable",
-            "AgentGuard could not complete the final workspace review. Inspect the Run artifacts; this Run will not seed follow-up work.",
-            "medium",
-          );
-          return;
-        }
-        if (assessment.conflictsWithTask && assessment.riskScore >= 0.5) {
-          await this.failFinalDiffReview(
-            run,
-            diff,
-            "semantic-final-scope-expansion",
-            "The final workspace diff may contain work outside the requested task. Inspect the actual changes; this Run will not seed follow-up work.",
-            assessment.riskScore >= 0.75 ? "high" : "medium",
-            assessment,
-          );
-          return;
-        }
-      }
+    if (review.status === "aligned" || review.status === "no_changes" || review.status === "disabled") {
+      const dependencies = await this.store.listDependencies(run.id);
+      await this.moveRun(run.id, "completed", {
+        finalOutput: finalOutputOf(run, tasks, dependencies),
+        finalReview: { ...review, reviewedAt: this.now(), findingId: null },
+        completedAt: this.now(),
+      });
+      return;
     }
-    const dependencies = await this.store.listDependencies(run.id);
-    await this.moveRun(run.id, "completed", { finalOutput: finalOutputOf(run, tasks, dependencies), completedAt: this.now() });
+    await this.failFinalReview(run, review);
   }
 
-  private async failFinalDiffReview(
-    run: Run,
-    diff: RunDiffResponse | null,
-    code: "semantic-final-diff-incomplete" | "semantic-final-diff-unavailable" | "semantic-final-scope-expansion",
-    message: string,
-    severity: SecurityFinding["severity"],
-    assessment?: { riskScore: number; classification: string },
-  ): Promise<void> {
+  /**
+   * The review stopped the Run: a conflict, incomplete evidence, or no review.
+   * The tasks finished; the Run fails so its copy never seeds follow-up work.
+   * Its artifacts stay inspectable, and nothing is rolled back.
+   */
+  private async failFinalReview(run: Run, review: FinalReviewOutcome): Promise<void> {
+    const reasons = review.reasons.join(", ") || "none recorded";
+    const [code, severity, message] = review.status === "conflict"
+      ? [
+          "semantic-final-scope-expansion",
+          (review.riskScore ?? 0) >= 0.75 ? "high" as const : "medium" as const,
+          `Final review: the actual changes may include work outside the request (${review.classification ?? "conflict"}, risk ${(review.riskScore ?? 0).toFixed(2)}). The agents' tasks finished, but this Run will not seed follow-up work. Inspect the actual changes.`,
+        ]
+      : review.status === "incomplete"
+        ? [
+            "semantic-final-diff-incomplete",
+            "medium" as const,
+            `Final review incomplete (${reasons}): AgentGuard could not present every actual change to the reviewer, so it concluded nothing. The agents' tasks finished, but this Run will not seed follow-up work. Inspect the Run diff.`,
+          ]
+        : [
+            "semantic-final-diff-unavailable",
+            "medium" as const,
+            `Final review unavailable (${reasons}): AgentGuard could not complete the review of the actual changes. The agents' tasks finished, but this Run will not seed follow-up work. Inspect the Run artifacts.`,
+          ];
     const finding: SecurityFinding = {
       id: this.newId(),
       runId: run.id,
@@ -680,19 +680,28 @@ export class Orchestrator {
       message,
       facts: null,
       evidence: {
-        ...(assessment === undefined ? {} : {
-          riskScore: assessment.riskScore,
-          classification: assessment.classification,
-        }),
-        changedFileCount: diff?.changedFileCount ?? null,
-        truncated: diff?.truncated ?? null,
-        paths: (diff?.changes ?? []).slice(0, 24).map((change) => redactSensitiveText(change.path).slice(0, 300)),
+        status: review.status,
+        reasons: review.reasons,
+        ...(review.riskScore === null ? {} : { riskScore: review.riskScore }),
+        ...(review.classification === null ? {} : { classification: review.classification }),
+        changedFileCount: review.coverage.changedFiles,
+        effects: review.coverage.effects,
+        assessedEffects: review.coverage.assessedEffects,
+        paths: review.conflictingPaths,
       },
       intervened: true,
       createdAt: this.now(),
     };
     await this.store.addFinding(finding);
-    await this.moveRun(run.id, "failed", { error: message, completedAt: this.now() });
+    await this.moveRun(run.id, "failed", {
+      error: message,
+      finalReview: { ...review, reviewedAt: this.now(), findingId: finding.id },
+      completedAt: this.now(),
+    });
+  }
+
+  private notRun(reason: Extract<FinalReviewReason, "run_failed" | "run_cancelled" | "run_interrupted">): FinalReview {
+    return { ...emptyOutcome("not_run", [reason], null, null), reviewedAt: this.now(), findingId: null };
   }
 
   // ---------------------------------------------------------------------------
@@ -940,11 +949,12 @@ export class Orchestrator {
         }
         const decision = await launch.guard.evaluate(action);
         await this.recordFindings(launch, decision);
-        const final = decision.outcome === "require_approval"
+        const approved = decision.outcome === "require_approval"
           ? await this.awaitApproval(state, launch, action, decision)
-          : decision;
+          : null;
+        const final = approved?.decision ?? decision;
         if (permits(final) && (action.type !== "command" || !isKnownSafeRead(action.command))) {
-          this.rememberReviewedAction(state, action, final.outcome);
+          this.rememberReviewedAction(state, action, final.outcome, approved?.approvalId ?? null);
         }
         noteDecision(launch, final);
         await this.auditFor(launch, "security.decision", {
@@ -969,8 +979,13 @@ export class Orchestrator {
     };
   }
 
-  private rememberReviewedAction(state: RunState, action: ProposedAction, outcome: "allow" | "steer"): void {
-    if (state.reviewedActions.length >= MAX_FINAL_REVIEW_ACTIONS) {
+  /**
+   * The bounded ledger of actions that passed the gate, for the final review.
+   * Every entry up to the bound is kept; past it the ledger is marked
+   * incomplete rather than silently dropping the oldest.
+   */
+  private rememberReviewedAction(state: RunState, action: ProposedAction, outcome: "allow" | "steer", approvalId: string | null): void {
+    if (state.reviewedActions.length >= FINAL_REVIEW_MAX_ACTIONS) {
       state.reviewedActionsTruncated = true;
       return;
     }
@@ -990,10 +1005,12 @@ export class Orchestrator {
         summary = `context_handoff ${action.fromTaskId} to ${action.toTaskId}: ${bounded(redactSensitiveText(action.content), 260)}`;
         break;
     }
+    // Server-recorded binding to the approval that let it run; agent text cannot add one.
+    const approval = approvalId === null ? "" : ` [ran after approval ${approvalId}]`;
     state.reviewedActions.push({
       seq: state.reviewedActions.length,
       type: action.type,
-      summary: bounded(`${outcome}: ${summary}`, 400),
+      summary: bounded(`${outcome}${approval}: ${summary}`, 440),
     });
   }
 
@@ -1020,7 +1037,7 @@ export class Orchestrator {
     launch: Launch,
     action: ProposedAction,
     decision: Extract<SecurityDecision, { outcome: "require_approval" }>,
-  ): Promise<SecurityDecision> {
+  ): Promise<{ decision: SecurityDecision; approvalId: string }> {
     const { execution, task } = launch;
     // Wait before the approval is visible, so even an instant answer finds a waiter.
     const approvalId = this.newId();
@@ -1044,7 +1061,7 @@ export class Orchestrator {
         actionId: action.actionId,
         reason: decision.approvalReason,
         summary: decision.reason,
-        safeDetails: safeDetailsOf(action),
+        safeDetails: approvalDetailsOf(action),
         status: "pending",
         requestedAt,
         expiresAt: new Date(Date.parse(requestedAt) + this.limits.approvalTtlMs).toISOString(),
@@ -1077,7 +1094,7 @@ export class Orchestrator {
       const run = await this.requireRun(execution.runId);
       if (run.status === "waiting_approval" && pending.length === 0) await this.moveRun(run.id, state.phase);
     });
-    return final;
+    return { decision: final, approvalId };
   }
 
   /**
@@ -1097,6 +1114,10 @@ export class Orchestrator {
     if (approval === null) throw new HttpError(404, "Approval not found");
     if (approval.status !== "pending" || this.settling.has(approvalId)) {
       throw new HttpError(409, `Approval is already ${approval.status === "pending" ? "being resolved" : approval.status}`);
+    }
+    // Nobody may approve what they cannot see. Deny and timeout stay available.
+    if (status === "approved" && approval.safeDetails === null) {
+      throw new HttpError(409, "This approval has no saved proposal details, so it cannot be approved. Deny it, or let it time out.");
     }
     this.settling.add(approvalId);
     try {
@@ -1132,13 +1153,24 @@ export class Orchestrator {
   private async finishCancelled(runId: string): Promise<void> {
     await this.closeOpenWork(runId, "cancelled", null);
     const run = await this.requireRun(runId);
-    if (!isTerminalRunStatus(run.status)) await this.moveRun(runId, "cancelled", { completedAt: this.now() });
+    if (!isTerminalRunStatus(run.status)) {
+      await this.moveRun(runId, "cancelled", {
+        completedAt: this.now(),
+        ...(run.finalReview === null ? { finalReview: this.notRun("run_cancelled") } : {}),
+      });
+    }
   }
 
-  private async failRun(runId: string, error: string): Promise<void> {
+  private async failRun(runId: string, error: string, reason: "run_failed" | "run_interrupted" = "run_failed"): Promise<void> {
     await this.closeOpenWork(runId, "failed", error);
     const run = await this.requireRun(runId);
-    if (!isTerminalRunStatus(run.status)) await this.moveRun(runId, "failed", { error, completedAt: this.now() });
+    if (!isTerminalRunStatus(run.status)) {
+      await this.moveRun(runId, "failed", {
+        error,
+        completedAt: this.now(),
+        ...(run.finalReview === null ? { finalReview: this.notRun(reason) } : {}),
+      });
+    }
   }
 
   /** A finished Run has no pending approvals and no open tasks or executions. */
@@ -1421,6 +1453,87 @@ function safeDetailsOf(action: ProposedAction): JsonObject {
     case "context_handoff":
       return { fromTaskId: action.fromTaskId, toTaskId: action.toTaskId, characters: action.content.length };
   }
+}
+
+/** Approval excerpt bounds: enough to judge a typical edit, small enough for every list that shows approvals. */
+const APPROVAL_EXCERPT_CHARS = 4_000;
+const APPROVAL_TOTAL_EXCERPT_CHARS = 12_000;
+
+/**
+ * What an approver sees, and what the final review later matches actual
+ * changes against: the safe details plus redacted excerpts of the proposed
+ * content, and `complete`, true only when nothing of the proposal was cut.
+ * An approval with an incomplete proposal can let its action run, but can
+ * never make a change outside the request pass the final review.
+ */
+function approvalDetailsOf(action: ProposedAction): JsonObject {
+  const details = safeDetailsOf(action);
+  switch (action.type) {
+    case "command": {
+      const text = redactSensitiveText(action.command);
+      return { ...details, complete: text.length <= 200_000 };
+    }
+    case "file_change": {
+      let budget = APPROVAL_TOTAL_EXCERPT_CHARS;
+      let complete = action.changes.length <= 50;
+      const files = action.changes.slice(0, 50).map((change) => {
+        const diff = redactSensitiveText(change.diff ?? "");
+        const allowed = Math.max(0, Math.min(APPROVAL_EXCERPT_CHARS, budget));
+        const excerpt = diff.slice(0, allowed);
+        budget -= excerpt.length;
+        const diffComplete = change.diff !== null && excerpt.length === diff.length;
+        complete &&= diffComplete;
+        return {
+          path: bounded(redactSensitiveText(change.path), 300),
+          kind: change.kind,
+          ...(change.movePath === null ? {} : { movePath: bounded(redactSensitiveText(change.movePath), 300) }),
+          diff: excerpt,
+          diffComplete,
+        };
+      });
+      return { ...details, files, complete };
+    }
+    case "delegation": {
+      const objective = redactSensitiveText(action.objective);
+      return {
+        ...details,
+        objective: bounded(objective, APPROVAL_EXCERPT_CHARS),
+        complete: objective.length <= APPROVAL_EXCERPT_CHARS && redactSensitiveText(action.title).length <= 120,
+      };
+    }
+    case "context_handoff": {
+      const content = redactSensitiveText(action.content);
+      return { ...details, excerpt: content.slice(0, APPROVAL_EXCERPT_CHARS), complete: content.length <= APPROVAL_EXCERPT_CHARS };
+    }
+  }
+}
+
+/** A review outcome with no model work: disabled, unavailable before any call, or not run. */
+function emptyOutcome(
+  status: FinalReviewOutcome["status"],
+  reasons: FinalReviewReason[],
+  changedFiles: number | null,
+  state: Pick<RunState, "reviewedActions" | "reviewedActionsTruncated"> | null,
+): FinalReviewOutcome {
+  return {
+    status,
+    reasons,
+    coverage: {
+      changedFiles,
+      effects: 0,
+      assessedEffects: 0,
+      modelCalls: 0,
+      actions: state?.reviewedActions.length ?? 0,
+      actionLedgerComplete: state === null ? false : !state.reviewedActionsTruncated,
+      approvals: 0,
+    },
+    riskScore: null,
+    classification: null,
+    rationale: null,
+    conflictingPaths: [],
+    approvalsApplied: [],
+    monitorUsage: null,
+  };
 }
 
 /**

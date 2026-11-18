@@ -18,6 +18,7 @@ const run = (overrides: Partial<Run> = {}): Run => ({
   error: null,
   cancelRequestedAt: null,
   evaluation: null,
+  finalReview: null,
   createdAt: NOW,
   updatedAt: NOW,
   startedAt: NOW,

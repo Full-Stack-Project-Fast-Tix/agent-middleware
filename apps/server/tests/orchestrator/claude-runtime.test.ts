@@ -105,7 +105,11 @@ describe("a multi-task Run on the Claude runtime", () => {
     const { orchestrator, run, events } = await startRun(TURNS);
 
     const approval = await waitFor(pendingApproval(run.id));
-    expect(approval.safeDetails).toEqual({ files: [{ path: "/workspace/src/signup.ts", kind: "add" }] });
+    // The approver sees the exact proposed content, and whether it is all of it.
+    expect(approval.safeDetails).toEqual({
+      files: [{ path: "/workspace/src/signup.ts", kind: "add", diff: "export const validated = true;\n", diffComplete: true }],
+      complete: true,
+    });
     expect(await store.getRun(run.id)).toMatchObject({ status: "waiting_approval" });
     // Waiting for the person: the file is not written yet.
     expect(sandboxes.sandboxes[1]!.writes).toEqual([]);

@@ -110,7 +110,10 @@ describe("ClaudeSemanticIntentMonitor", () => {
   it("returns a valid assessment from a redacted, tool-less call", async () => {
     const assessment = await (await monitor([{ content: [text(JSON.stringify(ASSESSMENT))], stop_reason: "end_turn" }])).assess(INPUT);
 
-    expect(assessment).toEqual(ASSESSMENT);
+    // The monitor's own usage comes back separately, never mixed into agent execution usage.
+    const { usage, ...rest } = assessment;
+    expect(rest).toEqual(ASSESSMENT);
+    expect(usage).toEqual({ inputTokens: expect.any(Number), outputTokens: expect.any(Number) });
     const { body } = mock!.requests[0]!;
     expect(JSON.stringify(body)).not.toContain("sk_live_51Example");
     expect(body.output_config.effort).toBe("low");
