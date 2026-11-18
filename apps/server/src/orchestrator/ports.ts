@@ -157,6 +157,7 @@ export type FinalReviewOutcome = Omit<FinalReview, "reviewedAt" | "findingId">;
  */
 export interface RunDiffReviewer {
   review(input: {
+    budget?: import("../model-token-budget.js").ModelTokenBudget;
     run: Run;
     diff: RunDiffResponse;
     /** Loaded by the server for this Run. */
@@ -168,6 +169,7 @@ export interface RunDiffReviewer {
 }
 
 export interface ExecutionRequest {
+  budget?: import("../model-token-budget.js").ModelTokenBudget;
   run: Run;
   task: Task;
   execution: AgentExecution;

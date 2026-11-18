@@ -39,13 +39,14 @@ export function createPostgresRuns(config: AppConfig, pool: pg.Pool, hub: RunEve
     }),
     ...(semanticMonitor === null ? {} : {
       finalDiffReviewer: {
-        review: ({ run, diff, approvals, reviewedActions, actionLedgerTruncated, signal }) => reviewFinalRunDiff(semanticMonitor, {
+        review: ({ run, diff, approvals, reviewedActions, actionLedgerTruncated, signal, budget }) => reviewFinalRunDiff(semanticMonitor, {
           userPrompt: run.userPrompt,
           diff,
           approvals,
           reviewedActions,
           actionLedgerTruncated,
           signal,
+          ...(budget === undefined ? {} : { budget }),
         }),
       },
     }),

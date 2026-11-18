@@ -23,6 +23,7 @@ const REASONING_ITEMS_BETWEEN_REVIEWS = 3;
 export const MAX_ACTION_EFFECTS = 24;
 /** Characters of proposal text in one effect; longer text is split into parts, none dropped. */
 export const MAX_ACTION_EFFECT_CHARS = 2_000;
+export const MAX_ACTION_REVIEW_CALLS = 4;
 
 export type IntentDecision = "allow" | "steer" | "decline" | "interrupt" | "human_review";
 
@@ -128,11 +129,33 @@ export class IntentController {
 
     try {
       const intentEvidence = this.state.intentEvidenceForNextAction();
-      const monitorInput = this.state.monitorInput(action.type, false, compactProposedAction(action));
-      monitorInput.proposedEffects = plan.effects;
-      const assessment = rollUpEffects(plan.effects.length, await this.monitor.assess(
-        boundedMonitorInput(monitorInput),
-      ));
+      const base = this.state.monitorInput(action.type, false, compactProposedAction(action));
+      const batches: SemanticProposedEffect[][] = [];
+      let batch: SemanticProposedEffect[] = [];
+      const fits = (effects: SemanticProposedEffect[]) => {
+        try { boundedMonitorInput({ ...base, proposedEffects: effects }); return effects.length <= MAX_ACTION_EFFECTS; }
+        catch { return false; }
+      };
+      for (const effect of plan.effects) {
+        const candidate = [...batch, { ...effect, index: batch.length }];
+        if (fits(candidate)) { batch = candidate; continue; }
+        if (batch.length === 0) return incompleteEvidence(action, plan.effects.length, this.state.trustedTask.userPrompt);
+        batches.push(batch);
+        batch = [{ ...effect, index: 0 }];
+        if (!fits(batch)) return incompleteEvidence(action, plan.effects.length, this.state.trustedTask.userPrompt);
+      }
+      if (batch.length > 0) batches.push(batch);
+      if (batches.length > MAX_ACTION_REVIEW_CALLS) return incompleteEvidence(action, plan.effects.length, this.state.trustedTask.userPrompt);
+      const assessments: SemanticAssessment[] = [];
+      for (const effects of batches) {
+        assessments.push(rollUpEffects(effects.length, await this.monitor.assess(
+          boundedMonitorInput({ ...base, proposedEffects: effects }),
+        )));
+      }
+      const assessment = assessments.reduce((worst, next) => {
+        if (next.conflictsWithTask && (!worst.conflictsWithTask || next.riskScore > worst.riskScore)) return next;
+        return worst;
+      });
       this.reasoningReviewUnavailable = false;
       this.state.recordAssessment(assessment);
       const block =
@@ -239,7 +262,7 @@ export function proposedEffectsFor(action: SemanticProposedAction): { effects: S
       effects.push({ index: effects.length, kind: unit.kind, summary: `[${id}] ${unit.label}${note}\n${part}` });
     });
   }
-  return { effects, complete: effects.length <= MAX_ACTION_EFFECTS };
+  return { effects, complete: effects.length <= MAX_ACTION_EFFECTS * MAX_ACTION_REVIEW_CALLS };
 }
 
 /**
@@ -279,9 +302,9 @@ function incompleteEvidence(action: SemanticProposedAction, parts: number, origi
       severity: "warn",
       seq: action.seq,
       evidence: [action.seq],
-      message: `Semantic review could not cover this ${action.type.replace("_", " ")}: it has ${parts} separately reviewable parts and one review covers at most ${MAX_ACTION_EFFECTS}, so a person decides.`,
+      message: `Semantic review could not cover this ${action.type.replace("_", " ")}: ${parts} parts exceed its bounded input or ${MAX_ACTION_REVIEW_CALLS}-call budget, so a person decides.`,
       steer,
-      metadata: { checkpoint: action.type, controllerDecision: "human_review", required: true, effects: parts, maxEffects: MAX_ACTION_EFFECTS },
+      metadata: { checkpoint: action.type, controllerDecision: "human_review", required: true, effects: parts, maxEffects: MAX_ACTION_EFFECTS * MAX_ACTION_REVIEW_CALLS },
     },
   };
 }

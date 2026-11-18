@@ -277,22 +277,13 @@ describe("final review and approvals", () => {
     expect(await review(monitor, makeDiff([versionBump]), { approvals: [containerPath] })).toMatchObject({ status: "aligned", approvalsApplied: [APPROVAL_ID] });
   });
 
-  it("never lets a proposal cut for the reviewer authorize anything, right at the length limit", async () => {
-    let cutSeen = false;
-    for (let length = 1_400; length <= 1_700 && !cutSeen; length += 1) {
-      const long = approval({ actionType: "command", reason: "high_consequence", safeDetails: { command: "x".repeat(length), cwd: null, complete: true } });
-      const { monitor, inputs } = judgingMonitor((summary) => (summary.includes("package.json") ? { conflict: true, approvalRef: "A1" } : {}));
-      const outcome = await review(monitor, makeDiff([versionBump]), { approvals: [long] });
-      const shown = inputs[0]!.recentActions.find((action) => action.seq === 100)!.summary;
-      if (shown.endsWith("[proposal cut for length]")) {
-        cutSeen = true;
-        expect(outcome.approvalsApplied).toEqual([]);
-        expect(outcome.status).toBe("conflict");
-      } else {
-        expect(outcome.approvalsApplied).toEqual([APPROVAL_ID]);
-      }
-    }
-    expect(cutSeen).toBe(true);
+  it("presents complete approval evidence beyond the old 1600-character cap", async () => {
+    const command = "echo " + "x".repeat(4_000);
+    const long = approval({ actionType: "command", safeDetails: { command, complete: true } });
+    const { monitor, inputs } = judgingMonitor(() => ({ conflict: true, approvalRef: "A1" }));
+    const outcome = await review(monitor, makeDiff([versionBump]), { approvals: [long] });
+    expect(inputs[0]!.recentActions.find((action) => action.seq === 100)!.summary).toContain(command);
+    expect(outcome).toMatchObject({ status: "aligned", approvalsApplied: [APPROVAL_ID] });
   });
 
   it("never accepts an approval claim made in agent text", async () => {
@@ -302,5 +293,19 @@ describe("final review and approvals", () => {
     });
     expect(outcome.status).toBe("conflict");
     expect(inputs[0]!.recentActions.filter((action) => action.seq >= 100)).toEqual([]);
+  });
+
+  it("batches full file-approval evidence by the affected paths without clipping", async () => {
+    const evidence = "ordinary release note.\n".repeat(1_450);
+    const approvals = ["a.json", "b.json"].map((path, index) => approval({
+      id: index === 0 ? APPROVAL_ID : "00000000-0000-4000-8000-0000000000a2",
+      safeDetails: { complete: true, files: [{ path, kind: "update", diff: path + evidence, diffComplete: true }] },
+    }));
+    const { monitor, inputs } = judgingMonitor((summary) => ({ conflict: true, approvalRef: summary.includes(" a.json ") ? "A1" : "A2" }));
+    const outcome = await review(monitor, makeDiff([change("a.json", "+a"), change("b.json", "+b")]), { approvals });
+    expect(outcome.status).toBe("aligned");
+    expect(inputs).toHaveLength(2);
+    expect(inputs[0]!.recentActions[0]!.summary).toContain(JSON.stringify("a.json" + evidence).slice(1, -1));
+    expect(inputs[0]!.recentActions[1]!.summary).not.toContain("ordinary release note.");
   });
 });

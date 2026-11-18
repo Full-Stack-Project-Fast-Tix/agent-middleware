@@ -102,7 +102,7 @@ export function RunFiles({ runId, runEnded }: { runId: string; runEnded: boolean
         </p>
         {files !== null && files.length > 0 && (
           <Button variant="primary" busy={downloadingAll} onClick={downloadAll}>
-            Download Run folder as ZIP
+            Download project files as ZIP
           </Button>
         )}
       </div>

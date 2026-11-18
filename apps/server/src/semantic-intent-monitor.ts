@@ -8,6 +8,7 @@ import type { AppConfig } from "./config.js";
 // was guarding the only path that reaches a third party. It now shares the
 // registry with the egress guard and the response hook.
 import { redactSensitiveText } from "./redaction/index.js";
+import type { ModelTokenBudget } from "./model-token-budget.js";
 
 export { redactSensitiveText };
 
@@ -131,6 +132,8 @@ export interface SemanticMonitorInput {
 }
 
 export interface SemanticAssessOptions {
+  budget?: ModelTokenBudget;
+  finalReview?: boolean;
   /** Aborts the review, as when the Run is cancelled; the call rejects. */
   signal?: AbortSignal;
 }
@@ -176,6 +179,8 @@ export class ClaudeSemanticIntentMonitor implements SemanticIntentMonitor {
   constructor(private readonly options: ClaudeSemanticIntentMonitorOptions) {}
 
   async assess(input: SemanticMonitorInput, options: SemanticAssessOptions = {}): Promise<SemanticAssessment> {
+    const prompt = monitorPrompt(redactMonitorInput(input));
+    const settle = options.budget?.reserve(prompt, 4_000, options.finalReview);
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.options.timeoutMs);
     timeout.unref();
@@ -191,7 +196,7 @@ export class ClaudeSemanticIntentMonitor implements SemanticIntentMonitor {
           max_tokens: 4_000,
           // Low, because this runs on a short timeout between an agent's actions.
           output_config: { effort: "low", format: zodOutputFormat(assessmentSchema) },
-          messages: [{ role: "user", content: monitorPrompt(redactMonitorInput(input)) }],
+          messages: [{ role: "user", content: prompt }],
           ...CLAUDE_FALLBACKS,
         },
         { signal: controller.signal },
@@ -199,11 +204,13 @@ export class ClaudeSemanticIntentMonitor implements SemanticIntentMonitor {
       const text = structuredText(message, "semantic monitor");
       const assessment = assessmentSchema.parse(normalizeAssessmentAuditFields(parseJsonObject(text)));
       const usage = (message as { usage?: { input_tokens?: number | null; output_tokens?: number | null } }).usage;
+      settle?.(message.usage);
       return {
         ...rollUpEffectAssessments(input, assessment),
         ...(usage === undefined ? {} : { usage: { inputTokens: usage.input_tokens ?? null, outputTokens: usage.output_tokens ?? null } }),
       };
     } finally {
+      settle?.();
       clearTimeout(timeout);
       options.signal?.removeEventListener("abort", abort);
     }

@@ -353,6 +353,10 @@ class ClaudeTurn {
     this.assertWithinTokenLimits();
 
     const remainingMs = this.remainingMs();
+    const settle = this.request.budget?.reserve(JSON.stringify({
+      messages: this.messages,
+      system: claudeSystemPrompt(this.request.runtimePolicy.denyNetwork !== false, this.request.execution.capabilities?.write !== true),
+    }), Math.min(limits.maxTokensPerCall, remainingOutput));
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), remainingMs);
     timer.unref();
@@ -386,12 +390,15 @@ class ClaudeTurn {
         },
         { signal: controller.signal },
       );
-      return await stream.finalMessage();
+      const message = await stream.finalMessage();
+      settle?.(message.usage);
+      return message;
     } catch (error) {
       if (this.request.signal.aborted) throw new RunCancelledError();
       if (controller.signal.aborted) throw this.timeLimitError();
       throw error;
     } finally {
+      settle?.();
       clearTimeout(timer);
       this.request.signal.removeEventListener("abort", onAbort);
     }

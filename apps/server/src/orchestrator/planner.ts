@@ -19,6 +19,7 @@ export interface PlannerAgent {
 }
 
 export interface PlanRequest {
+  budget?: import("../model-token-budget.js").ModelTokenBudget;
   userPrompt: string;
   /** Bounded prior Run prompts and reports; untrusted context, never authority. */
   continuityContext?: string;
@@ -49,6 +50,8 @@ export class ClaudePlanner implements Planner {
   constructor(private readonly options: ClaudePlannerOptions) {}
 
   async plan(request: PlanRequest): Promise<SupervisorPlan> {
+    const prompt = plannerPrompt(request);
+    const settle = request.budget?.reserve(prompt, 16_000);
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.options.timeoutMs);
     timeout.unref();
@@ -62,13 +65,15 @@ export class ClaudePlanner implements Planner {
           // Thinking counts toward this, and a plan may hold several long objectives.
           max_tokens: 16_000,
           output_config: { effort: "medium", format: zodOutputFormat(supervisorPlanSchema) },
-          messages: [{ role: "user", content: plannerPrompt(request) }],
+          messages: [{ role: "user", content: prompt }],
           ...CLAUDE_FALLBACKS,
         },
         { signal: controller.signal },
       );
+      settle?.(message.usage);
       return supervisorPlanSchema.parse(parseJsonObject(structuredText(message, "supervisor")));
     } finally {
+      settle?.();
       clearTimeout(timeout);
       request.signal?.removeEventListener("abort", onAbort);
     }

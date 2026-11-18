@@ -46,13 +46,12 @@ export const FINAL_REVIEW_MAX_CALLS = 8;
 export const FINAL_REVIEW_EFFECTS_PER_CALL = 24;
 /** Approvals given to the reviewer; more is an incomplete ledger. */
 export const FINAL_REVIEW_MAX_APPROVALS = 8;
-const MAX_APPROVAL_CHARS = 1_600;
-const PROPOSAL_CUT = "[proposal cut for length]";
 const APPROVAL_SEQ_BASE = 100;
 
 export type FinalReviewOutcome = Omit<FinalReview, "reviewedAt" | "findingId">;
 
 export interface FinalReviewInput {
+  budget?: import("./model-token-budget.js").ModelTokenBudget;
   userPrompt: string;
   diff: RunDiffResponse;
   /** Loaded by the server for this Run; agent claims of approval are never an input. */
@@ -129,16 +128,16 @@ export async function reviewFinalRunDiff(monitor: SemanticIntentMonitor, input: 
   const approvalRefs = new Map<string, { approval: Approval; cut: boolean }>(approvals.map((approval, index) => {
     const ref = `A${index + 1}`;
     // Exactly what the reviewer is shown for this reference: a cut proposal cannot authorize.
-    return [ref, { approval, cut: approvalSummary(ref, approval).endsWith(PROPOSAL_CUT) }];
+    return [ref, { approval, cut: !proposalComplete(approval.safeDetails) }];
   }));
-  const context = [
+  const context = (batch: Effect[]) => [
     ...input.reviewedActions.map((action, index) => ({ seq: index, type: action.type, summary: action.summary })),
     ...approvals.map((approval, index): SemanticActionSummary => ({
       seq: APPROVAL_SEQ_BASE + index,
       type: approval.actionType === "delegation" || approval.actionType === "context_handoff" || approval.actionType === "command"
         ? approval.actionType
         : "file_change",
-      summary: approvalSummary(`A${index + 1}`, approval),
+      summary: approvalSummary(`A${index + 1}`, approval, new Set(batch.map((effect) => copyRelative(effect.path)))),
     })),
   ];
   const batches = packBatches(input.userPrompt, context, effects);
@@ -159,7 +158,10 @@ export async function reviewFinalRunDiff(monitor: SemanticIntentMonitor, input: 
     let assessment: SemanticAssessment;
     try {
       calls += 1;
-      assessment = await monitor.assess(monitorInput(input.userPrompt, context, batch), input.signal === undefined ? {} : { signal: input.signal });
+      assessment = await monitor.assess(monitorInput(input.userPrompt, context(batch), batch), {
+        ...(input.signal === undefined ? {} : { signal: input.signal }),
+        ...(input.budget === undefined ? {} : { budget: input.budget, finalReview: true }),
+      });
     } catch {
       if (input.signal?.aborted) throw new FinalReviewAbortedError();
       return result("unavailable", ["monitor_error"], { effects: effects.length, assessedEffects: assessed.length, modelCalls: calls, monitorUsage: usage() });
@@ -281,8 +283,8 @@ function monitorInput(userPrompt: string, context: SemanticActionSummary[], batc
 }
 
 /** Greedy packing within the per-call size and itemization limits. Null when one effect cannot fit any call. */
-function packBatches(userPrompt: string, context: SemanticActionSummary[], effects: Effect[]): Effect[][] | null {
-  const size = (batch: Effect[]) => JSON.stringify(redactMonitorInput(monitorInput(userPrompt, context, batch))).length;
+function packBatches(userPrompt: string, context: (batch: Effect[]) => SemanticActionSummary[], effects: Effect[]): Effect[][] | null {
+  const size = (batch: Effect[]) => JSON.stringify(redactMonitorInput(monitorInput(userPrompt, context(batch), batch))).length;
   const batches: Effect[][] = [];
   let current: Effect[] = [];
   for (const effect of effects) {
@@ -303,15 +305,27 @@ function packBatches(userPrompt: string, context: SemanticActionSummary[], effec
 }
 
 /** One approval as the reviewer sees it: server-loaded identity, outcome, binding and the bounded proposal. */
-function approvalSummary(ref: string, approval: Approval): string {
-  const details = approval.safeDetails;
+function approvalSummary(ref: string, approval: Approval, paths?: Set<string>): string {
+  let details = approval.safeDetails;
   const complete = proposalComplete(details);
+  if (paths !== undefined && approval.actionType === "file_change" && Array.isArray(details?.files)) {
+    // Each batch receives full evidence for its paths, never unrelated bulky
+    // edits. Completeness still requires the original saved proposal be complete.
+    details = { ...details, files: details.files.filter((file) => {
+      if (file === null || typeof file !== "object" || Array.isArray(file)) return false;
+      return (typeof file.path === "string" && paths.has(copyRelative(file.path))) ||
+        (typeof file.movePath === "string" && paths.has(copyRelative(file.movePath)));
+    }) };
+  }
   const header = `APPROVAL ${ref} status=${approval.status} reason=${approval.reason} action=${approval.actionType}` +
     ` ${approval.status === "approved" ? "(grants only its exact proposal)" : "(grants nothing)"}` +
     `${complete ? "" : " proposal=INCOMPLETE (cannot authorize any effect)"}`;
   const proposal = details === null ? "No proposal details were saved." : JSON.stringify(details);
   const text = `${header}\nProposal: ${proposal}`;
-  return text.length <= MAX_APPROVAL_CHARS ? text : `${bounded(text, MAX_APPROVAL_CHARS - 40)} ${PROPOSAL_CUT}`;
+  // Never clip authorization evidence. Packing accounts for the full proposal;
+  // if it cannot fit, review is explicitly incomplete rather than ignoring an
+  // approval a person already gave.
+  return text;
 }
 
 /** Whether the saved proposal says it is the whole proposal. Older approvals that do not say so are not. */

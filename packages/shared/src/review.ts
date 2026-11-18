@@ -26,7 +26,7 @@ export const SNAPSHOT_LIMITS = {
   /** Directory entries examined in total, across every listed directory. */
   maxDirectoryEntries: 20_000,
   /** Largest file hashed; larger files are present but cannot be compared by content. */
-  maxHashFileBytes: 2 * 1024 * 1024,
+  maxHashFileBytes: 64 * 1024 * 1024,
   /** Bytes hashed in total in one scan. */
   maxTotalHashBytes: 128 * 1024 * 1024,
   /** Largest file whose text is kept for a line diff. */
@@ -268,6 +268,7 @@ export type FinalReviewReason = z.infer<typeof finalReviewReasonSchema>;
  * not aligned.
  */
 export const finalReviewSchema = z.object({
+  modelBudget: z.object({ maximum: z.number().nonnegative(), charged: z.number().nonnegative(), reserved: z.number().nonnegative(), finalReserve: z.number().nonnegative() }).optional(),
   status: finalReviewStatusSchema,
   reasons: z.array(finalReviewReasonSchema).max(16),
   reviewedAt: timestampSchema,

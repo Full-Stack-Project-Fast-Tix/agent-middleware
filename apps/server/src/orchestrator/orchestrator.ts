@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { ModelTokenBudget } from "../model-token-budget.js";
 import {
   canTransitionExecution,
   canTransitionRun,
@@ -116,6 +117,7 @@ class ExecutionStoppedError extends Error {
 }
 
 interface RunState {
+  budget: ModelTokenBudget;
   runId: string;
   workspaceId: string;
   cancelRequested: boolean;
@@ -253,6 +255,7 @@ export class Orchestrator {
     this.workspaces.set(run.id, run.workspaceId);
 
     const state: RunState = {
+      budget: new ModelTokenBudget(this.limits.maxRunTokens, this.finalDiffReviewer !== undefined),
       runId: run.id,
       workspaceId: run.workspaceId,
       cancelRequested: false,
@@ -432,6 +435,7 @@ export class Orchestrator {
 
       const continuityContext = await this.continuityContext(run);
       const plan = await this.planner.plan({
+        budget: state.budget,
         userPrompt: run.userPrompt,
         ...(continuityContext === undefined ? {} : { continuityContext }),
         agents: assignable.map(({ id, name, description }) => ({ id, name, description })),
@@ -604,6 +608,7 @@ export class Orchestrator {
     }
     try {
       return await this.finalDiffReviewer.review({
+        budget: state.budget,
         run,
         diff,
         approvals: await this.store.listApprovals(run.id),
@@ -619,6 +624,7 @@ export class Orchestrator {
   }
 
   private async finish(state: RunState, run: Run, review: FinalReviewOutcome | null): Promise<void> {
+    if (review !== null) review = { ...review, modelBudget: state.budget.snapshot() };
     const tasks = await this.store.listTasks(run.id);
     const failed = tasks.filter((task) => task.status === "failed");
     if (failed.length > 0 || review === null) {
@@ -626,7 +632,7 @@ export class Orchestrator {
       const detail = first === undefined ? "no error recorded" : `"${first.title}": ${first.error ?? "no error recorded"}`;
       await this.moveRun(run.id, "failed", {
         error: failed.length <= 1 ? `Task ${detail}` : `${failed.length} tasks failed. First: ${detail}`,
-        finalReview: this.notRun("run_failed"),
+        finalReview: { ...this.notRun("run_failed"), modelBudget: state.budget.snapshot() },
         completedAt: this.now(),
       });
       return;
@@ -754,6 +760,7 @@ export class Orchestrator {
       const { inputs, withheld } = await this.handOff(launch, run, task);
       const continuityContext = await this.continuityContext(run);
       const outcome = await this.runtime.execute({
+        budget: state.budget,
         run,
         task,
         execution: launch.execution,
@@ -918,7 +925,7 @@ export class Orchestrator {
         taskId: task.id,
         executionId: created.id,
         agentId,
-      });
+      }, state.budget);
       const grants = state.vaultGrantsByAgent[agentId] ?? [];
       guard.seedVaultGrants?.(grants.map((grant) => ({ value: grant.value, allowedHosts: grant.allowedHosts })));
     } catch (error) {
@@ -1456,8 +1463,8 @@ function safeDetailsOf(action: ProposedAction): JsonObject {
 }
 
 /** Approval excerpt bounds: enough to judge a typical edit, small enough for every list that shows approvals. */
-const APPROVAL_EXCERPT_CHARS = 4_000;
-const APPROVAL_TOTAL_EXCERPT_CHARS = 12_000;
+const APPROVAL_EXCERPT_CHARS = 32_000;
+const APPROVAL_TOTAL_EXCERPT_CHARS = 128_000;
 
 /**
  * What an approver sees, and what the final review later matches actual

@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { ModelTokenBudget } from "../../src/model-token-budget.js";
 import { parseEnv } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
 import { describeClaudeError, refusalMessage, servedBlocks, structuredText, tokenUseOf } from "../../src/anthropic-client.js";
@@ -33,6 +34,11 @@ async function planner(turns: MockTurn[], timeoutMs = 5_000) {
 }
 
 describe("ClaudePlanner", () => {
+  it("refuses a planner call before HTTP when the shared Run budget cannot cover it", async () => {
+    const model = await planner([]);
+    await expect(model.plan({ ...PLAN_REQUEST, budget: new ModelTokenBudget(1_000) })).rejects.toThrow("token budget");
+    expect(mock!.requests).toHaveLength(0);
+  });
   it("returns a schema-valid plan, asking for structured output and an explicit effort", async () => {
     const plan = await (await planner([{ content: [thinking("planning"), text(JSON.stringify(SIGNUP_PLAN))], stop_reason: "end_turn" }])).plan(PLAN_REQUEST);
 
@@ -107,6 +113,16 @@ async function monitor(turns: MockTurn[], timeoutMs = 5_000) {
 }
 
 describe("ClaudeSemanticIntentMonitor", () => {
+  it("uses the reserved capacity only for a final-review call", async () => {
+    const model = await monitor([{ content: [text(JSON.stringify(ASSESSMENT))], stop_reason: "end_turn" }]);
+    const budget = new ModelTokenBudget(30_000);
+    await expect(model.assess(INPUT, { budget })).rejects.toThrow("token budget");
+    expect(mock!.requests).toHaveLength(0);
+    await expect(model.assess({ ...INPUT, checkpoint: "final_diff" }, { budget, finalReview: true })).resolves.toMatchObject({ classification: "aligned" });
+    expect(mock!.requests).toHaveLength(1);
+    expect(budget.snapshot().reserved).toBe(0);
+    expect(budget.snapshot().charged).toBeGreaterThan(0);
+  });
   it("returns a valid assessment from a redacted, tool-less call", async () => {
     const assessment = await (await monitor([{ content: [text(JSON.stringify(ASSESSMENT))], stop_reason: "end_turn" }])).assess(INPUT);
 

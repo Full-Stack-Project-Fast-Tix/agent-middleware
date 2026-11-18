@@ -97,7 +97,7 @@ export class DefaultSecurityMiddleware implements SecurityMiddleware {
     };
   }
 
-  async openExecution(input: SecurityContext): Promise<ExecutionGuard> {
+  async openExecution(input: SecurityContext, budget?: import("./model-token-budget.js").ModelTokenBudget): Promise<ExecutionGuard> {
     const context = securityContextSchema.parse(input);
     const [facts, policy, rawAgent] = await Promise.all([
       this.options.source.getExecutionFacts(context),
@@ -125,7 +125,7 @@ export class DefaultSecurityMiddleware implements SecurityMiddleware {
     const runTaint = this.getRunTaint(context.workspaceId, context.runId);
     runTaint.activeExecutions += 1;
     const semantic = this.options.semanticMonitor
-      ? new IntentController(this.options.semanticMonitor, {
+      ? new IntentController({ assess: (input, options) => this.options.semanticMonitor!.assess(input, { ...options, ...(budget === undefined ? {} : { budget }) }) }, {
           // Only the original user request is trusted task authority.
           userPrompt: facts.userPrompt,
           agentInstructions: facts.agentInstructions,

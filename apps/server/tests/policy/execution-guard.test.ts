@@ -987,7 +987,7 @@ describe("ExecutionGuard context handoffs", () => {
       actionId: "oversized-handoff",
       fromTaskId: TASK_ID,
       toTaskId: NEXT_TASK_ID,
-      content: "ordinary handoff text. ".repeat(2_500),
+      content: "ordinary handoff text. ".repeat(10_000),
     });
 
     expect(monitorCalled).toBe(false);
@@ -1036,6 +1036,34 @@ describe("ExecutionGuard context handoffs", () => {
 });
 
 describe("ExecutionGuard actions that always ask a person", () => {
+  it.each([
+    ["approved", "allow"], ["denied", "block"], ["timed_out", "block"],
+  ] as const)("repeatable destructive-action matrix: %s", async (answer, expected) => {
+    for (let repeat = 0; repeat < 2; repeat += 1) {
+      const guard = await openGuard();
+      expect(await guard.evaluate({ type: "command", actionId: "delete", command: "rm -rf dist", cwd: "/workspace" }))
+        .toMatchObject({ outcome: "require_approval", approvalReason: "high_consequence" });
+      expect(await guard.recordApprovalOutcome("delete", answer)).toMatchObject({ outcome: expected });
+      await expect(guard.recordApprovalOutcome("delete", answer)).rejects.toThrow("No pending");
+      await guard.close();
+    }
+  });
+
+  it.each([
+    ["granted host", true, "api.example.test", "allow"],
+    ["wrong host", true, "other.example.test", "block"],
+    ["no grant", false, "api.example.test", "block"],
+  ] as const)("repeatable vault destination matrix: %s", async (_name, grant, host, expected) => {
+    for (let repeat = 0; repeat < 2; repeat += 1) {
+      const guard = await openGuard();
+      if (grant) guard.seedVaultGrants?.([{ value: "synthetic-test-value", allowedHosts: ["api.example.test"] }]);
+      const decision = await guard.evaluate({ type: "command", actionId: "vault", command: `agentguard-vault request --secret TEST_TOKEN --method GET --url https://${host}/v1`, cwd: "/workspace" });
+      expect(decision.outcome).toBe(expected);
+      if (expected === "block") expect(decision.findings.map((finding) => finding.code)).toContain("vault-destination-denied");
+      expect(JSON.stringify(decision)).not.toContain("synthetic-test-value");
+      await guard.close();
+    }
+  });
   it("holds a high-consequence command even with no semantic monitor", async () => {
     const guard = await openGuard();
     const decision = await guard.evaluate({ type: "command", actionId: "push", command: "git push origin main", cwd: null });

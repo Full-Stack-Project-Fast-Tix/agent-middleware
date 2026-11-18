@@ -160,16 +160,13 @@ describe("action review evidence coverage", () => {
     }
   });
 
-  it("holds for a person, without a model call, when a proposal has more parts than one review covers", async () => {
+  it("batches a proposal with more parts than one call covers", async () => {
     const { monitor, seen } = itemizingMonitor(null);
     const command = Array.from({ length: 30 }, (_, index) => `touch file-${index}`).join("; ");
     const result = await new IntentController(monitor, task).reviewAction([], { type: "command", seq: 3, itemId: "c", command });
-    expect(seen).toHaveLength(0);
-    expect(result).toMatchObject({
-      decision: "human_review",
-      humanReviewReason: "semantic_unavailable",
-      finding: { code: "semantic-review-incomplete", metadata: { effects: 30, maxEffects: 24 } },
-    });
+    expect(seen).toHaveLength(2);
+    expect(seen.flatMap((input) => input.proposedEffects ?? [])).toHaveLength(30);
+    expect(result.decision).toBe("allow");
   });
 
   it("keeps a heredoc body with its command rather than splitting it into clauses", async () => {
@@ -181,6 +178,23 @@ describe("action review evidence coverage", () => {
     expect(summaries()).toHaveLength(2);
     expect(summaries()[0]).toContain("line 39;");
     expect(summaries()[1]).toMatch(/npm test$/);
+  });
+
+  it("keeps a late conflict in a second action-review batch", async () => {
+    const { monitor, seen } = itemizingMonitor("release-notes", 0.8);
+    const command = [...Array.from({ length: 30 }, (_, i) => `touch file-${i}`), "touch release-notes"].join("; ");
+    const result = await new IntentController(monitor, task).reviewAction([], { type: "command", seq: 1, itemId: "batched", command });
+    expect(seen).toHaveLength(2);
+    expect(result.decision).toBe("decline");
+  });
+
+  it("allows an aligned 60 KB edit after assessing every part in bounded calls", async () => {
+    const { monitor, seen } = itemizingMonitor(null);
+    const result = await new IntentController(monitor, task).reviewAction([], {
+      type: "file_change", seq: 1, itemId: "large", changes: [{ path: "big.js", kind: "add", diff: "+" + "x".repeat(60_000) }],
+    });
+    expect(seen.length).toBeGreaterThan(1);
+    expect(result.decision).toBe("allow");
   });
 
   it("reviews every part of a long file change and keeps a conflict found only in a late part", async () => {
@@ -209,7 +223,7 @@ describe("action review evidence coverage", () => {
 
   it("holds an edit too large to review within the input limit", async () => {
     const { monitor, seen } = itemizingMonitor(null);
-    const diff = "+" + "x".repeat(60_000);
+    const diff = "+" + "x".repeat(200_000);
     const result = await new IntentController(monitor, task).reviewAction([], {
       type: "file_change", seq: 1, itemId: "f", changes: [{ path: "big.js", kind: "add", diff }],
     });

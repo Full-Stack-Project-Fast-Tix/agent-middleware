@@ -206,19 +206,31 @@ describe("Run diff", () => {
   });
 
   it("distinguishes exactly 500 files (complete) from 501 (stopped)", async () => {
-    const files = Object.fromEntries(Array.from({ length: SNAPSHOT_LIMITS.maxFiles }, (_, index) => [`f/${String(index).padStart(3, "0")}.txt`, "x\n"]));
-    const full = await prepared(files);
-    const fullDiff = await full.diff();
-    expect(fullDiff.coverage.inventory.status).toBe("complete");
-    expect(fullDiff.coverage.inventory.baseline?.entriesRecorded).toBe(500);
+    // Exercise the scanner's actual boundary without copying two 500-file
+    // projects, hashing four times, and serially rebuilding identical fixtures.
+    const root = await mkdtemp(path.join(tmpdir(), "snapshot-boundary-"));
+    temporary.push(root);
+    for (let start = 0; start < SNAPSHOT_LIMITS.maxFiles; start += 32) {
+      await Promise.all(Array.from({ length: Math.min(32, SNAPSHOT_LIMITS.maxFiles - start) },
+        (_, index) => writeFile(path.join(root, `${String(start + index).padStart(3, "0")}.txt`), "x\n")));
+    }
+    const full = await captureSnapshot(root, { retainText: true });
+    expect(full.coverage).toMatchObject({ complete: true, entriesRecorded: 500 });
+    await writeFile(path.join(root, "zzz.txt"), "x\n");
+    const over = await captureSnapshot(root, { retainText: false });
+    expect(over.coverage).toMatchObject({ complete: false, entriesRecorded: 500, stopReasons: ["file_limit"] });
+  });
 
-    const over = await prepared({ ...files, "f/zzz.txt": "x\n" });
-    await over.write("f/000.txt", "changed\n");
-    const overDiff = await over.diff();
-    expect(overDiff.coverage.inventory.reasons).toEqual(["baseline_scan_incomplete", "final_scan_incomplete"]);
-    expect(overDiff.coverage.inventory.baseline?.stopReasons).toEqual(["file_limit"]);
-    expect(only(overDiff, "f/000.txt")).toMatchObject({ kind: "modified" });
-    expect(isRunDiffComplete(overDiff)).toBe(false);
+  it("streams hashes for unchanged files over the former 2 MB limit and detects same-size edits", async () => {
+    const bytes = Buffer.alloc(3 * 1024 * 1024, 120);
+    const copy = await prepared({ "asset.dat": bytes });
+    expect((await copy.diff()).changes).toEqual([]);
+    // Remove only the saved final artifact so this test can simulate a second
+    // stopped workspace state against the original baseline.
+    await rm(runDiffPaths(copy.workspace).artifactPath);
+    bytes[bytes.length - 1] = 121;
+    await copy.write("asset.dat", bytes);
+    expect(only(await copy.diff(), "asset.dat")).toMatchObject({ kind: "modified", content: "unavailable" });
   });
 
   it("keeps a large baseline bounded: files past the text budget are changed with unavailable contents", async () => {

@@ -9,6 +9,7 @@ import type {
 import type { Finding } from "./checks.js";
 import type { TraceRecord } from "./trace.js";
 import type { TurnSecurityPolicy } from "./turn-security-policy.js";
+import type { ModelTokenBudget } from "./model-token-budget.js";
 
 // The security middleware as the orchestrator (P2) and runtime see it. P1
 // implements it around the existing guards; P2 calls it. The data shapes are in
@@ -43,7 +44,7 @@ export interface SecurityMiddleware {
    * strike counts, denied actions), and run-level state such as tainted values,
    * so a secret seen by one agent is still caught after it reaches another.
    */
-  openExecution(context: SecurityContext): Promise<ExecutionGuard>;
+  openExecution(context: SecurityContext, budget?: ModelTokenBudget): Promise<ExecutionGuard>;
 }
 
 export interface ExecutionGuard {

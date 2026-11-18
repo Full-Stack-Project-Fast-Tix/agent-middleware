@@ -98,6 +98,7 @@ export async function captureSnapshot(root: string, options: SnapshotOptions): P
   let hashedBytes = 0;
   let textBytes = 0;
   let unreadableDirectories = 0;
+  const pending: Promise<void>[] = [];
 
   walk: while (queue.length > 0) {
     const current = queue.shift()!;
@@ -157,28 +158,37 @@ export async function captureSnapshot(root: string, options: SnapshotOptions): P
         break walk;
       }
       recorded += 1;
-      const bytes = await readRegularFile(absolute, limits.maxHashFileBytes);
-      if (bytes === null) {
-        entries[relative] = { type: "file", size: info.size, hash: null, content: "unreadable" };
-        continue;
-      }
-      hashedBytes += bytes.length;
-      const entry: SnapshotEntry = { type: "file", size: bytes.length, hash: sha256(bytes), content: "text" };
-      if (isCredentialPath(relative)) entry.content = "credential_withheld";
-      else if (bytes.includes(0)) entry.content = "binary";
-      else if (bytes.length > limits.maxTextFileBytes) entry.content = "text_too_large";
-      else if (options.retainText) {
-        if (textBytes + bytes.length <= limits.maxBaselineTextBytes) {
-          textBytes += bytes.length;
-          entry.text = redactSensitiveText(bytes.toString("utf8"));
-        } else {
-          entry.content = "text_not_retained";
+      // Reserve budgets in scan order before concurrent I/O. Failed reads keep
+      // their reservation, so concurrency can never exceed the scan's bound.
+      hashedBytes += info.size;
+      const keepText = options.retainText && info.size <= limits.maxTextFileBytes && textBytes + info.size <= limits.maxBaselineTextBytes;
+      if (keepText) textBytes += info.size;
+      entries[relative] = { type: "file", size: info.size, hash: null, content: "unreadable" };
+      pending.push((async () => {
+        const hashed = await hashRegularFile(absolute, Math.min(info.size, limits.maxHashFileBytes), limits.maxTextFileBytes);
+        if (hashed === null) {
+          entries[relative] = { type: "file", size: info.size, hash: null, content: "unreadable" };
+          return;
         }
-      }
-      entries[relative] = entry;
+        const bytes = hashed.bytes;
+        const entry: SnapshotEntry = { type: "file", size: hashed.size, hash: hashed.hash, content: "text" };
+        if (isCredentialPath(relative)) entry.content = "credential_withheld";
+        else if (bytes === null) entry.content = "text_too_large";
+        else if (bytes.includes(0)) entry.content = "binary";
+        else if (options.retainText) {
+          if (keepText) {
+            entry.text = redactSensitiveText(bytes.toString("utf8"));
+          } else {
+            entry.content = "text_not_retained";
+          }
+        }
+        entries[relative] = entry;
+      })());
+      if (pending.length === 8) { await Promise.all(pending); pending.length = 0; }
     }
   }
 
+  await Promise.all(pending);
   const coverage: SnapshotCoverage = {
     complete: stops.size === 0,
     stopReasons: [...stops].sort(),
@@ -191,6 +201,38 @@ export async function captureSnapshot(root: string, options: SnapshotOptions): P
     coverage,
     entries,
   };
+}
+
+/** Stream hashes with constant memory; retain bytes only for displayable text.
+ * Reject files that change during reading, short reads, and reads over five seconds.
+ */
+async function hashRegularFile(absolute: string, maximum: number, retainMaximum: number) {
+  const handle = await open(absolute, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0)).catch(() => null);
+  if (handle === null) return null;
+  try {
+    const before = await handle.stat();
+    if (!before.isFile() || before.size > maximum) return null;
+    const hash = createHash("sha256");
+    const retained = before.size <= retainMaximum ? Buffer.alloc(before.size) : null;
+    const chunk = Buffer.alloc(Math.min(64 * 1024, Math.max(1, before.size)));
+    const deadline = Date.now() + 5_000;
+    let offset = 0;
+    while (offset < before.size) {
+      if (Date.now() > deadline) return null;
+      const { bytesRead } = await handle.read(chunk, 0, Math.min(chunk.length, before.size - offset), offset);
+      if (bytesRead === 0) return null;
+      hash.update(chunk.subarray(0, bytesRead));
+      if (retained !== null) chunk.copy(retained, offset, 0, bytesRead);
+      offset += bytesRead;
+    }
+    const after = await handle.stat();
+    if (after.size !== before.size || after.mtimeMs !== before.mtimeMs || after.ctimeMs !== before.ctimeMs) return null;
+    return { hash: hash.digest("hex"), size: before.size, bytes: retained };
+  } catch {
+    return null;
+  } finally {
+    await handle.close().catch(() => undefined);
+  }
 }
 
 async function linkEntry(absolute: string): Promise<SnapshotEntry> {

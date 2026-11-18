@@ -46,6 +46,7 @@ export function RunReceipt({ run, tasks, executions, approvals, findings, diff, 
         {reviewFinding !== undefined && <p className="meta">Recorded as finding {reviewFinding.code}, severity {reviewFinding.severity}.</p>}
       </div>
       <div className="cluster meta">
+        {review?.modelBudget !== undefined && <span>Run model budget: {review.modelBudget.charged.toLocaleString()} / {review.modelBudget.maximum.toLocaleString()} tokens charged (includes conservative charges for calls without usage)</span>}
         <span>{changesSummary(diff)}</span>
         {review !== null && (
           <span>{review.coverage.actions === 1 ? "1 gated action" : `${review.coverage.actions} gated actions`} given to the review{review.coverage.actionLedgerComplete ? "" : ", record incomplete"}</span>
