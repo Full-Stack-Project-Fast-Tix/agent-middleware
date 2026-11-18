@@ -12,12 +12,17 @@ import type { TraceRecord } from "./trace.js";
 import type { HumanApprovalReason } from "./types.js";
 import { TrajectoryState } from "./trajectory-state.js";
 import { isKnownSafeRead } from "./read-only-command.js";
+import { splitAtLines } from "./text-parts.js";
 
 export const SEMANTIC_ACTION_REVIEW_RISK = 0.5;
 export const SEMANTIC_ACTION_BLOCK_RISK = 0.75;
 export const SEMANTIC_REASONING_STEER_RISK = 0.6;
 const MAX_SEMANTIC_INPUT_CHARS = 48_000;
 const REASONING_ITEMS_BETWEEN_REVIEWS = 3;
+/** Effects one action review itemizes; the monitor returns one assessment per effect. */
+export const MAX_ACTION_EFFECTS = 24;
+/** Characters of proposal text in one effect; longer text is split into parts, none dropped. */
+export const MAX_ACTION_EFFECT_CHARS = 2_000;
 
 export type IntentDecision = "allow" | "steer" | "decline" | "interrupt" | "human_review";
 
@@ -116,13 +121,18 @@ export class IntentController {
       return neutralFinding();
     }
 
+    // Every part of the proposal is itemized, or a person decides: a part the
+    // reviewer never saw must not ride through on an aligned verdict.
+    const plan = proposedEffectsFor(action);
+    if (!plan.complete) return incompleteEvidence(action, plan.effects.length, this.state.trustedTask.userPrompt);
+
     try {
       const intentEvidence = this.state.intentEvidenceForNextAction();
-      const monitorInput = this.state.monitorInput(action.type, false, action);
-      monitorInput.proposedEffects = proposedEffectsFor(action);
-      const assessment = await this.monitor.assess(
+      const monitorInput = this.state.monitorInput(action.type, false, compactProposedAction(action));
+      monitorInput.proposedEffects = plan.effects;
+      const assessment = rollUpEffects(plan.effects.length, await this.monitor.assess(
         boundedMonitorInput(monitorInput),
-      );
+      ));
       this.reasoningReviewUnavailable = false;
       this.state.recordAssessment(assessment);
       const block =
@@ -178,52 +188,151 @@ function boundedMonitorInput(input: Parameters<SemanticIntentMonitor["assess"]>[
   return redacted;
 }
 
-function proposedEffectsFor(action: SemanticProposedAction): SemanticProposedEffect[] {
+interface ReviewUnit {
+  id: string;
+  kind: SemanticProposedEffect["kind"];
+  label: string;
+  text: string;
+}
+
+/**
+ * The proposal as separately reviewable effects: each shell clause (a heredoc
+ * stays with its command), each changed file, a handoff's content, or a
+ * delegation. Text longer than one effect is split into parts at line ends, so
+ * every character is in exactly one effect. `complete` is false when that takes
+ * more effects than one review itemizes.
+ */
+export function proposedEffectsFor(action: SemanticProposedAction): { effects: SemanticProposedEffect[]; complete: boolean } {
+  const units: ReviewUnit[] = [];
+  switch (action.type) {
+    case "command": {
+      const clauses = splitShellEffects(action.command);
+      clauses.forEach((clause, index) => units.push({
+        id: `C${index + 1}`,
+        kind: "command",
+        label: `shell clause ${index + 1} of ${clauses.length}` + (clause.separator === null ? "" : ` (after ${JSON.stringify(clause.separator)})`),
+        text: clause.text,
+      }));
+      break;
+    }
+    case "file_change":
+      action.changes.forEach((change, index) => units.push({
+        id: `F${index + 1}`,
+        kind: "file_change",
+        label: `${change.kind} ${change.path}`,
+        text: change.diff,
+      }));
+      break;
+    case "context_handoff":
+      units.push({ id: "H1", kind: "context_handoff", label: "handoff content", text: action.content });
+      break;
+    case "delegation":
+      units.push({ id: "D1", kind: "delegation", label: "delegated task", text: action.title + "\n" + action.objective });
+      break;
+  }
+  const effects: SemanticProposedEffect[] = [];
+  for (const unit of units) {
+    const parts = splitAtLines(unit.text, MAX_ACTION_EFFECT_CHARS);
+    parts.forEach((part, index) => {
+      const id = parts.length === 1 ? unit.id : `${unit.id}.P${index + 1}`;
+      const note = parts.length === 1 ? "" : ` (part ${index + 1} of ${parts.length})`;
+      effects.push({ index: effects.length, kind: unit.kind, summary: `[${id}] ${unit.label}${note}\n${part}` });
+    });
+  }
+  return { effects, complete: effects.length <= MAX_ACTION_EFFECTS };
+}
+
+/**
+ * The proposed action with its bulky text replaced by pointers to the effects
+ * that carry it in full, so the same text is not sent twice.
+ */
+function compactProposedAction(action: SemanticProposedAction): SemanticProposedAction {
+  const pointer = (what: string) => `[complete text is in proposedEffects ${what}]`;
   switch (action.type) {
     case "command":
-      return splitShellEffects(action.command).map((summary, index) => ({
-        index,
-        kind: "command" as const,
-        summary,
-      }));
+      return action.command.length <= MAX_ACTION_EFFECT_CHARS ? action : { ...action, command: pointer("C1 onwards") };
     case "file_change":
-      if (action.changes.length <= 24) {
-        return action.changes.map((change, index) => ({
-          index,
-          kind: "file_change" as const,
-          summary: change.kind + " " + change.path + "\n" + change.diff.slice(0, 1_200),
-        }));
-      }
-      return [
-        ...action.changes.slice(0, 23).map((change, index) => ({
-          index,
-          kind: "file_change" as const,
-          summary: change.kind + " " + change.path + "\n" + change.diff.slice(0, 1_200),
-        })),
-        {
-          index: 23,
-          kind: "file_change",
-          summary: "Remaining file changes: " + action.changes.slice(23).map(({ kind, path }) => kind + " " + path).join(", "),
-        },
-      ];
+      return {
+        ...action,
+        changes: action.changes.map((change, index) => change.diff.length <= 400 ? change : { ...change, diff: pointer(`F${index + 1}`) }),
+      };
     case "context_handoff":
-      return [{ index: 0, kind: "context_handoff", summary: action.content.slice(0, 2_000) }];
+      return action.content.length <= 400 ? action : { ...action, content: pointer("H1") };
     case "delegation":
-      return [{
-        index: 0,
-        kind: "delegation",
-        summary: (action.title + "\n" + action.objective).slice(0, 2_000),
-      }];
+      return action.objective.length <= 400 ? action : { ...action, objective: pointer("D1") };
   }
 }
 
-/** Split common top-level shell clauses without splitting quoted text or substitutions. */
-function splitShellEffects(command: string): string[] {
-  const pieces: string[] = [];
+/**
+ * Hold for a person when the proposal cannot be itemized in one review. This is
+ * the same fail-closed path as an unavailable review.
+ */
+function incompleteEvidence(action: SemanticProposedAction, parts: number, originalUserTask: string): IntentControllerResult {
+  const steer = steeringPrompt(originalUserTask, "scope_expansion", true);
+  return {
+    decision: "human_review",
+    humanReviewReason: "semantic_unavailable",
+    steer,
+    finding: {
+      check: "semantic-intent",
+      code: "semantic-review-incomplete",
+      severity: "warn",
+      seq: action.seq,
+      evidence: [action.seq],
+      message: `Semantic review could not cover this ${action.type.replace("_", " ")}: it has ${parts} separately reviewable parts and one review covers at most ${MAX_ACTION_EFFECTS}, so a person decides.`,
+      steer,
+      metadata: { checkpoint: action.type, controllerDecision: "human_review", required: true, effects: parts, maxEffects: MAX_ACTION_EFFECTS },
+    },
+  };
+}
+
+/**
+ * Check the itemized result and keep the worst conflicting effect. A monitor
+ * that itemizes must assess every effect exactly once; one that does not
+ * itemize at all (an older stand-in) is taken at its overall verdict.
+ */
+function rollUpEffects(expected: number, assessment: SemanticAssessment): SemanticAssessment {
+  const items = assessment.effectAssessments;
+  if (items === undefined) return assessment;
+  const indexes = new Set(items.map((item) => item.index));
+  if (items.length !== expected || indexes.size !== expected || [...indexes].some((index) => index < 0 || index >= expected)) {
+    throw new Error("semantic review did not assess every proposed effect exactly once");
+  }
+  const conflicting = items.filter((item) => item.conflictsWithTask);
+  if (conflicting.length === 0) return assessment;
+  const worst = conflicting.reduce((highest, item) => (item.riskScore > highest.riskScore ? item : highest));
+  return {
+    ...assessment,
+    conflictsWithTask: true,
+    riskScore: Math.max(assessment.conflictsWithTask ? assessment.riskScore : 0, worst.riskScore),
+    classification: assessment.conflictsWithTask && assessment.classification !== "aligned" && assessment.classification !== "uncertain"
+      ? assessment.classification
+      : worst.classification,
+  };
+}
+
+/**
+ * Split top-level shell clauses at `&&`, `||`, `;`, `|` and newlines, without
+ * splitting quoted text, substitutions, or a heredoc's body, which stays with
+ * the command that reads it. Nothing is clipped or merged.
+ */
+export function splitShellEffects(command: string): Array<{ text: string; separator: string | null }> {
+  const pieces: Array<{ text: string; separator: string | null }> = [];
   let start = 0;
   let quote: "'" | "\"" | null = null;
   let escaped = false;
   let depth = 0;
+  let separatorBefore: string | null = null;
+  let heredocs: Array<{ delimiter: string; stripTabs: boolean }> = [];
+  const close = (end: number, separator: string | null) => {
+    const text = command.slice(start, end).trim();
+    if (text !== "") {
+      pieces.push({ text, separator: separatorBefore });
+      separatorBefore = separator;
+    } else if (separator !== null && separatorBefore === null) {
+      separatorBefore = separator;
+    }
+  };
   for (let index = 0; index < command.length; index += 1) {
     const char = command[index]!;
     if (escaped) { escaped = false; continue; }
@@ -236,22 +345,43 @@ function splitShellEffects(command: string): string[] {
     if (char === "(") { depth += 1; continue; }
     if (char === ")" && depth > 0) { depth -= 1; continue; }
     if (depth > 0) continue;
-    const separatorLength =
-      (char === "&" && command[index + 1] === "&") ||
-      (char === "|" && command[index + 1] === "|") ? 2
-      : char === ";" || char === "|" || char === "\n" ? 1 : 0;
-    if (separatorLength === 0) continue;
-    const piece = command.slice(start, index).trim();
-    if (piece !== "") pieces.push(piece);
-    index += separatorLength - 1;
+    if (char === "<" && command[index + 1] === "<" && command[index + 2] !== "<") {
+      const match = /^<<(-?)[ \t]*(['"]?)([A-Za-z_][A-Za-z0-9_]*)\2/.exec(command.slice(index));
+      if (match !== null) {
+        heredocs.push({ delimiter: match[3]!, stripTabs: match[1] === "-" });
+        index += match[0].length - 1;
+        continue;
+      }
+    }
+    if (char === "\n" && heredocs.length > 0) {
+      // The bodies follow this newline, each up to its terminator line.
+      let cursor = index + 1;
+      for (const heredoc of heredocs) {
+        while (cursor < command.length) {
+          const lineEnd = command.indexOf("\n", cursor);
+          const end = lineEnd === -1 ? command.length : lineEnd;
+          const line = command.slice(cursor, end);
+          cursor = lineEnd === -1 ? command.length : end + 1;
+          if ((heredoc.stripTabs ? line.replace(/^\t+/, "") : line) === heredoc.delimiter) break;
+        }
+      }
+      heredocs = [];
+      close(cursor, "\n");
+      start = cursor;
+      index = cursor - 1;
+      continue;
+    }
+    const separator =
+      char === "&" && command[index + 1] === "&" ? "&&"
+      : char === "|" && command[index + 1] === "|" ? "||"
+      : char === ";" || char === "|" || char === "\n" ? char : null;
+    if (separator === null) continue;
+    close(index, separator);
+    index += separator.length - 1;
     start = index + 1;
   }
-  const tail = command.slice(start).trim();
-  if (tail !== "") pieces.push(tail);
-  const bounded = pieces.length > 23
-    ? [...pieces.slice(0, 23), "Additional clauses: " + pieces.slice(23).join(" ; ")]
-    : pieces;
-  return (bounded.length === 0 ? [command] : bounded).map((piece) => piece.slice(0, 1_200));
+  close(command.length, null);
+  return pieces.length === 0 ? [{ text: command, separator: null }] : pieces;
 }
 
 /**
