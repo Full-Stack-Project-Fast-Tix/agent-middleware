@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { authHeaders, setAuthToken } from "./api";
+import { authHeaders, followSessionInOtherTabs, setAuthToken } from "./api";
 import { SESSION_NOT_ENDED_NOTICE, signOut } from "./sign-out";
 
 function answer(status: number) {
@@ -31,7 +31,11 @@ describe("signOut", () => {
   it("forgets what this browser kept for the signed-in person", async () => {
     vi.stubGlobal("fetch", answer(204));
     await signOut();
-    expect(removeItem.mock.calls.map(([key]) => key)).toEqual(["agentguard.currentWorkspace", "agentguard.recentRuns"]);
+    expect(removeItem.mock.calls.map(([key]) => key)).toEqual([
+      "agentguard.session",
+      "agentguard.currentWorkspace",
+      "agentguard.recentRuns",
+    ]);
   });
 
   it("treats a session the server no longer knows as ended", async () => {
@@ -48,5 +52,50 @@ describe("signOut", () => {
     expect(await signOut()).toBe(SESSION_NOT_ENDED_NOTICE);
     expect(authHeaders()).toEqual({});
     expect(removeItem).toHaveBeenCalled();
+  });
+});
+
+describe("followSessionInOtherTabs", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  function tab(saved: string | null) {
+    const listeners: ((event: { key: string | null }) => void)[] = [];
+    vi.stubGlobal("window", {
+      localStorage: { getItem: () => saved, setItem: vi.fn(), removeItem: vi.fn() },
+      addEventListener: (_type: string, listener: (event: { key: string | null }) => void) => listeners.push(listener),
+      removeEventListener: vi.fn(),
+    });
+    const reload = vi.fn();
+    followSessionInOtherTabs(reload);
+    return { reload, fire: (key: string | null) => listeners.forEach((listener) => listener({ key })) };
+  }
+
+  it("reloads when another tab signs out", () => {
+    setAuthToken("session-token");
+    const { reload, fire } = tab(null);
+    fire("agentguard.session");
+    expect(reload).toHaveBeenCalledOnce();
+  });
+
+  it("reloads when another tab signs in as someone else", () => {
+    setAuthToken("session-token");
+    const { reload, fire } = tab("other-token");
+    fire("agentguard.session");
+    expect(reload).toHaveBeenCalledOnce();
+  });
+
+  it("reloads when another tab clears all of storage", () => {
+    setAuthToken("session-token");
+    const { reload, fire } = tab(null);
+    fire(null);
+    expect(reload).toHaveBeenCalledOnce();
+  });
+
+  it("ignores other keys and a session it already holds", () => {
+    setAuthToken("session-token");
+    const { reload, fire } = tab("session-token");
+    fire("agentguard.currentWorkspace");
+    fire("agentguard.session");
+    expect(reload).not.toHaveBeenCalled();
   });
 });
