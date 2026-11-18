@@ -8,7 +8,11 @@ import { runsApi } from "./runs-api";
 import { focusTaskId, isRunActive, isWrittenByPlan, pendingApprovals } from "./run-view";
 import { GateTimeline, ProposedFiles } from "./RunTimeline";
 import { RunFiles } from "./RunFiles";
-import type { RunDiffResponse } from "@launchpad/shared";
+import { ActualChanges } from "./ActualChanges";
+import { ApprovalActions, ApprovalEvidenceView } from "./ApprovalEvidence";
+import { approvalEvidence } from "./approval-evidence";
+import { useLatest } from "./latest-request";
+import { RunReceipt } from "./RunReceipt";
 import { ContinueWorkspace } from "./ContinueWorkspace";
 import { TaskDrilldown } from "./TaskDrilldown";
 import { TaskGraph } from "./TaskGraph";
@@ -48,18 +52,24 @@ function semanticReviewCoverage(findings: SecurityFinding[]) {
 export function RunDetail({ runId }: { runId: string }) {
   const { view, error: loadError } = useRun(runId);
   const { workspaces, viewerId } = useCurrentWorkspace();
-  const [agents, setAgents] = useState<ReadonlyMap<string, Agent>>(new Map());
   const [picked, setPicked] = useState<string | null>(null);
   const [resolvingApprovalId, setResolvingApprovalId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [confirmingCancel, setConfirmingCancel] = useState(false);
   const [promptOpen, setPromptOpen] = useState(false);
   const [taskDetailsOpen, setTaskDetailsOpen] = useState(false);
-  const [diff, setDiff] = useState<RunDiffResponse | null>(null);
-  const [diffStatus, setDiffStatus] = useState<"loading" | "ready" | "unavailable">("loading");
-  const workspaceId = view?.run.workspaceId ?? null;
+  // The view may still be the previous Run's for a moment after the route changes.
+  const loaded = view !== null && view.run.id === runId;
+  const workspaceId = loaded ? view.run.workspaceId : null;
   const active = view !== null && isRunActive(view.run.status);
   const timeline = useRunTimeline(runId, active, view?.lastEventSeq ?? 0);
+  // Only once the Run has ended: the server refuses earlier, because the copy can still change.
+  const diff = useLatest(loaded && !active ? runId : null, (id) => runsApi.diff(id));
+  const agentList = useLatest(workspaceId, (id) => runsApi.agents(id));
+  const agents = useMemo<ReadonlyMap<string, Agent>>(
+    () => new Map(agentList.state.status === "ready" ? agentList.state.value.map((agent) => [agent.id, agent]) : []),
+    [agentList.state],
+  );
 
   useEffect(() => {
     setPicked(null);
@@ -71,27 +81,6 @@ export function RunDetail({ runId }: { runId: string }) {
   useEffect(() => {
     announceApprovalsChanged();
   }, [heldHere]);
-
-  useEffect(() => {
-    if (workspaceId === null) return;
-    runsApi
-      .agents(workspaceId)
-      .then((list) => setAgents(new Map(list.map((agent) => [agent.id, agent]))))
-      .catch(() => setAgents(new Map()));
-  }, [workspaceId]);
-
-  useEffect(() => {
-    setDiff(null);
-    if (view === null || isRunActive(view.run.status)) return;
-    setDiffStatus("loading");
-    void runsApi.diff(runId).then((result) => {
-      setDiff(result);
-      setDiffStatus("ready");
-    }).catch(() => {
-      setDiff(null);
-      setDiffStatus("unavailable");
-    });
-  }, [runId, view?.run.status]);
 
   const selectedTask = useMemo(() => {
     if (view === null) return null;
@@ -113,7 +102,7 @@ export function RunDetail({ runId }: { runId: string }) {
     [names, timeline.timeline?.entries],
   );
 
-  if (view === null) {
+  if (view === null || !loaded) {
     return (
       <div className="page">
         {loadError !== null ? (
@@ -220,11 +209,12 @@ export function RunDetail({ runId }: { runId: string }) {
           <ul>
             {waiting.map((approval) => {
               const proposal = proposals.get(approval.id);
+              const evidence = approvalEvidence(approval);
               return (
                 <li key={approval.id}>
                   <div className="held-what">
-                    <span>{approval.summary}</span>
-                    {proposal !== undefined && <Foreign preformatted maxHeight={68}>{proposal}</Foreign>}
+                    <ApprovalEvidenceView approval={approval} evidence={evidence} compact />
+                    {evidence.missing !== null && proposal !== undefined && <Foreign label="From the gate timeline" preformatted maxHeight={68}>{proposal}</Foreign>}
                   </div>
                   <div className="held-actions">
                     {!canAnswer(approval) && (
@@ -232,25 +222,14 @@ export function RunDetail({ runId }: { runId: string }) {
                         {approval.reason === "policy_required" ? "A Security Admin answers this" : "The person who started this run answers this"}
                       </span>
                     )}
-                    {proposal !== undefined && canAnswer(approval) && (
-                      <>
-                        <Button
-                          variant="primary"
-                          aria-label={`Approve: ${approval.summary}`}
-                          busy={resolvingApprovalId === approval.id}
-                          onClick={() => void resolve(approval.id, "approve")}
-                        >
-                          Approve
-                        </Button>
-                        <Button
-                          variant="danger"
-                          aria-label={`Deny: ${approval.summary}`}
-                          disabled={resolvingApprovalId === approval.id}
-                          onClick={() => void resolve(approval.id, "deny")}
-                        >
-                          Deny
-                        </Button>
-                      </>
+                    {canAnswer(approval) && (
+                      <ApprovalActions
+                        approval={approval}
+                        evidence={evidence}
+                        label={approval.summary}
+                        busy={resolvingApprovalId === approval.id}
+                        onAnswer={(decision) => void resolve(approval.id, decision)}
+                      />
                     )}
                     <Button onClick={() => review(approval)}>Review</Button>
                   </div>
@@ -262,28 +241,15 @@ export function RunDetail({ runId }: { runId: string }) {
       )}
 
       {!active && (
-        <section className="page-section run-receipt" aria-labelledby="run-receipt-title">
-          <h2 id="run-receipt-title">Run outcome</h2>
-          <p>{run.status === "completed" ? "Run completed." : run.status === "failed" ? "Run failed." : "Run cancelled."} The agent's report is not independently verified.</p>
-          <div className="cluster meta">
-            <span>{view.tasks.length} tasks</span>
-            <span>{view.executions.length} executions</span>
-            <span>{view.approvals.length} approvals</span>
-            <span>{view.findings.length} findings</span>
-            {(semanticCoverage.intent > 0 || semanticCoverage.action > 0) && (
-              <span title="Reviews of exposed thinking summaries or visible plans, and reviews of proposed commands or file changes">
-                Semantic: {semanticCoverage.intent} intent, {semanticCoverage.action} action reviews
-                {semanticCoverage.withoutIntent > 0 ? ` (${semanticCoverage.withoutIntent} without exposed intent)` : ""}
-              </span>
-            )}
-            <span>{view.executions.reduce((n, item) => n + (item.usage?.inputTokens ?? 0) + (item.usage?.outputTokens ?? 0), 0).toLocaleString()} tokens</span>
-            <span>{run.startedAt && run.completedAt ? `${Math.max(0, Math.round((Date.parse(run.completedAt) - Date.parse(run.startedAt)) / 1000))}s elapsed` : "Duration unavailable"}</span>
-            <span>{diffStatus === "loading" ? "Loading changes" : diffStatus === "unavailable" ? "Change count unavailable" : `${diff?.changedFileCount ?? 0} files changed`}</span>
-          </div>
-          <nav aria-label="Run evidence" className="cluster">
-            <a href="#run-changes">Changes</a><a href="#run-timeline">Timeline</a><a href="#run-tasks">Tasks</a>
-          </nav>
-        </section>
+        <RunReceipt
+          run={run}
+          tasks={view.tasks}
+          executions={view.executions}
+          approvals={view.approvals}
+          findings={view.findings}
+          diff={diff.state}
+          actionReviews={semanticCoverage}
+        />
       )}
 
       <div id="run-tasks">
@@ -342,29 +308,14 @@ export function RunDetail({ runId }: { runId: string }) {
               const approval = view.approvals.find((candidate) => candidate.id === approvalId);
               return approval !== undefined && canAnswer(approval);
             }}
+            canApprove={(approvalId) => {
+              const approval = view.approvals.find((candidate) => candidate.id === approvalId);
+              return approval !== undefined && approvalEvidence(approval).canApprove;
+            }}
             onResolve={(approvalId, decision) => void resolve(approvalId, decision)}
           /></div>
           {timeline.timeline !== null && <ProposedFiles timeline={timeline.timeline} runEnded={!active} />}
-          {!active && (diff !== null || diffStatus === "unavailable") && (
-            <section className="page-section" id="run-changes" aria-labelledby="actual-changes-title">
-              <h2 id="actual-changes-title">Actual file changes</h2>
-              {diffStatus === "unavailable" && <p className="meta">The change summary could not be loaded. Reload the page to try again.</p>}
-              {diff !== null && <>
-              {!diff.baselineAvailable && <p className="meta">No baseline was captured for this run.</p>}
-              {diff.baselineAvailable && diff.changes.length === 0 && <p className="meta">No file changes were detected.</p>}
-              {diff.changes.map((change) => (
-                <details key={change.path}>
-                  <summary><code>{change.path}</code> · {change.kind}</summary>
-                  {change.display === "text" && <pre><code>{change.diff}</code></pre>}
-                  {change.display === "binary" && <p className="meta">Binary file; contents are not shown.</p>}
-                  {change.display === "large" && <p className="meta">File is too large to display here.</p>}
-                  {change.display === "unavailable" && <p className="meta">File contents are unavailable.</p>}
-                </details>
-              ))}
-              {diff.truncated && <p className="meta">The change list is bounded; some files may be omitted.</p>}
-              </>}
-            </section>
-          )}
+          {!active && <ActualChanges diff={diff.state} onRetry={diff.reload} />}
           {mayAct && <RunFiles runId={runId} runEnded={!active} />}
         </div>
 
@@ -381,7 +332,13 @@ export function RunDetail({ runId }: { runId: string }) {
         )}
       </div>
       {!active && mayAct && workspaceId !== null && (
-        <ContinueWorkspace key={run.id} workspaceId={workspaceId} mode={run.orchestrationMode} />
+        <ContinueWorkspace
+          key={run.id}
+          workspaceId={workspaceId}
+          mode={run.orchestrationMode}
+          previousAgentId={run.orchestrationMode === "auto" ? run.supervisorAgentId : view.tasks[0]?.assignedAgentId ?? null}
+          currentRun={{ id: run.id, status: run.status }}
+        />
       )}
     </div>
   );

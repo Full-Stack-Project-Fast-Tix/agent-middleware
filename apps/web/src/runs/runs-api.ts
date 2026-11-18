@@ -26,6 +26,7 @@ import {
   workspacesResponseSchema,
 } from "@launchpad/shared";
 import { ApiError, authHeaders, request } from "../api";
+import { manifestFromHeaders, type ArchiveManifest } from "./run-file-actions";
 
 // The Run API from packages/shared/src/api.ts. Every response is validated
 // against the shared schema, so a server that drifts from the contract fails
@@ -82,9 +83,9 @@ export const runsApi = {
     return { text: await response.text(), redactions: Number.isFinite(redactions) ? redactions : 0 };
   },
 
-  /** What the agents left in the Run's working copy. */
-  files: async (runId: string): Promise<RunFilesResponse["files"]> =>
-    runFilesResponseSchema.parse(await request(apiPaths.runFiles(runId))).files,
+  /** What the agents left in the Run's working copy, and whether the bounded listing stopped early. */
+  files: async (runId: string): Promise<RunFilesResponse> =>
+    runFilesResponseSchema.parse(await request(apiPaths.runFiles(runId))),
 
   file: async (runId: string, filePath: string): Promise<RunFileResponse> =>
     runFileResponseSchema.parse(await request(apiPaths.runFile(runId, filePath))),
@@ -92,13 +93,14 @@ export const runsApi = {
   diff: async (runId: string): Promise<RunDiffResponse> =>
     runDiffResponseSchema.parse(await request(apiPaths.runDiff(runId))),
 
-  archive: async (runId: string): Promise<Blob> => {
+  /** Full bytes of the files the archive includes, and the counts of what it left out. */
+  archive: async (runId: string): Promise<{ blob: Blob; manifest: ArchiveManifest }> => {
     const response = await fetch(apiPaths.runArchive(runId), { headers: authHeaders() });
     if (!response.ok) {
       const { error } = (await response.json().catch(() => ({}))) as { error?: string };
       throw new ApiError(error ?? "The workspace ZIP could not be created", response.status);
     }
-    return response.blob();
+    return { blob: await response.blob(), manifest: manifestFromHeaders(response.headers) };
   },
 
   /** Follow the Run's events until `signal` aborts; reconnects and resyncs on its own. */

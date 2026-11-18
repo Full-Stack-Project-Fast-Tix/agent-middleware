@@ -4,7 +4,9 @@ import { formatWhen, humanize } from "../runs/format";
 import { runsApi } from "../runs/runs-api";
 import { announceApprovalsChanged } from "../runs/useRunList";
 import { Link, paths } from "../router";
-import { approvalBadgeStatus, Button, EmptyState, ErrorState, Foreign, Loading, Select, StatusBadge } from "../ui";
+import { approvalBadgeStatus, Button, EmptyState, ErrorState, ForeignInline, Loading, Select, StatusBadge } from "../ui";
+import { ApprovalActions, ApprovalEvidenceView } from "../runs/ApprovalEvidence";
+import { approvalEvidence } from "../runs/approval-evidence";
 import { useCurrentWorkspace } from "../useCurrentWorkspace";
 import { ChangeError, useChange, usePaged, WorkspacePage } from "./shared";
 import { workspaceApi } from "./workspace-api";
@@ -17,24 +19,20 @@ function ApprovalCard({ approval, canAnswer, onAnswer, busy }: {
   onAnswer: (decision: "approve" | "deny") => void;
   busy: boolean;
 }) {
+  const evidence = approvalEvidence(approval);
   return (
     <li className="config-card">
       <div className="config-card-head">
-        <strong>{approval.summary}</strong>
+        <strong>{humanize(approval.actionType)} held: {humanize(approval.reason)}</strong>
         <StatusBadge status={approvalBadgeStatus(approval.status)} />
       </div>
       <p className="meta">
-        {humanize(approval.actionType)}. {humanize(approval.reason)}. Requested {formatWhen(approval.requestedAt)}.
-        {approval.taskTitle !== null && <> Task: {approval.taskTitle}.</>} <Link to={paths.run(approval.runId)}>Open the run</Link>
+        Requested {formatWhen(approval.requestedAt)}.
+        {approval.taskTitle !== null && <> Task: <ForeignInline>{approval.taskTitle}</ForeignInline>.</>} <Link to={paths.run(approval.runId)}>Open the run</Link>
       </p>
-      {approval.safeDetails !== null && (
-        <Foreign label="What the agent proposed" preformatted maxHeight={160}>{JSON.stringify(approval.safeDetails, null, 2)}</Foreign>
-      )}
+      <ApprovalEvidenceView approval={approval} evidence={evidence} />
       {approval.status === "pending" && (canAnswer ? (
-        <div className="cluster">
-          <Button variant="primary" busy={busy} onClick={() => onAnswer("approve")}>Approve</Button>
-          <Button variant="danger" disabled={busy} onClick={() => onAnswer("deny")}>Deny</Button>
-        </div>
+        <ApprovalActions approval={approval} evidence={evidence} busy={busy} onAnswer={onAnswer} />
       ) : (
         <p className="meta">{approval.reason === "policy_required" ? "A Security Admin answers this." : "The person who started this run answers this."}</p>
       ))}
@@ -55,7 +53,7 @@ function Approvals({ workspace }: { workspace: WorkspaceSummary }) {
 
   return (
     <>
-      <p className="members-readonly">An approval covers this proposed action only. It does not approve the rest of the Run or confirm that the action is safe.</p>
+      <p className="members-readonly">An approval covers this exact proposed action only. It does not approve other or later changes, does not confirm the action is safe, and cannot override a mandatory restriction. Approve stays off when the proposal was not saved.</p>
       <div className="config-filters">
         <Select label="Status" inlineLabel value={status} onChange={setStatus} options={STATUS_OPTIONS} />
       </div>

@@ -4,6 +4,7 @@ import { MessageContent } from "../MessageContent";
 import { approvalBadgeStatus, Button, Foreign } from "../ui";
 import { agentName, formatClock, formatDuration, humanize, SeverityBadge, StatusBadge, TaskName } from "./format";
 import { runsApi } from "./runs-api";
+import { ApprovalActions, ApprovalEvidenceView } from "./ApprovalEvidence";
 import { approvalsOf, executionsOf, findingsOf, isRunActive, isWrittenByPlan, type RunView } from "./run-view";
 
 const CAPABILITIES = ["write", "shell", "network", "delegate"] as const;
@@ -93,28 +94,13 @@ export function TaskDrilldown({
                   <span>{humanize(approval.reason)}</span>
                   <span className="tabular">Requested {formatClock(approval.requestedAt)}</span>
                 </div>
-                {approval.safeDetails !== null && (
-                  <Foreign label="What the agent proposed" preformatted maxHeight={200}>
-                    {JSON.stringify(approval.safeDetails, null, 2)}
-                  </Foreign>
-                )}
+                <ApprovalEvidenceView approval={approval} />
                 {approval.status === "pending" && canAnswer(approval) && (
-                  <div className="cluster">
-                    <Button
-                      variant="primary"
-                      busy={resolvingApprovalId === approval.id}
-                      onClick={() => onResolveApproval(approval, "approve")}
-                    >
-                      Approve
-                    </Button>
-                    <Button
-                      variant="danger"
-                      disabled={resolvingApprovalId === approval.id}
-                      onClick={() => onResolveApproval(approval, "deny")}
-                    >
-                      Deny
-                    </Button>
-                  </div>
+                  <ApprovalActions
+                    approval={approval}
+                    busy={resolvingApprovalId === approval.id}
+                    onAnswer={(decision) => onResolveApproval(approval, decision)}
+                  />
                 )}
               </div>
             ))}

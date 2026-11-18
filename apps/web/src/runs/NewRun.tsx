@@ -6,6 +6,7 @@ import { useCurrentWorkspace } from "../useCurrentWorkspace";
 import { runsApi } from "./runs-api";
 import { WorkspaceVaultPicker } from "./WorkspaceVaultPicker";
 import { workspaceApi } from "../workspace/workspace-api";
+import { agentChoices } from "./agent-choice";
 
 const EXAMPLES = [
   "Add input validation to the checkout endpoint and return 400 on bad input.",
@@ -55,9 +56,14 @@ export function NewRun() {
   }, [workspaceId]);
 
   const usable = agents.filter((agent) => agent.enabled && agent.archivedAt === null);
+  // A supervisor must be able to delegate under its effective policy, not just its profile.
+  const permissionsKnown = !permissionsLoading && permissionsError === null;
+  const choices = agentChoices(agents, mode, permissionsKnown ? permissions : null);
   const delegatingProfileIds = new Set(profiles.filter((profile) => profile.archivedAt === null && profile.capabilities.delegate).map((profile) => profile.id));
-  const defaultSupervisors = usable.filter((agent) => delegatingProfileIds.has(agent.profileId));
-  const selectedAgent = usable.find((agent) => agent.id === agentId) ??
+  const defaultSupervisors = choices.filtered
+    ? choices.agents
+    : usable.filter((agent) => delegatingProfileIds.has(agent.profileId));
+  const selectedAgent = choices.agents.find((agent) => agent.id === agentId) ??
     (mode === "auto" && agentId === "" && defaultSupervisors.length === 1 ? defaultSupervisors[0] : undefined);
   const selectedPermissions = selectedAgent === undefined
     ? undefined
@@ -176,14 +182,23 @@ export function NewRun() {
           label={mode === "auto" ? "Supervisor" : "Agent"}
           value={agentId}
           onChange={setAgentId}
-          disabled={usable.length === 0}
+          disabled={choices.agents.length === 0}
           options={[
             { value: "", label: mode === "auto"
-              ? defaultSupervisors.length === 1 ? `Workspace default · ${defaultSupervisors[0]!.name}` : "Choose a supervisor"
+              ? defaultSupervisors.length === 1 ? `Workspace default: ${defaultSupervisors[0]!.name}` : "Choose a supervisor"
               : "Choose an agent" },
-            ...usable.map((agent) => ({ value: agent.id, label: agent.name, hint: agent.description || undefined })),
+            ...choices.agents.map((agent) => ({ value: agent.id, label: agent.name, hint: agent.description || undefined })),
           ]}
         />
+        {mode === "auto" && choices.filtered && choices.agents.length === 0 && agents.length > 0 && (
+          <p className="notice notice-held">
+            No agent in this workspace may delegate under its effective permissions, so a planned Run cannot start. Choose One agent, or ask a
+            Security Admin to give an agent a profile that can delegate.
+          </p>
+        )}
+        {mode === "auto" && !choices.filtered && !permissionsLoading && (
+          <p className="meta">Effective permissions did not load, so supervisors are not filtered; the server still refuses one that cannot delegate.</p>
+        )}
 
         <section className="permission-preview" aria-live="polite" aria-label="Effective agent permissions">
           <h3>Effective permissions</h3>
@@ -213,6 +228,11 @@ export function NewRun() {
           {workspaceId && <WorkspaceVaultPicker workspaceId={workspaceId} agents={usable} value={vaultGrants} onChange={setVaultGrants} />}
         </section>
 
+        <p className="meta new-run-review-note">
+          When semantic review is on, AgentGuard also reviews the Run's actual changes against this request before it can complete: every
+          changed line of up to 36 changed files. A Run whose changes cannot all be compared or shown to the reviewer (binary, over 2 MB or
+          unreadable files, or more than 36 files) fails closed and does not become the starting point for follow-up Runs.
+        </p>
         <div className="new-run-footer">
           <span>AgentGuard checks commands, file changes and delegations before they run.</span>
           <Button type="submit" variant="primary" page busy={busy} disabled={!workspaceId || !prompt.trim() || selectedAgent === undefined}>

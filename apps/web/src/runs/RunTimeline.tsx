@@ -7,7 +7,7 @@ import { describeEntry, describeFileDecision, fileListLimits, type Names } from 
  * The gate line: what agents proposed on one side, what the middleware decided
  * on the other. Saved rows, not the event stream, so it survives a reload.
  */
-export function GateTimeline({ timeline, error, onRetry, fresh, active, names, selectedTaskId, onSelectTask, resolvingApprovalId, canAnswer, onResolve }: {
+export function GateTimeline({ timeline, error, onRetry, fresh, active, names, selectedTaskId, onSelectTask, resolvingApprovalId, canAnswer, canApprove = () => true, onResolve }: {
   timeline: RunTimelineData | null;
   error: string | null;
   onRetry: () => void;
@@ -18,6 +18,8 @@ export function GateTimeline({ timeline, error, onRetry, fresh, active, names, s
   onSelectTask: (taskId: string) => void;
   resolvingApprovalId: string | null;
   canAnswer: (approvalId: string) => boolean;
+  /** False when the held proposal was not saved: nobody may approve what they cannot see. Deny stays. */
+  canApprove?: (approvalId: string) => boolean;
   onResolve: (approvalId: string, decision: "approve" | "deny") => void;
 }) {
   return (
@@ -86,6 +88,8 @@ export function GateTimeline({ timeline, error, onRetry, fresh, active, names, s
                       <Button
                         variant="primary"
                         busy={resolvingApprovalId === row.heldApprovalId}
+                        disabled={!canApprove(row.heldApprovalId)}
+                        title={canApprove(row.heldApprovalId) ? undefined : "The proposal was not saved, so it cannot be approved. Deny it, or let it time out."}
                         onClick={() => onResolve(row.heldApprovalId!, "approve")}
                       >
                         Approve

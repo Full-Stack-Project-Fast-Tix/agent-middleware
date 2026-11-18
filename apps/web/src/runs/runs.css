@@ -804,3 +804,97 @@
     max-height: none;
   }
 }
+
+/* Final review, inside the Run receipt. The tone colours the edge only; words carry the meaning. */
+.final-review {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-left-width: 3px;
+  border-radius: 0 var(--radius-block) var(--radius-block) 0;
+  background: var(--surface);
+}
+
+.final-review p {
+  margin: 0;
+}
+
+.final-review-headline {
+  font-weight: 600;
+}
+
+.final-review-passed { border-left-color: var(--passed); }
+.final-review-held { border-left-color: var(--held); background: var(--held-tint); }
+.final-review-blocked { border-left-color: var(--blocked); background: var(--blocked-tint); }
+.final-review-neutral { border-left-color: var(--line-strong); }
+
+/* Actual changes: one disclosure per changed entry. */
+.diff-entry {
+  display: grid;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.diff-entry > summary {
+  overflow-wrap: anywhere;
+}
+
+.diff-entry-flag {
+  margin-left: 8px;
+  padding: 1px 6px;
+  border: 1px solid var(--held-line);
+  border-radius: var(--radius-badge);
+  background: var(--held-tint);
+  color: var(--held);
+  font-size: 12.5px;
+}
+
+.diff-entry-uncertain > summary {
+  color: var(--held);
+}
+
+.diff-entry-notes {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--ink-soft);
+  font-size: 13px;
+}
+
+/* What an approver sees before answering. */
+.approval-evidence {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.approval-evidence p {
+  margin: 0;
+}
+
+.approval-evidence-why {
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.approval-evidence-parts {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  min-width: 0;
+}
+
+.approval-evidence-file {
+  overflow-wrap: anywhere;
+}
+
+.approval-actions {
+  flex-wrap: wrap;
+}
+
+.new-run-review-note {
+  margin: 0;
+}
