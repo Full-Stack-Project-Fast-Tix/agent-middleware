@@ -84,7 +84,7 @@ function Folder({ workspace }: { workspace: WorkspaceSummary }) {
     try {
       await workspaceApi.changeSource(workspace.id, input.trim());
       setInput("");
-      setNotice("Folder changed. Your next run here uses it.");
+      setNotice("Folder changed. Your next run here starts fresh from it.");
       await refresh();
     } catch (reason) {
       setChangeError(messageOf(reason));
@@ -115,7 +115,7 @@ function Folder({ workspace }: { workspace: WorkspaceSummary }) {
             <label>New folder on this server<input value={input} onChange={(event) => setInput(event.target.value)} maxLength={4096} placeholder="~/projects/app" autoComplete="off" spellCheck={false} required /></label>
             <Button type="submit" variant="primary" busy={busy} disabled={!input.trim()}>Change folder</Button>
           </form>
-          <p className="meta">The folder must be inside a root the server operator allows. Runs already started keep their own copy.</p>
+          <p className="meta">The folder must be inside a root the server operator allows. The next run starts fresh from the new folder; runs already started keep their own copy.</p>
         </>
       )}
     </section>

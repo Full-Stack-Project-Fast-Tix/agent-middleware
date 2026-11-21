@@ -905,7 +905,9 @@ may also change an existing workspace's folder there
 (`PUT /api/workspaces/:id/source`), under the same `WORKSPACE_SOURCE_ROOTS`
 rule, role checked first, and audited as `workspace.source_changed` with the
 old and new paths. Any member may read the folder (`GET`). Runs already started
-keep their copy; continuation Runs still start from their parent's files. A ZIP
+keep their copy. The next Run starts fresh from the new folder instead of continuing
+from earlier Runs' files: a Run's parent must have been created after the
+workspace's folder last changed. A ZIP
 upload is still only for a new workspace with no Runs.
 
 **Why:** Changing a folder needed a database edit, and creating a workspace sat

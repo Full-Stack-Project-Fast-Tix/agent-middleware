@@ -104,7 +104,7 @@ export function NewRun() {
     <div className="page page-narrow">
       <PageHeader
         title="Start a run"
-        description="Describe the work. Each prompt creates a separate Run; follow-up Runs continue from the latest successfully completed files in this workspace."
+        description="Describe the work. Each prompt creates a separate Run; follow-up Runs continue from the latest successfully completed files in this workspace, until its folder changes."
       />
 
       {workspacesError !== null && <ErrorState title="Your workspaces did not load" message={workspacesError} onRetry={reload} />}

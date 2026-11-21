@@ -62,8 +62,12 @@ export class PostgresRunStore implements RunStore, RunReads {
         [run.workspaceId],
       );
       if (active.rowCount) throw new HttpError(409, "A run is already active in this workspace. Wait for it to finish before submitting another prompt.");
+      // A new folder starts a fresh chain: runs started before it changed hold the old files.
+      // Only a folder change or ZIP upload sets workspaces.updated_at.
       const parent = await db.query<{ id: string }>(
-        "SELECT id FROM runs WHERE workspace_id = $1 AND status = 'completed' ORDER BY completed_at DESC NULLS LAST, created_at DESC, id DESC LIMIT 1",
+        `SELECT r.id FROM runs r JOIN workspaces w ON w.id = r.workspace_id
+          WHERE r.workspace_id = $1 AND r.status = 'completed' AND r.created_at > w.updated_at
+          ORDER BY r.completed_at DESC NULLS LAST, r.created_at DESC, r.id DESC LIMIT 1`,
         [run.workspaceId],
       );
       const created = runSchema.parse(fromRow(await insertRow(db, "runs", {

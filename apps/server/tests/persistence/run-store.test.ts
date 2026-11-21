@@ -124,6 +124,18 @@ for (const target of targets) {
       expect(next.parentRunId).toBe(first.id);
     });
 
+    if (target.name === "PostgresRunStore") {
+      it("starts a fresh chain after the workspace's folder changes", async () => {
+        const store = target.open(new RunEventHub());
+        const first = makeRun({ status: "completed", completedAt: LATER });
+        await store.createRun(first);
+        // What a folder change or ZIP upload does to the workspace row.
+        await pool!.query("UPDATE workspaces SET updated_at = $2 WHERE id = $1", [first.workspaceId, new Date(Date.parse(first.createdAt) + 1).toISOString()]);
+        const next = await store.createRun(makeRun({ workspaceId: first.workspaceId }));
+        expect(next.parentRunId).toBeNull();
+      });
+    }
+
     it("reads a run's newest audit events of one type, oldest first, with the total", async () => {
       const store = target.open(new RunEventHub());
       const run = makeRun();
