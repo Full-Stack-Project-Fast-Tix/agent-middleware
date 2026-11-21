@@ -43,11 +43,10 @@ that stops it was written by the guard, not by the model.
 - [Evaluation](#evaluation)
 - [Architecture](#architecture)
 - [Quick start](#quick-start)
-- [Run the demo scenario](#run-the-demo-scenario)
 - [Configuration](#configuration)
 - [Validation & tests](#validation--tests)
 - [Guard coverage and limitations](#guard-coverage-and-limitations)
-- [What this is built on](#what-this-is-built-on)
+- [Platform overview](#platform-overview)
 - [Repository layout](#repository-layout)
 - [Documentation](#documentation)
 - [License](#license)
@@ -83,7 +82,7 @@ deterministic guards.
 ### Deterministic checks over the raw trace
 
 Every execution is recorded as a JSON-RPC trace
-([`.data/traces/<runId>.jsonl`](apps/server/src/trace.ts)). A **check** is a
+([`.data/traces/<executionId>.jsonl`](apps/server/src/trace.ts)). A **check** is a
 pure function: it takes the whole trace and returns findings. It reads no files,
 no network, no clock, no randomness — same trace in, same findings out. That one
 restriction buys everything else:
@@ -131,8 +130,10 @@ category and the shared policy
 sentence, so every guard corrects the Agent in the same voice. Soft steers are
 capped per turn — several in a row stop reading as a correction.
 
-With **no guards enabled** (the default), the checks decide nothing: every
-action is accepted, subject to the agent's profile, and the Agent runs exactly as it would unobserved.
+The egress and semantic guards are **on by default**; the intent and
+learned-watch guards are off in code (`.env.example` turns learned-watch on).
+With **no guards enabled**, the checks decide nothing: every action is accepted,
+subject to the agent's profile, and the Agent runs exactly as it would unobserved.
 
 Each guard has its own `GUARDRAIL_<NAME>_ENABLED` flag and can be tested in
 isolation. **There is deliberately no master switch.**
@@ -381,8 +382,9 @@ appeared in any run, is still caught 73% of the time by the family rule folded
 out of its siblings. 73% is visibly weaker than the 100% on a host it has
 actually seen, which is what an honest generalisation number looks like.
 
-Learning is **not** in the default `egress` configuration. It needs
-`GUARDRAIL_REFLECTION_ENABLED` (the `egress+reflection` preset). Because the
+Learning is **not** in the benchmark's `egress` preset. It needs
+`GUARDRAIL_REFLECTION_ENABLED` (the `egress+reflection` preset), which is off in
+code and on in `.env.example`. Because the
 learned-watch guard only ever warns, that tier costs close to nothing in false
 interventions.
 
@@ -508,7 +510,7 @@ flowchart LR
 
 | Component | Responsibility |
 | --- | --- |
-| **Web UI** ([`apps/web`](apps/web)) | Dashboard, Runs, Run Detail, approvals, agents, policies, members. Never receives the model key. |
+| **Web UI** ([`apps/web`](apps/web)) | Dashboard, Runs, New run, Run Detail, Workspaces, Agents, Policies, Approvals, Security, Credentials, Benchmarks, Members. Never receives the model key. |
 | **Fastify API** ([`apps/server/src/app.ts`](apps/server/src/app.ts)) | Validates requests, signs users in, serves the built UI in production. |
 | **Orchestrator** ([`orchestrator/`](apps/server/src/orchestrator)) | Plans a Run into Tasks and schedules one AgentExecution per attempt. |
 | **ClaudeExecutionRuntime** ([`claude-execution-runtime.ts`](apps/server/src/orchestrator/claude-execution-runtime.ts)) | The agent loop. Every tool call goes through the security middleware first. **Traced. Guards run here.** |
@@ -539,7 +541,7 @@ the agent by construction: the model can only act by asking AgentGuard
 ([contract decision 30](docs/contract-decisions.md#30-claude-runs-through-an-agent-loop-agentguard-owns)).
 
 The Claude path has been exercised against the real Anthropic API in prior local
-Runs. Your own Docker, database and workspace setup still needs to work, so start
+Runs, both on one agent and as **Plan and delegate** (`auto`) Runs. Your own Docker, database and workspace setup still needs to work, so start
 small. It needs Docker, Node.js 22 and an Anthropic API key.
 
 **1. Put the key in `.env`.** It is the only place it goes, and the server is the
@@ -596,6 +598,12 @@ Open <http://localhost:3000>, sign in, choose **New run**, and give it one small
 concrete task on a single agent, such as *Add a function that reverses a string to
 `src/util.js`, and say what you changed.*
 
+**Plan and delegate** has a supervisor plan the work into up to six Tasks for the
+other agents. A new workspace starts with one supervisor and three specialists. A
+workspace may have several agents that delegate; with exactly one it is used by
+default, and with several you pick the supervisor for each Run. More workspaces can be
+made on the **Workspaces** page, with a folder only inside `WORKSPACE_SOURCE_ROOTS`.
+
 **5. What to watch for.**
 
 - **Run Detail** shows each decision as it happens, and the raw trace of each
@@ -614,10 +622,11 @@ concrete task on a single agent, such as *Add a function that reverses a string 
   in time, which sends actions that needed review to a person. The 15-second timeout
   has not been measured against the real API, and the first call also compiles the
   response schema. Raise `GUARDRAIL_SEMANTIC_TIMEOUT_MS` if you see these.
-- **A read-only agent ending early.** The analyst and reviewer may run only single
-  plain read commands, and a second distinct refusal ends the execution. The system
-  prompt tells them. If they still chain commands with `&&` or `|`, Runs on `auto`
-  will fail at that task.
+- **A read-only agent ending early.** The analyst and reviewer cannot write, so they
+  may run only known read-only commands (`cat`, `ls`, `grep`, `rg`, `find`, `sed -n`
+  and the like, chained with `&&`, `||`, `;` or `|`). No `git` command counts as a
+  read, since repo config can make even `git status` run a program. A second distinct
+  refusal ends the execution, which fails that task in an `auto` Run.
 - **Approvals expire** after two minutes by default, and an expired one declines
   the action.
 - **A finished Run is the agent's report, not proof.** Read the diff in the working
@@ -645,9 +654,12 @@ Thinking counts as output.
 | **Most one attempt can cost, the template's limits** | **$3.50** |
 | Most one task can cost | twice the attempt, since a failed attempt is retried once |
 
-The limits apply per attempt, and a Run can plan up to six tasks. So the limits in
-code only bound one `auto` Run to about $168 plus its reviews, which is why the
-Console spend limit matters. Most input in a long loop is cache reads, so an attempt
+The limits above apply per attempt, and a Run can plan up to six tasks. Across the
+whole Run, `RUN_TOKEN_BUDGET` (2,000,000 tokens by default) caps every model call
+together: the plan, every attempt, the semantic reviews and the final review. Up to
+20% of it (at most 128,000 tokens) is held back for the final review, and a call that
+would pass the budget is refused. The Console spend limit still matters, because the
+budget counts tokens, not dollars. Most input in a long loop is cache reads, so an attempt
 that reaches the input limit normally costs nearer $4.40 than $14. A fallback bills at
 the fallback model's rates.
 
@@ -721,11 +733,16 @@ Details: [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 | `ANTHROPIC_BASE_URL` | — | For a test double or a gateway only. The key is sent to it. |
 | `APP_AUTH_TOKEN` | empty on loopback | Shared demo bearer token. 24+ random URL-safe chars required for a non-loopback production server. Not user identity. |
 | `CONTAINER_ENGINE` | `docker` | `docker`, `podman`, … Colima exposes the Docker CLI so it uses `docker`. |
+| `APP_AUTH_MODE` | `token` in code, `password` in `.env.example` | `password` adds user accounts and workspace roles, which Runs need. |
+| `DATABASE_URL` | — | PostgreSQL for Runs, users and workspaces. |
+| `RUN_TOKEN_BUDGET` | `2000000` | Input plus output tokens all model calls in one Run may use, with up to 20% kept for the final review. |
+| `RUN_ARTIFACT_RETENTION_DAYS` | `30` | Days a finished Run's working copy and raw traces are kept. `0` keeps them forever. |
+| `WORKSPACE_SOURCE_ROOTS` | empty | Comma-separated folders a Security Admin may pick a workspace's project folder inside, on the Workspaces page. Empty: only `db:admin add-workspace` sets one. |
 | `AGENT_NETWORK_ACCESS` | `false` | Allow agent tool commands to use the network. A profile can still deny it. Network access is container-wide, not host-level filtering or provider-only egress. |
 | `AGENTGUARD_VAULT_MASTER_KEY` | unset | Optional 32-byte hex key for encrypted workspace vault entries. Required to use the vault; see [Local credentials for a Run](#local-credentials-for-a-run). |
 | `GUARDRAIL_EGRESS_ENABLED` | `true` | Run sensitive-egress and outbound-blob checks against every execution. Network is controlled separately by `AGENT_NETWORK_ACCESS`. |
 | `GUARDRAIL_INTENT_ENABLED` | `false` | Run the agent-intent check every turn. Warn-only; needs no sandbox change; independent of the egress flag. |
-| `GUARDRAIL_REFLECTION_ENABLED` | `false` | Carry what a guard caught into this Agent's later runs, as check parameters — exact hosts, derived host families, watched files. Warn-only at any tier; independent of the other flags. |
+| `GUARDRAIL_REFLECTION_ENABLED` | `false` in code, `true` in `.env.example` | Carry what a guard caught into this Agent's later runs, as check parameters — exact hosts, derived host families, watched files. Warn-only at any tier; independent of the other flags. |
 | `GUARDRAIL_SENSITIVE_MARKERS` | built-in list | Comma-separated path substrings that mark a file as secret. **Overrides** the default list when set. |
 | `GUARDRAIL_BLOB_MIN_CHARS` | `128` | Minimum base64/hex run the outbound-blob check treats as an encoded blob. |
 | `GUARDRAIL_SEMANTIC_ENABLED` | `true` | Enable task-aware asynchronous review. Network is controlled separately by `AGENT_NETWORK_ACCESS`. |
@@ -764,6 +781,8 @@ docker compose config
 | `semantic/` | The semantic monitor's schema validation and prompt shaping. |
 | `runtime/` | The Claude agent loop, its tool sandbox and model calls, and the checks over its traces. |
 | `server/` | API routes and auth, trace writer, the RunEvent hub and its SSE stream. |
+| `orchestrator/` | Planning and plan checks, scheduling, recovery, working copies, Run diffs and the final diff review. |
+| `persistence/` | The PostgreSQL stores and schema, identity, members, and workspace agents, profiles and policies (needs `TEST_DATABASE_URL`, otherwise skipped). |
 | `integration/` | End-to-end harness for the multi-agent Run model: drives Runs through the public API against stand-in subsystems and checks the invariants every Run must satisfy. See its [README](apps/server/tests/integration/README.md). |
 
 ---
@@ -948,7 +967,8 @@ apps/
   web/                     React + Vite + TypeScript UI
     src/App.tsx            Routes and the app shell
     src/runs/              Dashboard, Runs, Run Detail
-    src/workspace/         Agents, approvals, policies, security, benchmarks
+    src/workspace/         Workspaces, agents, approvals, policies, security, credentials, benchmarks
+    src/members/           Members
   server/                  Fastify + TypeScript control plane
     src/app.ts             HTTP routes, auth hooks, outbound redaction hook
     src/orchestrator/      Run -> Task -> AgentExecution, the planner, the Claude agent loop
@@ -970,7 +990,7 @@ apps/
     src/run-events-route.ts         GET /api/runs/:id/events (SSE, redacted per frame)
     src/security-middleware.ts      Per-execution security guard interface (P1/P2)
     src/trace.ts / config.ts
-    tests/{checks,redaction,reflections,policy,semantic,runtime,server,integration}/
+    tests/{checks,redaction,reflections,policy,semantic,runtime,server,orchestrator,persistence,integration}/
 packages/
   shared/                  Zod contracts used by server and web: domain model,
                            security contract, run events, API shapes, SSE client
@@ -979,7 +999,8 @@ scripts/
   replay-trace.ts           Re-run the checks over a recorded trace, offline
   bootstrap-local.sh / deploy-multi-agent.sh / verify-guards.sh
 docs/
-  ARCHITECTURE.md  LEARNING_LAYER.md  BENCHMARK.md  LOCAL_POC.md  DEPLOYMENT.md
+  ARCHITECTURE.md  LEARNING_LAYER.md  BENCHMARK.md  GUARD_EVALUATION_RESULTS.md
+  LOCAL_POC.md  DEPLOYMENT.md
   architecture-direction.md  contract-decisions.md
 Dockerfile / Dockerfile.claude-runtime / docker-compose.yml
 ```
@@ -1004,6 +1025,8 @@ Dockerfile / Dockerfile.claude-runtime / docker-compose.yml
   reflection loop, and its relation to prior work
 - [Benchmark](docs/BENCHMARK.md): the AgentDojo-style harness, metric
   definitions, scenario families, how to run it
+- [Guard evaluation results](docs/GUARD_EVALUATION_RESULTS.md) — the dated
+  Claude guard evidence
 - [Local POC](docs/LOCAL_POC.md) — container-engine detail, rootless Podman
 - [Deployment](docs/DEPLOYMENT.md) — one Linux host
 - [Setup guide](SETUP.md) — fresh-clone installation and runtime options
