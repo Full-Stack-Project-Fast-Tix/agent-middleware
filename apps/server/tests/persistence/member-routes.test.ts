@@ -287,6 +287,22 @@ describe.skipIf(!url)("a new workspace's folder", () => {
       expect((await create(rooted, team.developer, path.join(base, "missing"))).statusCode).toBe(403);
       // With no roots configured, nobody may pick a folder.
       expect((await create(app!, team.admin, path.join(base, "allowed", "project"))).statusCode).toBe(400);
+
+      // Changing an existing workspace's folder follows the same rules, and any member may read it.
+      await mkdir(path.join(base, "allowed", "other"));
+      const sourceUrl = `/api/workspaces/${team.id}/source`;
+      const changeTo = (who: Person, sourcePath: string) =>
+        rooted.inject({ method: "PUT", url: sourceUrl, headers: who.headers, payload: { sourcePath } });
+      const changed = await changeTo(team.admin, path.join(base, "allowed", "other"));
+      expect(changed.statusCode).toBe(200);
+      expect(changed.json()).toEqual({ sourcePath: path.join(base, "allowed", "other") });
+      const read = await rooted.inject({ url: sourceUrl, headers: team.auditor.headers });
+      expect(read.json()).toEqual({ sourcePath: path.join(base, "allowed", "other") });
+      expect((await rooted.inject({ url: sourceUrl, headers: team.outsider.headers })).statusCode).toBe(404);
+      expect((await changeTo(team.developer, path.join(base, "allowed", "project"))).statusCode).toBe(403);
+      expect((await changeTo(team.admin, path.join(base, "allowed", "escape"))).statusCode).toBe(400);
+      const changes = (await auditFor(team.id)).filter((event) => event.event_type === "workspace.source_changed");
+      expect(changes).toEqual([expect.objectContaining({ actor_id: team.admin.id, metadata: { from: "(none)", to: path.join(base, "allowed", "other") } })]);
     } finally {
       await rooted.close();
       await rm(base, { recursive: true, force: true });

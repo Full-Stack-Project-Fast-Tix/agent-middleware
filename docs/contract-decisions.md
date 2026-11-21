@@ -896,6 +896,21 @@ form names the latest completed Run the follow-up starts from, which may not be
 the Run on the page. Supervisors offered by the forms are agents whose
 effective policy can delegate. One active Run per workspace (409) is unchanged.
 
+## 38. Workspaces have their own page, and admins may change a folder
+
+**Decision (21 November 2026):** This amends decision 32. Creating a workspace
+moves from the Members view to a Workspaces page, where a person picks or
+creates a workspace and goes straight to Start a run in it. A `security_admin`
+may also change an existing workspace's folder there
+(`PUT /api/workspaces/:id/source`), under the same `WORKSPACE_SOURCE_ROOTS`
+rule, role checked first, and audited as `workspace.source_changed` with the
+old and new paths. Any member may read the folder (`GET`). Runs already started
+keep their copy; continuation Runs still start from their parent's files. A ZIP
+upload is still only for a new workspace with no Runs.
+
+**Why:** Changing a folder needed a database edit, and creating a workspace sat
+among member settings, away from starting a run.
+
 ## Guidance for P3's schema
 
 These points are implementation guidance, not part of the contract:

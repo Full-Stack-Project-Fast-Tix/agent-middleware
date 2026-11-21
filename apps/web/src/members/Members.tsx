@@ -42,10 +42,10 @@ export function MembersUnavailable() {
 
 /**
  * Who can open the current workspace. Security admins can manage members,
- * create accounts in this workspace, and create empty workspaces.
+ * and create accounts in this workspace. Workspaces themselves are on WorkspacesPage.
  */
 export function Members({ viewerId }: { viewerId: string | null }) {
-  const { workspaces, current, error: workspacesError, reload: reloadWorkspaces, select } = useCurrentWorkspace();
+  const { workspaces, current, error: workspacesError, reload: reloadWorkspaces } = useCurrentWorkspace();
   // "You left" has to outlive the page for the workspace that was left.
   const [carriedNotice, setCarriedNotice] = useState<string | null>(null);
   const clearCarriedNotice = useCallback(() => setCarriedNotice(null), []);
@@ -85,12 +85,11 @@ export function Members({ viewerId }: { viewerId: string | null }) {
       initialNotice={carriedNotice}
       onNoticeShown={clearCarriedNotice}
       onLeft={left}
-      selectWorkspace={select}
     />
   );
 }
 
-function WorkspaceMembers({ workspaceId, workspaceName, viewerId, reloadWorkspaces, initialNotice, onNoticeShown, onLeft, selectWorkspace }: {
+function WorkspaceMembers({ workspaceId, workspaceName, viewerId, reloadWorkspaces, initialNotice, onNoticeShown, onLeft }: {
   workspaceId: string;
   workspaceName: string;
   viewerId: string | null;
@@ -98,7 +97,6 @@ function WorkspaceMembers({ workspaceId, workspaceName, viewerId, reloadWorkspac
   initialNotice: string | null;
   onNoticeShown: () => void;
   onLeft: (message: string) => void;
-  selectWorkspace: (id: string) => void;
 }) {
   const [list, setList] = useState<WorkspaceMembersResponse | null>(null);
   const [listError, setListError] = useState<string | null>(null);
@@ -112,10 +110,6 @@ function WorkspaceMembers({ workspaceId, workspaceName, viewerId, reloadWorkspac
   const [newName, setNewName] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [creatingAccount, setCreatingAccount] = useState(false);
-  const [workspaceNameInput, setWorkspaceNameInput] = useState("");
-  const [workspaceFolderInput, setWorkspaceFolderInput] = useState("");
-  const [workspaceArchive, setWorkspaceArchive] = useState<File | null>(null);
-  const [creatingWorkspace, setCreatingWorkspace] = useState(false);
 
   const latestLoad = useRef(0);
   const mounted = useRef(true);
@@ -252,30 +246,6 @@ function WorkspaceMembers({ workspaceId, workspaceName, viewerId, reloadWorkspac
     emailInput.current?.focus();
   };
 
-  const createWorkspace = async (event: FormEvent) => {
-    event.preventDefault();
-    setActionError(null);
-    setCreatingWorkspace(true);
-    try {
-      const folder = workspaceFolderInput.trim();
-      const workspace = await membersApi.createWorkspace({
-        name: workspaceNameInput.trim(),
-        authorizationWorkspaceId: workspaceId,
-        ...(folder === "" ? {} : { sourcePath: folder }),
-      });
-      if (workspaceArchive !== null) await membersApi.uploadWorkspaceArchive(workspace.id, workspaceArchive);
-      setWorkspaceNameInput("");
-      setWorkspaceFolderInput("");
-      setWorkspaceArchive(null);
-      await reloadWorkspaces();
-      selectWorkspace(workspace.id);
-    } catch (reason) {
-      setActionError(reason instanceof Error ? reason.message : "The workspace could not be created or uploaded.");
-    } finally {
-      setCreatingWorkspace(false);
-    }
-  };
-
   const askToChangeRole = (member: WorkspaceMemberSummary, next: WorkspaceRole) => {
     if (next === member.role) return;
     const message = roleChangeWarning(member, next, viewerId);
@@ -389,15 +359,6 @@ function WorkspaceMembers({ workspaceId, workspaceName, viewerId, reloadWorkspac
                 <Select label="Role" value={role} onChange={setRole} options={ROLE_OPTIONS} />
                 <Button type="submit" variant="primary" busy={creatingAccount} disabled={!email.trim() || !newName.trim() || newPassword.length < 12}>Create account</Button>
               </form>
-              <h2>Create a workspace</h2>
-              <form className="members-add" onSubmit={(event) => void createWorkspace(event)}>
-                <label>Workspace name<input value={workspaceNameInput} onChange={(event) => setWorkspaceNameInput(event.target.value)} maxLength={120} required /></label>
-                <label>Project folder on this server (optional)<input value={workspaceFolderInput} onChange={(event) => setWorkspaceFolderInput(event.target.value)} maxLength={4096} placeholder="~/projects/app" autoComplete="off" spellCheck={false} disabled={workspaceArchive !== null} /></label>
-                <label>Or upload a project ZIP (max 10 MB)<input type="file" accept=".zip,application/zip" onChange={(event) => setWorkspaceArchive(event.target.files?.[0] ?? null)} disabled={workspaceFolderInput.trim() !== ""} /></label>
-                {workspaceArchive !== null && workspaceArchive.size > 10 * 1024 * 1024 && <p className="notice notice-blocked" role="alert">ZIP files must be no larger than 10 MB.</p>}
-                <Button type="submit" variant="primary" busy={creatingWorkspace} disabled={!workspaceNameInput.trim() || (workspaceArchive !== null && workspaceArchive.size > 10 * 1024 * 1024)}>Create workspace</Button>
-              </form>
-              <p className="meta">New workspaces get the standard agents. Provide a folder on the server, upload a ZIP, or leave both blank for an empty workspace. ZIP uploads reject links, unsafe paths, credential files, and archives that expand beyond the server limits.</p>
             </section>
           )}
 

@@ -1,12 +1,10 @@
 import {
   apiPaths,
-  createdWorkspaceResponseSchema,
   meResponseSchema,
   workspaceMemberResponseSchema,
   workspaceMembersResponseSchema,
   type AddWorkspaceMemberRequest,
   type CreateMemberAccountRequest,
-  type CreateWorkspaceRequest,
   type User,
   type WorkspaceMemberSummary,
   type WorkspaceMembersResponse,
@@ -32,21 +30,6 @@ export const membersApi = {
     workspaceMemberResponseSchema.parse(
       await request(apiPaths.workspaceAccounts(workspaceId), { method: "POST", body: JSON.stringify(body) }),
     ).member,
-
-  createWorkspace: async (body: CreateWorkspaceRequest) =>
-    createdWorkspaceResponseSchema.parse(
-      await request(apiPaths.workspaceCreate(), { method: "POST", body: JSON.stringify(body) }),
-    ).workspace,
-
-  uploadWorkspaceArchive: async (workspaceId: string, file: File): Promise<void> => {
-    const bytes = new Uint8Array(await file.arrayBuffer());
-    let binary = "";
-    for (let offset = 0; offset < bytes.length; offset += 0x8000) binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
-    await request(apiPaths.workspaceArchive(workspaceId), {
-      method: "POST",
-      body: JSON.stringify({ archiveBase64: btoa(binary) }),
-    });
-  },
 
   changeRole: async (workspaceId: string, userId: string, role: WorkspaceRole): Promise<WorkspaceMemberSummary> =>
     workspaceMemberResponseSchema.parse(

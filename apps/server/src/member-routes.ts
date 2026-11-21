@@ -6,6 +6,7 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import {
   addWorkspaceMemberRequestSchema,
+  changeWorkspaceSourceRequestSchema,
   createMemberAccountRequestSchema,
   createWorkspaceRequestSchema,
   updateWorkspaceMemberRequestSchema,
@@ -13,7 +14,7 @@ import {
   uploadWorkspaceArchiveSchema,
 } from "@launchpad/shared";
 import { signedInUser } from "./auth-routes.js";
-import { addMember, attachWorkspaceSource, changeMemberRole, createMemberAccount, createWorkspaceForAdmin, listMembers, removeMember } from "./db/admin.js";
+import { addMember, attachWorkspaceSource, changeMemberRole, changeWorkspaceSource, createMemberAccount, createWorkspaceForAdmin, listMembers, removeMember, workspaceSource } from "./db/admin.js";
 import { extractWorkspaceZip } from "./workspace-archive.js";
 import { HttpError } from "./errors.js";
 
@@ -35,6 +36,17 @@ export function registerMemberRoutes(app: FastifyInstance, pool: pg.Pool, source
       sourceRoots,
     });
     return reply.code(201).send({ workspace: workspaceSummarySchema.parse({ ...created, role: "security_admin" }) });
+  });
+
+  app.get("/api/workspaces/:workspaceId/source", async (request) => {
+    const { workspaceId } = workspaceParams.parse(request.params);
+    return { sourcePath: await workspaceSource(pool, workspaceId, signedInUser(request).id) };
+  });
+
+  app.put("/api/workspaces/:workspaceId/source", async (request) => {
+    const { workspaceId } = workspaceParams.parse(request.params);
+    const { sourcePath } = changeWorkspaceSourceRequestSchema.parse(request.body);
+    return { sourcePath: await changeWorkspaceSource(pool, { workspaceId, actorUserId: signedInUser(request).id, sourcePath, sourceRoots }) };
   });
 
   app.post("/api/workspaces/:workspaceId/source/archive", async (request, reply) => {

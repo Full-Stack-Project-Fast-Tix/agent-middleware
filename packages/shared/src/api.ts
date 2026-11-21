@@ -135,6 +135,7 @@ export const apiPaths = {
   workspaces: () => "/api/workspaces",
   workspaceCreate: () => "/api/workspaces",
   workspaceArchive: (workspaceId: string) => `/api/workspaces/${encodeURIComponent(workspaceId)}/source/archive`,
+  workspaceSource: (workspaceId: string) => `/api/workspaces/${encodeURIComponent(workspaceId)}/source`,
   workspaceAgents: (workspaceId: string) => `/api/workspaces/${encodeURIComponent(workspaceId)}/agents`,
   workspaceVault: (workspaceId: string) => `/api/workspaces/${encodeURIComponent(workspaceId)}/vault/secrets`,
   workspaceVaultSecret: (workspaceId: string, name: string) =>
@@ -472,6 +473,16 @@ export type CreateWorkspaceRequest = z.infer<typeof createWorkspaceRequestSchema
 
 export const createdWorkspaceResponseSchema = z.object({ workspace: workspaceSummarySchema });
 export type CreatedWorkspaceResponse = z.infer<typeof createdWorkspaceResponseSchema>;
+
+/**
+ *   GET /api/workspaces/:workspaceId/source                        -> WorkspaceSourceResponse (any member)
+ *   PUT /api/workspaces/:workspaceId/source  { sourcePath }        -> WorkspaceSourceResponse (security_admin)
+ * The new folder has the same WORKSPACE_SOURCE_ROOTS rule as a new workspace's.
+ */
+export const changeWorkspaceSourceRequestSchema = z.object({ sourcePath: requiredTextSchema.max(4096) });
+export type ChangeWorkspaceSourceRequest = z.infer<typeof changeWorkspaceSourceRequestSchema>;
+export const workspaceSourceResponseSchema = z.object({ sourcePath: z.string().nullable() });
+export type WorkspaceSourceResponse = z.infer<typeof workspaceSourceResponseSchema>;
 
 export const uploadWorkspaceArchiveSchema = z.object({ archiveBase64: z.string().min(1).max(14_000_000) });
 

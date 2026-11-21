@@ -10,6 +10,7 @@ describe("parseRoute", () => {
     expect(parseRoute("/runs/new")).toEqual({ page: "new-run" });
     expect(parseRoute(`/runs/${RUN_ID}`)).toEqual({ page: "run", runId: RUN_ID });
     expect(parseRoute("/members")).toEqual({ page: "members" });
+    expect(parseRoute("/workspaces")).toEqual({ page: "workspaces" });
   });
 
   it("ignores a trailing slash", () => {

@@ -7,6 +7,7 @@ const nav: NavItem[] = [
   { to: paths.dashboard, label: "Dashboard", current: false },
   { to: paths.runs, label: "Runs", current: false },
   { to: paths.approvals, label: "Approvals", current: false },
+  { to: paths.workspaces, label: "Workspaces", current: false },
   { to: paths.agents, label: "Agents", current: true },
   { to: paths.policies, label: "Policies", current: false },
   { to: paths.security, label: "Security", current: false },

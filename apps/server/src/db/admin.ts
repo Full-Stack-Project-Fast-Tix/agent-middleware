@@ -341,6 +341,32 @@ export async function attachWorkspaceSource(pool: pg.Pool, input: { workspaceId:
   });
 }
 
+/** Any member may see the folder their workspace's Runs copy. */
+export async function workspaceSource(pool: pg.Pool, workspaceId: string, viewerUserId: string): Promise<string | null> {
+  if ((await roleOf(pool, workspaceId, viewerUserId)) === null) throw new HttpError(404, "Workspace not found");
+  const { rows } = await pool.query<{ source_path: string | null }>("SELECT source_path FROM workspaces WHERE id = $1", [workspaceId]);
+  return rows[0]?.source_path ?? null;
+}
+
+/**
+ * A security admin points an existing workspace at another allowed folder. Runs
+ * already started keep their own copy; the next Run copies the new folder.
+ */
+export async function changeWorkspaceSource(
+  pool: pg.Pool,
+  input: { workspaceId: string; actorUserId: string; sourcePath: string; sourceRoots: readonly string[] },
+): Promise<string> {
+  return changeMembers(pool, input.workspaceId, input.actorUserId, async (db, actor) => {
+    const next = await allowedSourcePath(input.sourcePath, input.sourceRoots);
+    const { rows } = await db.query<{ source_path: string | null }>("SELECT source_path FROM workspaces WHERE id = $1", [input.workspaceId]);
+    const before = rows[0]?.source_path ?? null;
+    if (before === next) return next;
+    await db.query("UPDATE workspaces SET source_path = $2, updated_at = $3 WHERE id = $1", [input.workspaceId, next, new Date().toISOString()]);
+    await audit(db, actor, "workspace.source_changed", input.workspaceId, { from: before ?? "(none)", to: next });
+    return next;
+  });
+}
+
 async function createWorkspaceRows(
   db: pg.PoolClient,
   input: { name: string; sourcePath: string | null; ownerId: string; actor: Actor },

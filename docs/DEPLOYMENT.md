@@ -39,9 +39,11 @@ npm run db:admin -w @launchpad/server -- list-workspaces
 Use `-` as the source path to create an empty workspace. First-account
 bootstrap and project-path registration remain operator-only. After signing in,
 a workspace security admin can create an account attached to that workspace,
-manage its roles, or create another workspace in the Members view: empty, or
-with a project folder inside one of the `WORKSPACE_SOURCE_ROOTS` the operator set
-(contract decision 32), or upload a ZIP from the Members view. ZIP uploads are
+and manage its roles in the Members view. On the Workspaces page they can create
+another workspace: empty, with a project folder inside one of the
+`WORKSPACE_SOURCE_ROOTS` the operator set (contract decision 32), or from an
+uploaded ZIP. They can also point an existing workspace at another folder inside
+those roots (decision 38). ZIP uploads are
 limited to 10 MB compressed, 100 MB expanded, and 2,000 entries. Links, unsafe
 paths, oversized entries and known credential files are rejected. Validated
 files are stored under the app data directory and can only be attached before

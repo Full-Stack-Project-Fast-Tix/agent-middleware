@@ -8,6 +8,7 @@ import { ApprovalsPage } from "./workspace/ApprovalsPage";
 import { BenchmarksPage } from "./workspace/BenchmarksPage";
 import { PoliciesPage } from "./workspace/PoliciesPage";
 import { SecurityPage } from "./workspace/SecurityPage";
+import { WorkspacesPage } from "./workspace/WorkspacesPage";
 import { AuthScreen, ConnectingScreen } from "./AuthScreen";
 import { Members, MembersUnavailable } from "./members/Members";
 import { membersApi } from "./members/members-api";
@@ -34,6 +35,7 @@ function navItems(route: Route, authMethod: "token" | "password"): NavItem[] {
       ? []
       : [
           { to: paths.approvals, label: "Approvals", current: route.page === "approvals" },
+          { to: paths.workspaces, label: "Workspaces", current: route.page === "workspaces" },
           { to: paths.agents, label: "Agents", current: route.page === "agents" },
           { to: paths.policies, label: "Policies", current: route.page === "policies" },
           { to: paths.security, label: "Security", current: route.page === "security" },
@@ -62,7 +64,7 @@ function CurrentPage({ route, authMethod, viewer }: {
   viewer: User | null;
 }) {
   // These read Postgres, which the shared-token mode does not have.
-  if (authMethod === "token" && ["agents", "policies", "approvals", "security", "benchmarks", "credentials"].includes(route.page)) return <NotFound />;
+  if (authMethod === "token" && ["workspaces", "agents", "policies", "approvals", "security", "benchmarks", "credentials"].includes(route.page)) return <NotFound />;
   switch (route.page) {
     case "dashboard":
       return <Dashboard />;
@@ -70,6 +72,8 @@ function CurrentPage({ route, authMethod, viewer }: {
     case "new-run":
     case "run":
       return <RunsPage route={route} />;
+    case "workspaces":
+      return <WorkspacesPage />;
     case "agents":
       return <AgentsPage />;
     case "policies":

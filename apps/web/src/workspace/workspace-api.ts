@@ -4,12 +4,14 @@ import {
   approvalPageSchema,
   auditPageSchema,
   benchmarksResponseSchema,
+  createdWorkspaceResponseSchema,
   effectivePermissionsResponseSchema,
   findingPageSchema,
   policiesResponseSchema,
   policyResponseSchema,
   profileResponseSchema,
   profilesResponseSchema,
+  workspaceSourceResponseSchema,
   workspaceVaultResponseSchema,
   workspaceVaultSecretInfoSchema,
   type Agent,
@@ -20,6 +22,7 @@ import {
   type CreateAgentProfileRequest,
   type CreateAgentRequest,
   type CreateSecurityPolicyRequest,
+  type CreateWorkspaceRequest,
   type EffectivePermissionsResponse,
   type FindingPage,
   type SecurityPolicy,
@@ -41,9 +44,22 @@ function withQuery(path: string, query: Record<string, string | undefined>): str
   return search ? `${path}?${search}` : path;
 }
 
-const send = (method: "POST" | "PATCH", body: object) => ({ method, body: JSON.stringify(body) });
+const send = (method: "POST" | "PATCH" | "PUT", body: object) => ({ method, body: JSON.stringify(body) });
 
 export const workspaceApi = {
+  createWorkspace: async (body: CreateWorkspaceRequest) =>
+    createdWorkspaceResponseSchema.parse(await request(apiPaths.workspaceCreate(), send("POST", body))).workspace,
+  uploadWorkspaceArchive: async (workspaceId: string, file: File): Promise<void> => {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    let binary = "";
+    for (let offset = 0; offset < bytes.length; offset += 0x8000) binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+    await request(apiPaths.workspaceArchive(workspaceId), send("POST", { archiveBase64: btoa(binary) }));
+  },
+  source: async (workspaceId: string): Promise<string | null> =>
+    workspaceSourceResponseSchema.parse(await request(apiPaths.workspaceSource(workspaceId))).sourcePath,
+  changeSource: async (workspaceId: string, sourcePath: string): Promise<string | null> =>
+    workspaceSourceResponseSchema.parse(await request(apiPaths.workspaceSource(workspaceId), send("PUT", { sourcePath }))).sourcePath,
+
   findings: async (workspaceId: string, query: { severity?: string; cursor?: string }): Promise<FindingPage> =>
     findingPageSchema.parse(await request(withQuery(apiPaths.workspaceFindings(workspaceId), query))),
   approvals: async (workspaceId: string, query: { status?: string; cursor?: string }): Promise<ApprovalPage> =>
