@@ -3,6 +3,7 @@ import {
   fileChangesOf,
   preToolIntentOf,
   readsOf,
+  readItem,
   reasoningOf,
 } from "./checks.js";
 import type {
@@ -21,6 +22,7 @@ const MAX_ACTIONS = 10;
 const MAX_SOURCES = 10;
 const MAX_TEXT = 2_000;
 const MAX_SOURCE_EXCERPT = 1_200;
+export const REFUSED_PREFIX = "REFUSED by AgentGuard: this action did not run.";
 
 /**
  * Bounded semantic context derived from the raw trace. The JSONL trace remains
@@ -57,17 +59,19 @@ export class TrajectoryState {
           ...(output.trim() === "" ? {} : { excerpt: trim(output, MAX_SOURCE_EXCERPT) }),
         });
       }
+      // The runtime closes a refused action as `declined`; without saying so the reviewer reads it as having run.
+      const refused = readItem(record)?.status === "declined" ? `${REFUSED_PREFIX}\n` : "";
       for (const command of commandsOf([record])) {
         if (command.phase !== "completed") continue;
         this.lastCompletedActionSeq = Math.max(this.lastCompletedActionSeq, command.seq);
         this.actions.push({
           seq: command.seq,
           type: command.output?.trim() ? "tool_output" : "command",
-          summary: trim(
+          summary: trim(refused + (
             command.output?.trim()
               ? `${command.command}\nOutput: ${command.output}`
-              : command.command,
-          ),
+              : command.command
+          )),
         });
       }
       for (const change of fileChangesOf([record])) {
@@ -76,7 +80,7 @@ export class TrajectoryState {
         this.actions.push({
           seq: change.seq,
           type: "file_change",
-          summary: trim(`${change.kind} ${change.path}\n${change.diff}`),
+          summary: trim(`${refused}${change.kind} ${change.path}\n${change.diff}`),
         });
       }
     }

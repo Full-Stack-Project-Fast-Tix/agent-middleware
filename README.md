@@ -186,6 +186,8 @@ container, prompt, audit metadata, or saved traces, and exact-value matches are
 redacted from broker responses and final summaries. Direct network commands
 remain subject to the network capability and approval gate. A vault grant does
 not enable container network access.
+A broker request body that carries a credential seen earlier in the Run is
+refused, and a body sent after a sensitive file was read waits for a person.
 
 This is encrypted local POC storage, not an OS keychain or production multi-
 tenant vault. Protect the master key and server data directory, and avoid using

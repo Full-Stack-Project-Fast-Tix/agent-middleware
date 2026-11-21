@@ -978,6 +978,14 @@ and bounded responses. It attaches the secret only in its configured auth
 header. Direct agent egress remains subject to the ordinary network capability
 and approval gate; a vault grant does not change container networking.
 
+**Amended (21 November 2026):** an approved host is trusted with its own
+secret, not with others the Run has seen. A broker request whose command or
+decoded body carries a credential value observed earlier in the Run is refused
+(`vault-request-run-taint`), and so is any body once the Run's taint record is
+incomplete. A broker request with a body sent after a sensitive file was read
+goes to a person, since a secret that is not credential-shaped leaves no taint
+value to match.
+
 This remains a local proof-of-concept vault. It has no OS keychain integration,
 external secret manager, shared-host tenant hardening, or automatic `.env`
 import. The operator must protect and back up the master key separately; loss

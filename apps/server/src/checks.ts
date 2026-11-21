@@ -357,7 +357,7 @@ function readParams(record: TraceRecord): Record<string, unknown> | null {
   return params as Record<string, unknown>;
 }
 
-function readItem(record: TraceRecord): Record<string, unknown> | null {
+export function readItem(record: TraceRecord): Record<string, unknown> | null {
   const params = readParams(record);
   if (params === null) return null;
 

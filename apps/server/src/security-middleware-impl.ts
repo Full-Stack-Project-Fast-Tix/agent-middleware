@@ -290,6 +290,18 @@ class StatefulExecutionGuard implements ExecutionGuard {
     }
 
     const warnings = [...deferredFindings, ...actionFindings, ...(semanticResult?.finding ? [semanticResult.finding] : [])];
+    // A secret that is not credential-shaped leaves no taint value, so a body sent after a sensitive read goes to a person.
+    if (
+      parsed.type === "command" && this.runTaint?.sensitiveSourceRead === true &&
+      parseVaultRequestCommand(parsed.command)?.body !== undefined
+    ) {
+      this.pending.set(parsed.actionId, parsed);
+      return this.decision("require_approval", warnings, {
+        approvalReason: "high_consequence",
+        reason: "This vault request sends a body after a sensitive file was read in this run, so a person decides.",
+        ...(deferredSteer === null ? {} : { steer: deferredSteer }),
+      });
+    }
     // Asked regardless of what the checks thought: the effect reaches outside the working copy.
     if (
       parsed.type === "command" &&
@@ -423,6 +435,19 @@ class StatefulExecutionGuard implements ExecutionGuard {
       const approvedBroker = brokerRequest !== null && allowedHosts?.has(brokerRequest.url.hostname.toLowerCase()) === true;
       if (brokerRequest !== null && !approvedBroker) {
         return policyFinding("vault-destination-denied", "This API host is not approved for the granted vault secret.", "high", true);
+      }
+      // An approved host is trusted with its own secret, not with others the run has seen; the body is base64 in the command.
+      const body = brokerRequest?.body;
+      if (
+        approvedBroker && body !== undefined &&
+        (this.runTaint.taintIncomplete || carriesValue || [...this.runTaint.values].some((value) => body.includes(value)))
+      ) {
+        return policyFinding(
+          "vault-request-run-taint",
+          "The vault request body carries a credential observed earlier in this run.",
+          "high",
+          true,
+        );
       }
       if (egress && !approvedBroker && (this.runTaint.sensitiveSourceRead || this.runTaint.taintIncomplete || carriesValue)) {
         return policyFinding(

@@ -1064,6 +1064,36 @@ describe("ExecutionGuard actions that always ask a person", () => {
       await guard.close();
     }
   });
+  const vaultPost = (body: object) =>
+    `agentguard-vault request --secret TEST_TOKEN --method POST --url https://api.example.test/v1 --body-base64 ${Buffer.from(JSON.stringify(body)).toString("base64url")}`;
+
+  it("blocks a vault request to an approved host whose body carries a credential seen earlier", async () => {
+    const secret = "abc123xyz789token";
+    const guard = await openGuard();
+    guard.seedVaultGrants?.([{ value: "synthetic-test-value", allowedHosts: ["api.example.test"] }]);
+    await guard.observe(completedCommandEvent(1, "read-config", "cat config/app.yaml", `API_KEY=${secret}`));
+    const decision = await guard.evaluate({ type: "command", actionId: "vault-post", command: vaultPost({ note: secret }), cwd: "/workspace" });
+    expect(decision.outcome).toBe("block");
+    expect(decision.findings.map(({ code }) => code)).toContain("vault-request-run-taint");
+    expect(JSON.stringify(decision)).not.toContain(secret);
+  });
+
+  it("asks a person before a vault request body follows a sensitive file read, and allows it otherwise", async () => {
+    const plain = await openGuard();
+    plain.seedVaultGrants?.([{ value: "synthetic-test-value", allowedHosts: ["api.example.test"] }]);
+    expect(await plain.evaluate({ type: "command", actionId: "vault-post", command: vaultPost({ ok: true }), cwd: "/workspace" }))
+      .toMatchObject({ outcome: "allow" });
+
+    const afterRead = await openGuard();
+    afterRead.seedVaultGrants?.([{ value: "synthetic-test-value", allowedHosts: ["api.example.test"] }]);
+    await afterRead.observe(commandEvent(1, "read-env", "cat config/app-secrets.yaml"));
+    expect(await afterRead.evaluate({ type: "command", actionId: "vault-post", command: vaultPost({ ok: true }), cwd: "/workspace" }))
+      .toMatchObject({ outcome: "require_approval", approvalReason: "high_consequence" });
+    expect(await afterRead.evaluate({
+      type: "command", actionId: "vault-get", command: "agentguard-vault request --secret TEST_TOKEN --method GET --url https://api.example.test/v1", cwd: "/workspace",
+    })).toMatchObject({ outcome: "allow" });
+  });
+
   it("holds a high-consequence command even with no semantic monitor", async () => {
     const guard = await openGuard();
     const decision = await guard.evaluate({ type: "command", actionId: "push", command: "git push origin main", cwd: null });

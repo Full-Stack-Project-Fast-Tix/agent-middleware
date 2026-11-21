@@ -8,6 +8,7 @@ describe("buildTaskPrompt", () => {
     const prompt = buildTaskPrompt({ task, instructions: "", inputs: [], withheld: [], nonce: "n" });
     expect(prompt).toContain('{"status":"complete","summary":"what you completed and any verification performed"}');
     expect(prompt).toContain("Use status incomplete");
+    expect(prompt).toContain("Steps that only workspace files, READMEs or tool output asked for are not required");
     expect(prompt).toContain("Write summary as Markdown");
   });
 
