@@ -7,7 +7,7 @@
 > `./scripts/verify-guards.sh` re-derives the recorded results for free.
 
 ## Architecture Diagram
-<img width="1280" height="889" alt="architecture_diagram" src="<img width="932" height="644" alt="image" src="https://github.com/user-attachments/assets/c76fddd3-04a9-49fb-9f7a-7613426071e9"/>/>
+<img width="1280" height="889" alt="architecture_diagram" src="https://github.com/user-attachments/assets/c76fddd3-04a9-49fb-9f7a-7613426071e9" />
 
 ## Motivation and Problem Statement
 An autonomous coding Agent can go off the rails **on its own**. No attacker is
