@@ -9,8 +9,6 @@ const PLAIN_READS = new Set([
   "printf", "pwd", "stat", "tail", "tr", "true", "wc", "which",
 ]);
 
-const GIT_READS = new Set(["diff", "log", "ls-files", "rev-parse", "show", "status"]);
-
 /** Splits shell text into commands of words, or null if it uses anything beyond words and chaining. */
 function parseCommands(text: string): string[][] | null {
   const commands: string[][] = [[]];
@@ -85,19 +83,19 @@ function isReadOnlyWords([program, ...args]: string[]): boolean {
     case "sed":
       // sed is a language: only printing a line range is a read, and nothing may follow the one file.
       return args[0] === "-n" && /^\d+(?:,(?:\d+|\$))?p$/.test(args[1] ?? "") && args.length <= 3 && !args[2]?.startsWith("-");
-    case "git":
-      // ponytail: a git config an earlier write-capable task planted could still run a command here; decline git if that matters.
-      return GIT_READS.has(args[0] ?? "") && !args.some((arg) => /^--(?:output|ext-diff|textconv|no-index|exec)/.test(arg));
+    // No git: even `git status` runs programs named in repo config or attributes
+    // (core.fsmonitor, diff.external, textconv and clean filters), and a Run's
+    // copy holds no .git unless an agent made one, so any repo there is agent-written.
     default:
       return false;
   }
 }
 
-/** What an agent without the shell capability may run: one plain read, no shell or git. */
+/** What an agent without the shell capability may run: one plain read, no shell. */
 export function isPlainRead(command: string): boolean {
   if (/[;&|<>]/.test(command)) return false;
   const commands = parseCommands(command);
-  return commands?.length === 1 && commands[0]![0] !== "git" && isReadOnlyWords(commands[0]!);
+  return commands?.length === 1 && isReadOnlyWords(commands[0]!);
 }
 
 /** What an agent with the shell capability but no write capability may run. */

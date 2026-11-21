@@ -252,27 +252,11 @@ async function requireActiveProfile(db: pg.PoolClient, workspaceId: string, prof
   return agentProfileSchema.parse(fromRow(rows[0]));
 }
 
-/**
- * `auto` runs pick the workspace's one enabled agent that may delegate
- * (PostgresAgentDirectory), so a second one would stop them all.
- */
-async function keepOneSupervisor(db: pg.PoolClient, workspaceId: string, exceptAgentId: string | null): Promise<void> {
-  const { rows } = await db.query<{ others: number }>(
-    `SELECT count(*)::int AS others FROM agents a JOIN agent_profiles p ON p.id = a.profile_id
-      WHERE a.workspace_id = $1 AND a.enabled AND a.archived_at IS NULL AND p.cap_delegate AND a.id IS DISTINCT FROM $2`,
-    [workspaceId, exceptAgentId],
-  );
-  if (rows[0]!.others > 0) {
-    throw new HttpError(409, "This workspace already has an agent that delegates, and automatic runs need exactly one.");
-  }
-}
-
 type Actor = { workspaceId: string; actorUserId: string };
 
 export async function createAgent(pool: pg.Pool, input: Actor & { body: CreateAgentRequest }): Promise<Agent> {
   return change(pool, input, actingOnly, async (db, audit) => {
-    const profile = await requireActiveProfile(db, input.workspaceId, input.body.profileId);
-    if (profile.capabilities.delegate) await keepOneSupervisor(db, input.workspaceId, null);
+    await requireActiveProfile(db, input.workspaceId, input.body.profileId);
     const stamp = now();
     const row = await insertRow(db, "agents", {
       id: randomUUID(),
@@ -305,8 +289,7 @@ export async function updateAgent(pool: pg.Pool, input: Actor & { agentId: strin
     const { expectedVersion: _expected, ...fields } = input.body;
     const changing = fields.profileId !== undefined && fields.profileId !== before.profileId;
     if (changing && role !== "security_admin") throw new HttpError(403, "Only a Security Admin can give an agent another profile");
-    const profile = await requireActiveProfile(db, input.workspaceId, fields.profileId ?? before.profileId);
-    if (profile.capabilities.delegate && (fields.enabled ?? before.enabled)) await keepOneSupervisor(db, input.workspaceId, before.id);
+    await requireActiveProfile(db, input.workspaceId, fields.profileId ?? before.profileId);
     const after = agentSchema.parse(fromRow(await updateRow(db, "agents", before.id, { ...fields, version: before.version + 1, updatedAt: now() })));
     await audit("agent.updated", {
       agentId: before.id,
@@ -354,14 +337,6 @@ export async function updateProfile(pool: pg.Pool, input: Actor & { profileId: s
     if (before.archivedAt !== null) throw new HttpError(409, "This profile is archived");
     checkVersion(before, input.body.expectedVersion);
     const { expectedVersion: _expected, ...fields } = input.body;
-    if (fields.capabilities?.delegate && !before.capabilities.delegate) {
-      // Every enabled agent on this profile would start delegating at once.
-      const { rows } = await db.query<{ count: number }>(
-        "SELECT count(*)::int AS count FROM agents WHERE profile_id = $1 AND enabled AND archived_at IS NULL",
-        [before.id],
-      );
-      if (rows[0]!.count > 0) await keepOneSupervisor(db, input.workspaceId, null);
-    }
     const after = agentProfileSchema.parse(fromRow(await updateRow(db, "agent_profiles", before.id, { ...fields, version: before.version + 1, updatedAt: now() })));
     await audit("profile.updated", {
       profileId: before.id,

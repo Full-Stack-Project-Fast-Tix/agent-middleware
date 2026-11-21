@@ -18,9 +18,9 @@ export class PostgresAgentDirectory implements AgentDirectory {
   }
 
   /**
-   * For `auto`, the workspace's one enabled agent whose profile may delegate.
-   * ponytail: no stored default; add a workspace setting if a workspace ever
-   * needs more than one supervisor, or a default for `single` runs.
+   * For `auto`, the workspace's enabled agent whose profile may delegate, when
+   * there is exactly one. With several, none is the default and the request must
+   * name its supervisor, rather than this silently picking one.
    */
   async defaultAgentId(workspaceId: string, mode: OrchestrationMode): Promise<string | null> {
     if (mode !== "auto") return null;

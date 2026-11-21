@@ -6,10 +6,10 @@ describe("isKnownSafeRead", () => {
     "cat README.md",
     "ls -la",
     "sed -n '1,300p' app.js",
-    "find . -maxdepth 3 -type f -print | sort | sed -n '1,300p'; git status --short --branch 2>&1",
+    "find . -maxdepth 3 -type f -print | sort | sed -n '1,300p'; ls 2>&1",
     "cat a.js && wc -l a.js || true",
     "rg --files 2>/dev/null | sort | uniq -c | head -5",
-    `/usr/bin/bash -lc "find . -maxdepth 3 -type f -print | sort | sed -n '1,300p'; git status --short --branch 2>&1"`,
+    `/usr/bin/bash -lc "find . -maxdepth 3 -type f -print | sort | sed -n '1,300p'; wc -l a.js 2>&1"`,
     `/usr/bin/bash -lc "rg --files -g '"'!node_modules'"' | sed -n '1,160p'"`,
     "bash -c 'cd src && grep -rn todo .'",
   ])("allows %s", (command) => {
@@ -61,6 +61,15 @@ describe("isKnownSafeRead", () => {
     "git -c core.pager=x log",
     "git diff --output=x",
     "git diff --ext-diff",
+    // Any git: a planted .git/config or .gitattributes can make a read run a program.
+    "git status",
+    "git status --short --branch 2>&1",
+    "git diff",
+    "git log --oneline",
+    "git show HEAD",
+    "git ls-files",
+    "cat a.js; git diff",
+    `/usr/bin/bash -lc "ls; git status"`,
     // A shell wrapper that is not exactly one script.
     "bash -lc 'ls' extra",
     "bash ./script.sh",

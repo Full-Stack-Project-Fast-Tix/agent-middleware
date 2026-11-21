@@ -18,6 +18,7 @@ import { createApp } from "../../src/app.js";
 import { loadConfig } from "../../src/config.js";
 import { addUser, addWorkspace, setMember } from "../../src/db/admin.js";
 import { openDatabase } from "../../src/db/pool.js";
+import { PostgresAgentDirectory } from "../../src/db/postgres-agent-directory.js";
 import { PostgresIdentity } from "../../src/db/postgres-identity.js";
 import { insertRow } from "../../src/db/rows.js";
 
@@ -141,11 +142,12 @@ describe.skipIf(!url)("workspace configuration", () => {
     expect((await call("PATCH", target, team.admin, change)).statusCode).toBe(200);
   });
 
-  it("refuses a second agent that delegates, which would stop automatic runs", async () => {
+  it("allows a second agent that delegates, leaving the workspace with no default supervisor", async () => {
     const team = await workspace();
     const supervisor = (await agents(team.id, team.admin)).find((agent) => agent.name === "Supervisor")!;
     const response = await call("POST", apiPaths.workspaceAgents(team.id), team.developer, { name: "Second", profileId: supervisor.profile_id });
-    expect(response.statusCode).toBe(409);
+    expect(response.statusCode).toBe(201);
+    expect(await new PostgresAgentDirectory(pool!).defaultAgentId(team.id, "auto")).toBeNull();
   });
 
   it("refuses a profile from another workspace", async () => {

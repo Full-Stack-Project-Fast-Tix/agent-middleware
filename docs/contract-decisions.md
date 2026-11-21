@@ -578,8 +578,10 @@ A read-only agent may run chains of known read-only commands, including Codex's
 `bash -lc` wrapper, which the earlier single-command rule could never match
 (`read-only-command.ts`). `|`, `||`, `&&`, `;` and `2>&1` or `2>/dev/null` are the only
 shell syntax accepted. Writing or executing flags are refused, as are `awk` and any
-`sed` that does more than print a line range. Known limit: a git config planted by an
-earlier write-capable task could still run a command through `git status`.
+`sed` that does more than print a line range. No git command counts as a read (changed
+21 November 2026): repo config and `.gitattributes` can make `git status`, `diff`, `log`
+or `show` run a program (`core.fsmonitor`, `diff.external`, textconv, clean filters),
+and a Run's copy never includes `.git`, so any repository there was made by an agent.
 
 ## 21. Editing agents, profiles and policies
 
@@ -597,8 +599,10 @@ rules before and after. Agent events record which fields changed but not the
 instruction text, which can hold anything. DELETE archives.
 
 `POST` and `PATCH` validate rules with `policyRulesSchema`, so a rule the resolver
-would refuse is a 400 and cannot stop every run in the workspace (decision 20). A second enabled
-agent that may delegate is a 409, because `auto` runs need exactly one.
+would refuse is a 400 and cannot stop every run in the workspace (decision 20). A workspace
+may have several agents that delegate (changed 21 November 2026; it used to be a 409). With
+exactly one, an `auto` Run that names no supervisor uses it; with several, the request must
+name one, and the console asks for it.
 
 ## 22. Paging cursors stay plain text
 
