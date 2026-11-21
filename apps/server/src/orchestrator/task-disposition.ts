@@ -12,11 +12,31 @@ export const taskDispositionSchema = z.strictObject({
 
 export type TaskDisposition = z.infer<typeof taskDispositionSchema>;
 
-/** Accept JSON only. Markdown fences and surrounding prose are invalid. */
+/**
+ * Accept JSON only. Markdown fences and surrounding prose are invalid. A Markdown
+ * summary often arrives with raw line breaks inside the string, so those are escaped.
+ */
 export function parseTaskDisposition(output: string): TaskDisposition | null {
   try {
-    return taskDispositionSchema.parse(JSON.parse(output));
+    return taskDispositionSchema.parse(JSON.parse(escapeRawBreaksInStrings(output)));
   } catch {
     return null;
   }
+}
+
+function escapeRawBreaksInStrings(text: string): string {
+  let out = "";
+  let inString = false;
+  let escaped = false;
+  for (const char of text) {
+    if (inString && !escaped && (char === "\n" || char === "\r" || char === "\t")) {
+      out += char === "\n" ? "\\n" : char === "\r" ? "\\r" : "\\t";
+      continue;
+    }
+    if (inString && !escaped && char === '"') inString = false;
+    else if (!inString && char === '"') inString = true;
+    escaped = inString && !escaped && char === "\\";
+    out += char;
+  }
+  return out;
 }

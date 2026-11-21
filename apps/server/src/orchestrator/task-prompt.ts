@@ -91,6 +91,7 @@ export function buildTaskPrompt(input: {
     "Your final response must be exactly one JSON object with no Markdown fence or surrounding text:",
     '{"status":"complete","summary":"what you completed and any verification performed"}',
     "Use status incomplete when any required part of this task could not be completed, and explain why in summary.",
+    "Write summary as Markdown for a person to skim: one sentence with the outcome, then short sections such as ## Changes, ## Verification and ## Open items, each a bullet list. Put paths and commands in backticks. Encode line breaks as \\n inside the JSON string.",
     "This report is required even if the task only involved analysis or review.",
   );
 

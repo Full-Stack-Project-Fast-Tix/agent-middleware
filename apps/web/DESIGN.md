@@ -65,7 +65,7 @@ A proposal that was not saved is a trusted statement, not foreign text: `proposa
 renders "The command text was not saved." in the sans on a cool surface.
 
 A finished agent turn is the agent's report, not proof. Result panels are labelled
-"Agent's report" with the trusted note "Not verified by AgentGuard". A run's outcome sits
+"Agent's report" with the trusted note "Written by the agent, not checked by AgentGuard". A run's outcome sits
 above its timeline, with that label.
 
 ## Decision marks
@@ -246,7 +246,7 @@ These outrank looks.
   action a role cannot use, but the server remains the check.
 - Do not imply prevention guarantees. This is a proof of concept.
 - Never present a completed agent turn as proof the code is correct. Keep "Agent's report" with
-  "Not verified by AgentGuard".
+  "Written by the agent, not checked by AgentGuard".
 - Keep the honest wording at the gate: "Allowed by the gate" does not mean applied, "The command text
   was not saved" is never a blank, and held, denied and "did not run" stay distinct.
 - Unknown stays unknown: a Run with no saved final review, or a diff with no baseline, is never shown as

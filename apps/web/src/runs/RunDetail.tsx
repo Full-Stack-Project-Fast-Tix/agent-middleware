@@ -273,7 +273,7 @@ export function RunDetail({ runId }: { runId: string }) {
         <div className="run-main">
           {run.finalOutput !== null && run.status === "completed" && (
             <section className="page-section" aria-label="Agent's report">
-              <Foreign label="Agent's report" note="Not verified by AgentGuard">
+              <Foreign label="Agent's report" note="Written by the agent, not checked by AgentGuard">
                 <MessageContent content={run.finalOutput} rich />
               </Foreign>
             </section>

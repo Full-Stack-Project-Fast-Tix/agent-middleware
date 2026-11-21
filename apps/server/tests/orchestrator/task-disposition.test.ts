@@ -9,6 +9,13 @@ describe("parseTaskDisposition", () => {
     });
   });
 
+  it("accepts a Markdown summary written with raw line breaks inside the string", () => {
+    expect(parseTaskDisposition('{\n  "status": "complete",\n  "summary": "Done.\n\n## Changes\n- `a.js` says \\"hi\\"\n\tindented"\n}')).toEqual({
+      status: "complete",
+      summary: 'Done.\n\n## Changes\n- `a.js` says "hi"\n\tindented',
+    });
+  });
+
   it.each([
     "Implemented the fix.",
     '```json\n{"status":"complete","summary":"done"}\n```',

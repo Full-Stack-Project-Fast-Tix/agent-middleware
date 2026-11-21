@@ -145,7 +145,7 @@ export function TaskDrilldown({
       )}
       {task.error === null && task.result !== null && (
         <section className="task-section">
-          <Foreign label="Agent's report" note="Not verified by AgentGuard" maxHeight={320}>
+          <Foreign label="Agent's report" note="Written by the agent, not checked by AgentGuard" maxHeight={320}>
             <MessageContent content={task.result} rich />
           </Foreign>
         </section>

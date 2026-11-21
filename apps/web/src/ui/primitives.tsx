@@ -46,7 +46,7 @@ export function ButtonLink({ to, variant = "secondary", page = false, children }
 export function Foreign({ label, note, preformatted = false, maxHeight, children }: {
   /** Whose words these are, for instance "Agent's report". */
   label?: ReactNode;
-  /** What AgentGuard can and cannot say about them, for instance "Not verified by AgentGuard". */
+  /** What AgentGuard can and cannot say about them, for instance "Written by the agent, not checked by AgentGuard". */
   note?: ReactNode;
   /** Keep whitespace and line breaks: commands, output and diffs. */
   preformatted?: boolean;

@@ -108,7 +108,7 @@ export function DesignPreview() {
 
       <section className="page-section">
         <h2>Foreign material</h2>
-        <Foreign label="Agent's report" note="Not verified by AgentGuard">
+        <Foreign label="Agent's report" note="Written by the agent, not checked by AgentGuard">
           I added input validation to the checkout endpoint and all tests pass.
         </Foreign>
         <Foreign preformatted maxHeight={120}>{"$ npm test\n  checkout rejects a negative quantity  ok\n  checkout rejects a missing address    ok\n2 passed"}</Foreign>
