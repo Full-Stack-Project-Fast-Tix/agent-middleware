@@ -77,15 +77,21 @@ label > textarea {
 
 .message-body-rich {
   display: grid;
-  gap: 10px;
-  max-width: 84ch;
+  gap: 12px;
+  max-width: 76ch;
   white-space: normal;
 }
 
 .message-body-rich h3,
 .message-body-rich h4 {
-  font-size: var(--text-foreign);
-  font-weight: 700;
+  margin-top: 6px;
+  font-size: 1.1em;
+  font-weight: 650;
+}
+
+.message-body-rich :is(code, pre) {
+  font-family: var(--font-foreign);
+  font-size: 0.85em;
 }
 
 .message-list {

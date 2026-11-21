@@ -1,6 +1,18 @@
 import { useState } from "react";
+import { MessageContent } from "../MessageContent";
 import { Button, DataTable, DecisionMark, EmptyState, ErrorState, Foreign, ForeignInline, GateLine, GateRow, Loading, PageHeader, Select, SeverityBadge, StatusBadge } from ".";
 
+const SAMPLE_REPORT = `Added input validation to the checkout endpoint; it now answers 400 on bad input.
+
+## Changes
+- \`src/routes/checkout.ts\`: rejects a negative quantity and a missing address.
+- \`src/routes/checkout.test.ts\`: two new cases.
+
+## Verification
+- Ran \`npm test\`: **12 passed**, 0 failed.
+
+## Open items
+- The admin form still accepts a quantity of 0.`;
 const STATUSES = ["queued", "planning", "running", "waiting_approval", "completed", "failed", "cancelled", "skipped", "approved", "denied", "timed_out"];
 const REASON = "The command sends a tracked credential file to a remote host. Policy forbids outbound credentials.";
 const ROLES = [
@@ -109,7 +121,7 @@ export function DesignPreview() {
       <section className="page-section">
         <h2>Foreign material</h2>
         <Foreign label="Agent's report" note="Written by the agent, not checked by AgentGuard">
-          I added input validation to the checkout endpoint and all tests pass.
+          <MessageContent rich content={SAMPLE_REPORT} />
         </Foreign>
         <Foreign preformatted maxHeight={120}>{"$ npm test\n  checkout rejects a negative quantity  ok\n  checkout rejects a missing address    ok\n2 passed"}</Foreign>
         <p>The agent changed <ForeignInline>src/routes/checkout.ts</ForeignInline> and then ran the tests.</p>

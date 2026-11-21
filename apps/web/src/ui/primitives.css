@@ -338,6 +338,18 @@
   white-space: pre-wrap;
 }
 
+/* A Markdown report is prose to read, so it gets the sans at reading size on white;
+   the label above and the warm edge still mark it as the agent's words. */
+.foreign:has(> .message-body-rich) {
+  padding: 20px 24px;
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--foreign-edge), inset 3px 0 0 var(--foreign-ink);
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-size: var(--text-md);
+  line-height: 1.65;
+}
+
 .foreign code,
 .foreign pre {
   font-family: inherit;

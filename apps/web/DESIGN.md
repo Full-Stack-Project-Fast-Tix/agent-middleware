@@ -66,7 +66,8 @@ renders "The command text was not saved." in the sans on a cool surface.
 
 A finished agent turn is the agent's report, not proof. Result panels are labelled
 "Agent's report" with the trusted note "Written by the agent, not checked by AgentGuard". A run's outcome sits
-above its timeline, with that label.
+above its timeline, with that label. Because a report is Markdown prose to read, its block uses
+the sans at 16px on white with a warm left edge; code inside it stays in the mono.
 
 ## Decision marks
 
