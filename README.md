@@ -1,5 +1,3 @@
-<img width="932" height="644" alt="image" src="https://github.com/user-attachments/assets/1206a79b-adce-411f-8ee6-506f71444c65" />
-
 # Agents on a Leash
 
 > **Try it before reading further.** Runs are real agents on Claude:
