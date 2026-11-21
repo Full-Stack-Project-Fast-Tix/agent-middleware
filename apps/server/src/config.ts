@@ -93,8 +93,8 @@ const envSchema = z.object({
   CLAUDE_MAX_EDIT_FILE_BYTES: z.coerce.number().int().min(1_024).default(1_048_576),
   /**
    * Run the sensitive-egress family of checks (sensitive-egress and
-   * outbound-blob) against every execution, with network denied. Off by
-   * default: with no checks the agent runs exactly as it would unobserved.
+   * outbound-blob) against every execution, with network denied. On by
+   * default; benchmarks set every flag explicitly to isolate a guard.
    *
    * This is one guard in what will be a family. Each guard gets its own
    * GUARDRAIL_<NAME>_ENABLED flag so a teammate can test their piece in
@@ -102,7 +102,7 @@ const envSchema = z.object({
    */
   GUARDRAIL_EGRESS_ENABLED: z
     .string()
-    .default("false")
+    .default("true")
     .transform((value) => value === "true" || value === "1"),
   /**
    * Carry what a guard caught into the Agent's later runs (see reflections.ts).
@@ -139,11 +139,11 @@ const envSchema = z.object({
     .default("false")
     .transform((value) => value === "true" || value === "1"),
   /**
-   * Enable task-aware semantic monitoring, with network denied.
+   * Enable task-aware semantic monitoring, with network denied. On by default.
    */
   GUARDRAIL_SEMANTIC_ENABLED: z
     .string()
-    .default("false")
+    .default("true")
     .transform((value) => value === "true" || value === "1"),
   /**
    * A Claude model id. Empty means the same model as the coding Agent.

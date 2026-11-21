@@ -723,12 +723,12 @@ Details: [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 | `CONTAINER_ENGINE` | `docker` | `docker`, `podman`, … Colima exposes the Docker CLI so it uses `docker`. |
 | `AGENT_NETWORK_ACCESS` | `false` | Allow agent tool commands to use the network. A profile can still deny it. Network access is container-wide, not host-level filtering or provider-only egress. |
 | `AGENTGUARD_VAULT_MASTER_KEY` | unset | Optional 32-byte hex key for encrypted workspace vault entries. Required to use the vault; see [Local credentials for a Run](#local-credentials-for-a-run). |
-| `GUARDRAIL_EGRESS_ENABLED` | `false` | Run sensitive-egress and outbound-blob checks against every execution. Network is controlled separately by `AGENT_NETWORK_ACCESS`. |
+| `GUARDRAIL_EGRESS_ENABLED` | `true` | Run sensitive-egress and outbound-blob checks against every execution. Network is controlled separately by `AGENT_NETWORK_ACCESS`. |
 | `GUARDRAIL_INTENT_ENABLED` | `false` | Run the agent-intent check every turn. Warn-only; needs no sandbox change; independent of the egress flag. |
 | `GUARDRAIL_REFLECTION_ENABLED` | `false` | Carry what a guard caught into this Agent's later runs, as check parameters — exact hosts, derived host families, watched files. Warn-only at any tier; independent of the other flags. |
 | `GUARDRAIL_SENSITIVE_MARKERS` | built-in list | Comma-separated path substrings that mark a file as secret. **Overrides** the default list when set. |
 | `GUARDRAIL_BLOB_MIN_CHARS` | `128` | Minimum base64/hex run the outbound-blob check treats as an encoded blob. |
-| `GUARDRAIL_SEMANTIC_ENABLED` | `false` | Enable task-aware asynchronous review. Network is controlled separately by `AGENT_NETWORK_ACCESS`. |
+| `GUARDRAIL_SEMANTIC_ENABLED` | `true` | Enable task-aware asynchronous review. Network is controlled separately by `AGENT_NETWORK_ACCESS`. |
 | `GUARDRAIL_SEMANTIC_MODEL` | Configured Agent model | Optional Claude model override for semantic review. |
 | `GUARDRAIL_SEMANTIC_TIMEOUT_MS` | `15000` | Timeout for one semantic assessment. Required action reviews delegate to HITL when available and otherwise fail closed; reasoning-only reviews fail open with a warning. |
 | `HITL_ENABLED` | `false` | Enable one-shot human confirmation for high-consequence commands, semantic uncertainty, and unavailable required semantic reviews. Routine approvals remain automatic. |

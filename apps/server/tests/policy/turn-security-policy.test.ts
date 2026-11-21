@@ -8,6 +8,8 @@ describe("turn security policy", () => {
       loadConfig({
         NODE_ENV: "test",
         AGENT_NETWORK_ACCESS: "true",
+        GUARDRAIL_EGRESS_ENABLED: "false",
+        GUARDRAIL_SEMANTIC_ENABLED: "false",
       }),
     );
 
@@ -24,6 +26,7 @@ describe("turn security policy", () => {
       loadConfig({
         NODE_ENV: "test",
         GUARDRAIL_EGRESS_ENABLED: "true",
+        GUARDRAIL_SEMANTIC_ENABLED: "false",
       }),
     );
 
@@ -58,6 +61,8 @@ describe("turn security policy", () => {
     const config = loadConfig({
       NODE_ENV: "test",
       HITL_ENABLED: "true",
+      GUARDRAIL_EGRESS_ENABLED: "false",
+      GUARDRAIL_SEMANTIC_ENABLED: "false",
       HITL_TIMEOUT_MS: "120000",
     });
     const policy = resolveTurnSecurityPolicy(config);

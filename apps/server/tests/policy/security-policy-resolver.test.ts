@@ -284,6 +284,8 @@ describe("DefaultSecurityMiddleware.resolvePolicy", () => {
       config: loadConfig({
         NODE_ENV: "test",
         AGENT_NETWORK_ACCESS: "true",
+        GUARDRAIL_EGRESS_ENABLED: "false",
+        GUARDRAIL_SEMANTIC_ENABLED: "false",
       }),
       source: source(),
     });
