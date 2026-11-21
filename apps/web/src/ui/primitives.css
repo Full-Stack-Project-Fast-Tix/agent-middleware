@@ -1216,6 +1216,11 @@
   display: none;
 }
 
+/* base.css gives every summary a ">" disclosure mark; this one already has its own "⌄". */
+.topnav-group summary::before {
+  content: none;
+}
+
 .topnav-group summary::after {
   width: 6px;
   height: 6px;
