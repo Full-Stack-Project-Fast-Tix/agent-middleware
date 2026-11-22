@@ -9,8 +9,6 @@ if [[ ! -f .env ]]; then
   echo "Created .env from .env.example."
 fi
 
-mkdir -p data workspaces
-
 echo "Next:"
-echo "  1. Fill ANTHROPIC_API_KEY in .env"
-echo "  2. Run: docker compose up --build"
+echo "  1. Configure .env, start PostgreSQL and create an account (README.md)."
+echo "  2. Run: npm run poc"

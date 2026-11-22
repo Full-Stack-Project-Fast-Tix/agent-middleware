@@ -32,7 +32,6 @@ load_env_var HITL_ENABLED
 load_env_var HITL_TIMEOUT_MS
 load_env_var GUARDRAIL_SENSITIVE_MARKERS
 load_env_var GUARDRAIL_BLOB_MIN_CHARS
-load_env_var GUARDRAIL_INTENT_ENABLED
 load_env_var GUARDRAIL_REFLECTION_ENABLED
 
 # Claude runs its tools in this image; its agent loop stays on this host.

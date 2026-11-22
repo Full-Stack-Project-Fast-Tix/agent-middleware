@@ -1,22 +1,19 @@
 import { createApp } from "./app.js";
 import { signedInUser } from "./auth-routes.js";
-import { createDemoRuns, seedDemo, type DemoRuns, type DemoStore } from "./dev/demo-runs.js";
+import { createDemoRuns, type DemoRuns, type DemoStore } from "./dev/demo-runs.js";
 import { assertModelProviderReady, loadConfig } from "./config.js";
 import { openDatabase } from "./db/pool.js";
 import { PostgresIdentity } from "./db/postgres-identity.js";
-import { PostgresRunStore } from "./db/postgres-run-store.js";
 import { startApprovalSweep } from "./orchestrator/orchestrator.js";
 import { createPostgresRuns } from "./postgres-runs.js";
 import { RunEventHub } from "./run-events.js";
 import { startRunFileSweep } from "./run-retention.js";
 
-const config = loadConfig();
-
 // `--runs-demo` (npm run dev:demo) or RUNS_DEMO=1 mounts the multi-agent run
 // routes with a simulated runtime and middleware (dev/demo-runs.ts), so the
-// Runs UI can be developed against the real orchestrator before P1's
-// middleware exists. Nothing in it executes.
+// Runs UI can be demonstrated without model calls or a database. Nothing in it executes.
 const runsDemo = process.argv.includes("--runs-demo") || process.env.RUNS_DEMO === "1";
+const config = loadConfig(runsDemo ? { ...process.env, APP_AUTH_MODE: "token" } : process.env);
 if (runsDemo && config.nodeEnv === "production") {
   throw new Error("RUNS_DEMO uses simulated security decisions and must not run in production.");
 }
@@ -31,17 +28,14 @@ const runEvents = new RunEventHub();
 // Postgres. With APP_AUTH_MODE=password as well, users sign in (db:admin adds
 // them) and Runs are real: P1's middleware, the model planner and Claude, with
 // one disposable container per execution for its tools.
-if (config.authMode === "password" && (runsDemo || !process.env.DATABASE_URL)) {
-  throw new Error("APP_AUTH_MODE=password needs DATABASE_URL, and does not combine with RUNS_DEMO.");
+if (config.authMode === "password" && !process.env.DATABASE_URL) {
+  throw new Error("APP_AUTH_MODE=password needs DATABASE_URL.");
 }
-const database = process.env.DATABASE_URL ? await openDatabase({ connectionString: process.env.DATABASE_URL }) : null;
+const database = !runsDemo && process.env.DATABASE_URL ? await openDatabase({ connectionString: process.env.DATABASE_URL }) : null;
 const identity = config.authMode === "password" ? new PostgresIdentity(database!) : null;
 
 let runs: Pick<DemoRuns<DemoStore>, "orchestrator" | "store" | "routes"> | null = null;
-if (runsDemo && database !== null) {
-  await seedDemo(database);
-  runs = createDemoRuns(runEvents, { store: new PostgresRunStore(database, runEvents) });
-} else if (runsDemo) {
+if (runsDemo) {
   runs = createDemoRuns(runEvents);
 } else if (identity !== null) {
   runs = createPostgresRuns(config, database!, runEvents, identity);
