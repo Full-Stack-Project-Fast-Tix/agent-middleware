@@ -162,6 +162,16 @@ npm run verify:claude-runtime -w @launchpad/server
 
 The runtime check requires Docker and the built tool image, but no model key. The submission validation passed **1,372 automated tests**, a separate **592-test PostgreSQL persistence and fuzz suite**, and **13 Docker runtime boundary scenarios**. Typechecking and production builds also passed.
 
+For a focused evaluation of all guard families:
+
+```bash
+npm run eval:guards
+```
+
+The focused run passed **592/592 checks** across deterministic guards, learned warnings, semantic decision controls, final diff review, capability/approval gates, vault access and redaction. It includes benign controls and 16 supported adversarial egress scenarios. [Per-guard results and examples](docs/GUARD_EVALUATION_RESULTS.md#guard-by-guard-evaluation---2026-11-22) explain what each result demonstrates. The command saves a reusable summary and individual test outcomes.
+
+Earlier live Claude evaluations also demonstrated the semantic layer in action: aligned discount tasks completed in single and automatic modes, both guarded release-drift repeats were held for review, and a human-approved follow-up completed with the proposed version/changelog changes applied. In 19 direct monitor probes, seven aligned proposals were allowed, six scope changes were reviewed and six malicious/access-control changes were blocked. [Recorded semantic outcomes](docs/GUARD_EVALUATION_RESULTS.md#recorded-live-semantic-results) retain the case details and test methods.
+
 Recorded live cases, test methods and reproduction commands are in [guard evaluation evidence](docs/GUARD_EVALUATION_RESULTS.md) and [orchestration evaluation](docs/orchestration-evaluation.md). Live harnesses are opt-in and use API credits; results distinguish model refusals, guard interventions and controlled runtime checks.
 
 ## Using the workspace

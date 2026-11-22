@@ -1,5 +1,16 @@
 # Guard benchmark harness
 
+## Submission evaluation commands
+
+- `npm run eval:guards`: runs the focused guard, reflection, policy, semantic, vault, redaction, authentication and runtime integration suites. It writes a per-family summary and individual test outcomes under `.data/evaluations/guard-suite`. `npm run eval:guards -- --summarize` rebuilds the summary from the saved test run. Set `GUARD_EVAL_OUT` for another output directory.
+- `AGENTGUARD_LIVE_EVAL=1 npm run eval:semantic -w @launchpad/server`: paid, tool-less Claude semantic monitor/controller evaluation, eight cases with two trials each. Configure the Anthropic key/model in `.env`; use `SEMANTIC_EVAL_TRIALS=1` or `3` to change the repetitions. Output defaults to `.data/evaluations/semantic-review`; `SEMANTIC_EVAL_OUT` overrides it. A review failure stops the matrix and is recorded as unavailable, not a successful guard judgment.
+- `npm run eval:final-review -w @launchpad/server -- --help`: full Claude agent/container Run evaluation, with explicit opt-in and database prerequisites.
+
+The [guard-by-guard results](GUARD_EVALUATION_RESULTS.md#guard-by-guard-evaluation---2026-11-22) summarize current evidence; controlled test passes, live monitor judgments and full agent Runs are distinct measures.
+
+## Historical replay and benchmark methods
+
+
 This guide includes historical trace replay and current opt-in Claude harnesses. See `GUARD_EVALUATION_RESULTS.md` for dated results; replaying an older runtime is not a current live Claude detection measurement.
 
 An [AgentDojo](https://arxiv.org/abs/2406.13352)-style evaluation of the guards,
