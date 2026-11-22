@@ -1,5 +1,5 @@
 #!/usr/bin/env -S npx tsx
-// Opt-in live harness for the final-review path (handover tickets 4 and 5).
+// Opt-in live harness for the final diff review and approval path.
 //
 // Each case writes a disposable fixture, creates a fresh workspace for it, and
 // runs one real Run through the PostgreSQL-backed orchestrator, the gated Claude

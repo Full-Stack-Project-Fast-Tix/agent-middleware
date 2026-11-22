@@ -17,7 +17,6 @@ apps/server/reference/
 # Local inspection helper, not part of the deliverable
 scripts/show-last-run.sh
 
-# Generated chart PNGs are for the Devpost writeup; SVGs are the source
 # Orphan probe traces, not referenced by any test
 apps/server/tests/fixtures/
 
@@ -27,8 +26,11 @@ benchmark-results/claude-*/
 benchmark-results/semantic-diff-validation-*/
 benchmark-results/stage3-*/
 
-# Chart variants used only in the Devpost writeup, not in the repo docs
+# Unused generated chart variants
 docs/assets/png/
 docs/assets/benchmark-safety-vs-cost-*.svg
 docs/assets/benchmark-utility-*.svg
 docs/assets/benchmark-who-stopped-it-*.svg
+
+# Per-developer editor launch configuration
+.claude/

@@ -1,39 +1,13 @@
-# Cost note
+# Resource and token budget
 
-One small host and pay-per-use model calls are enough for this proof of concept, so
-there is no Kubernetes, managed database or message broker to pay for. Prices below
-are left for you to fill from your cloud provider on the day you deploy, because
-they change and were not checked for this note.
+The local submission needs Node.js 22+, PostgreSQL 16 and a container engine. Tools default to two CPUs, 2 GiB memory and 256 processes per execution; two executions may run concurrently. These are limits, not a guarantee that a 4 GiB host can sustain both plus the control plane and database.
 
-| Item | What the project uses | Why this size | Monthly cost |
-| --- | --- | --- | --- |
-| Host | 2 vCPU, 4 GiB, 40 GiB disk (`docs/DEPLOYMENT.md`) | One control plane, Postgres, and at most 2 parallel executions per Run | Fill in |
-| Object storage for backups | One nightly dump, 14 kept locally | Dumps are small; only the bucket's retention drives this | Fill in |
-| Model calls | Anthropic API, by tokens | The real variable cost, and capped per Run | See below |
+Model calls use an operator-supplied Anthropic account and incur its current API charges. No fixed monetary estimate is claimed. The configured model, effort, context length, caching and repeated review calls affect cost.
 
-## Model spend
+`RUN_TOKEN_BUDGET` defaults to 2,000,000 shared tokens across the planner, agent calls, reasoning/action monitors and final diff review. Before a call the server reserves its input's UTF-8 byte count plus a 16,000-token protocol allowance and maximum output. Concurrent reservations share one ledger. Reported usage, including cache tokens, replaces a reservation; unknown or failed usage retains its conservative charge. Final review has a reserve of 20%, capped at 128,000 tokens. This is an admission estimate, not a provider billing guarantee.
 
-Every execution records its tokens in `agent_executions.usage`, so spend is measured
-rather than estimated:
+Per-execution usage remains on `AgentExecution.usage`; the final receipt records the broader model budget separately. Summing only agent execution usage omits planning and review. A failed model call can still consume provider credits.
 
-```sql
-SELECT r.id, sum((e.usage->>'inputTokens')::bigint)  AS input_tokens,
-             sum((e.usage->>'outputTokens')::bigint) AS output_tokens
-  FROM runs r JOIN agent_executions e ON e.run_id = r.id
- GROUP BY r.id;
-```
+Code defaults allow 40 model turns and 200,000 output tokens per execution. The submission `.env.example` selects smaller limits (20 turns and 50,000 output tokens); explicit environment settings take precedence. Model/tool time defaults to 15 minutes per execution, excluding time spent waiting for human approval. A retry creates another execution, subject to the shared Run budget.
 
-Limits that bound one Run:
-
-- At most 6 tasks, 2 running at once and 2 attempts per task.
-- `RUN_TOKEN_BUDGET`, 2,000,000 tokens by default. It is checked before each attempt,
-  so a single attempt can overshoot it.
-- The semantic monitor adds one small model call per reviewed action, at most 700
-  output tokens each. Those calls are **not** counted in `usage`, so they sit outside
-  the budget.
-
-## What would change this
-
-More concurrent users need a bigger host first, since executions are the main load.
-Real tenant isolation would cost far more, because it means separate hosts or stronger
-sandboxes. That is outside this proof of concept (`handover.md`, decision 5).
+See the root README for setup and the evaluation records for measured durations. Deployment and cloud pricing are outside the local submission scope.

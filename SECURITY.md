@@ -1,45 +1,25 @@
-# Security policy
+# Security model
 
-AgentGuard is a security-focused proof of concept. Only the latest revision
-on the default branch is supported.
+AgentGuard is a local capstone proof of concept. Password mode provides PostgreSQL-backed accounts, hashed sessions, workspace roles and server-side authorization. Shared-token mode is for the simulated UI demo; it does not provide per-user authorization.
 
-## Report a vulnerability
+## Enforced boundaries
 
-Send the repository owner the affected revision,
-reproduction steps, impact, and suggested mitigation. Do not publish
-credentials, personal data, or exploit details in an issue.
+- Trusted server middleware checks delegation, context handoffs, commands and file changes before they run. Capabilities combine mandatory platform ceilings, workspace ceilings and agent profiles; lower layers cannot grant what a higher layer denies.
+- Tools run in disposable containers as non-root users with dropped capabilities, no-new-privileges and CPU, memory and PID limits. The workspace mount is read-only for agents without write permission. The image filesystem is not an immutable sandbox; writers can use writable locations inside the container.
+- Container network defaults off. Explicit operator permission plus effective agent policy can enable a bridge network even with guards on; guards still evaluate actions. There is no host-level destination firewall.
+- The Anthropic API key stays on the host. Repository/tool content read by the agent is sent to the model provider.
+- Known credential filenames are excluded from working copies. The encrypted workspace vault keeps selected credentials on the host and allows narrowly granted HTTPS requests through its broker.
+- Deterministic checks take precedence over semantic assessments. Risk and confidence from the semantic model are judgments, not calibrated probabilities. Final diff review fails closed on incomplete evidence, but happens after execution and does not roll back the copy.
+- Sign-in failure tracking is bounded and expires, but is process-local. Sessions are bearer tokens sent in Authorization headers; the browser keeps them in memory. Use HTTPS beyond loopback.
 
-## Known limitations
+## Limits
 
-- Shared demo token; no user identity, authorization, RBAC, or tenant isolation
-- No CSRF protection
-- Ordinary local containers, not hardened multi-tenant sandboxes
-- Agent tool commands are denied network access by default, with a container that
-  has no network. `AGENT_NETWORK_ACCESS=true` opts into a bridge network on unguarded
-  executions; egress, semantic, and HITL guarded executions still deny it. This is
-  not host-level egress filtering.
-- Multi-agent working copies exclude known environment-secret patterns and
-  common credential stores/files by default, but this is a filename-based
-  denylist rather than general secret detection. Unrecognized secrets in
-  copied files may still be visible to the Agent.
-- Prompt-triggered command and file execution
-- The Anthropic key is available to the server only: the agent loop
-  runs there, and tools run in a container without it. Repository content the agent
-  reads still reaches Anthropic as tool results.
+Containers are not hardened isolation for mutually untrusted users. Secret filename exclusions, command classification and output redaction are incomplete defenses; transformed or unrecognized secrets may evade them. Raw rolling traces may contain sensitive data and do not constitute a complete audit history. Access to raw traces is restricted; the bounded findings and audit trail are separate.
 
-## Safe use
+Run copies and traces follow configured retention, except that the latest successful workspace copy remains for continuation. Vault entries and database rows are not erased by Run retention. Protect the master key and data directory, and use synthetic credentials and disposable projects for demonstrations.
 
-- Use a dedicated development machine or disposable host.
-- Use a scoped, revocable Anthropic key and a unique `APP_AUTH_TOKEN`.
-- Keep local use on loopback and restrict Web and SSH access to a host.
-- Add HTTPS before sending the shared token over an untrusted network.
-- Never mount production data or provide cloud account credentials to Agents.
-- Stop the POC, destroy test resources, and revoke keys after the event.
+Run one control-plane instance. A restart ends active Runs; orchestration, approval waiters, credential taint and throttling are not coordinated across replicas. No certification, complete injection detection, production tenant isolation or guaranteed containment is claimed.
 
-Tool containers use a read-only image filesystem, but the Run's working copy is a
-writable bind mount for an agent that may write, and `/tmp` is a bounded writable tmpfs. This narrows
-writable locations; it does not make the container a hardened boundary. Raw
-traces use a 16 MiB rolling window. When the window fills, older events are
-evicted and a `trace/rolled` marker indicates that the retained trace is
-incomplete; the runtime continues. Security checks still observe the live
-tool calls independently of what remains in the bounded trace file.
+## Reporting a defect
+
+Give the repository owner the revision, reproduction steps and impact through a private channel. Do not include real credentials, personal data or raw sensitive traces in public issues.

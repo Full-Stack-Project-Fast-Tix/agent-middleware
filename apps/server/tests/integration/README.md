@@ -9,7 +9,7 @@ stored snapshot.
 | --- | --- |
 | `harness/client.ts` | `HarnessClient` validates every response (error bodies too) against `@launchpad/shared`. `RunRecorder` keeps the full event log and the view a UI would build from it. |
 | `harness/invariants.ts` | `checkRunInvariants`: rules every Run must satisfy, whatever produced it. |
-| `harness/stand-in.ts` | The real HTTP app, run routes, `RunEventHub` and `Orchestrator`, with temporary stand-ins for persistence (P3), middleware by default, the supervisor's model call and the Claude runtime. |
+| `harness/stand-in.ts` | The real HTTP app, run routes, `RunEventHub` and `Orchestrator`, with controlled stand-ins for persistence, middleware by default, the supervisor's model call and the Claude runtime. |
 | `secure-run.test.ts` | Gate 1 scenarios, including a concrete `DefaultSecurityMiddleware` scenario routing delegation, handoff, command and file actions through one instance. |
 | `invariants.test.ts` | Proves each invariant catches the violation it names. |
 
@@ -33,25 +33,10 @@ stored snapshot.
 - **Persistence vs events:** the snapshot equals the state rebuilt from the
   events, and `lastEventSeq` equals the last seq in the stream.
 
-## Replacing the stand-ins
+## Scope of the evidence
 
-As each subsystem lands, have `startStandIn` use the real piece instead:
+The orchestrator, API routes and event transport are real. Most scenarios use `InMemoryRunStore`, a scripted planner/runtime and scripted middleware to make approval outcomes deterministic without model or Docker dependencies. A focused secure-run scenario uses the concrete security middleware.
 
-- **P3 persistence:** swap `InMemoryRunStore` for the repositories, and point
-  the run routes' `snapshot`/`approval` and `canReadRun` at them. The
-  repositories assign event seqs in the write's transaction, as
-  `InMemoryRunStore` does.
-- **P2 orchestrator:** done. The real `Orchestrator` and run routes
-  (`src/run-routes.ts`) are in use. Only its planner and runtime are
-  stand-ins, so the scenarios stay deterministic and need no model or Docker.
-- **P1 middleware:** the concrete middleware is exercised by a focused
-  orchestrator integration scenario; broader scenarios still use
-  `ScriptedMiddleware` for deterministic approval outcomes. Password-authenticated
-  container startup is composed with the concrete middleware, PostgreSQL and
-  Claude runtime. This harness still replaces the model planner, container runtime
-  and usually persistence, so it is not proof of a full deployed run.
+PostgreSQL persistence and fuzz tests separately exercise the real stores. The opt-in Docker boundary check exercises the Claude loop against a mock model API and real containers. Live Claude evaluations are separate again; none of these controlled suites establishes model detection accuracy.
 
-The scenarios and invariants should not need to change. If one does, that is
-a contract change: record it in
-[docs/contract-decisions.md](../../../../docs/contract-decisions.md) and get
-the team's agreement.
+Keep invariant changes consistent with the shared lifecycle contracts and [contract decisions](../../../../docs/contract-decisions.md).

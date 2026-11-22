@@ -179,9 +179,9 @@ does not include the time the write itself took. Run duration does.
   integration scenario routes delegation, handoff, command and file actions
   through `DefaultSecurityMiddleware`. The security benchmark
   (`docs/BENCHMARK.md`) measures guard quality and false interventions on the
-  old single-agent runtime. The repository does not yet contain a live-model,
-  container-backed multi-agent efficacy benchmark, so these results must not be
-  presented as one.
+  old single-agent runtime. Later opt-in Claude Run harnesses and case-specific results are documented in
+  [guard evaluation evidence](GUARD_EVALUATION_RESULTS.md). These load results
+  must not be presented as live-model efficacy measurements.
 - **A production database.** PostgreSQL ran in Docker on the same busy machine,
   with no tuning, no network between it and the server, and a store that started
   empty. The numbers do not predict a deployed system.

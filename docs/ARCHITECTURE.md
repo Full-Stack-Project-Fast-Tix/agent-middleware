@@ -13,7 +13,7 @@ flowchart LR
     Orch --> Loop["Claude agent loop"]
     Loop --> Gate["Security middleware<br/>trace checks + semantic intent controller"]
     Loop --> Model["Anthropic Messages API"]
-    Loop --> Tools["Disposable tool container"]
+    Gate --> Tools["Disposable tool container"]
 ```
 
 ## Components
@@ -77,8 +77,7 @@ append-only raw trace.
 
 ### Multi-agent runs
 
-The multi-agent model is Run → Task → AgentExecution (see
-[architecture-direction.md](architecture-direction.md)). It runs alongside the
+The multi-agent model is Run → Task → AgentExecution (described here). It runs alongside the
 Claude runtime. These parts exist:
 
 - **Shared contracts** ([`packages/shared`](../packages/shared)): Zod schemas
@@ -341,8 +340,8 @@ arrive as text after the tool results, never inside one.
 and the `declined` item a refusal leaves
 ([`benchmark-results/`](../benchmark-results/2026-08-31-slice) holds real ones), so
 the deterministic checks, trajectory state, findings, trace route, web trace view
-and benchmark scorers read them unchanged. Thinking summaries become `reasoning`
-items, and visible pre-tool intent text is marked separately; both feed the
+and benchmark scorers read them unchanged. Provider-returned thinking summaries, when available, become `reasoning`
+items; private chain of thought is not exposed. Visible pre-tool action summaries are marked separately; both feed the
 semantic monitor. Claude may omit thinking summaries, so the gate also reviews
 all commands not proven read-only and all file changes before execution. One
 consequence: re-running the checks over a declined egress
@@ -396,14 +395,6 @@ uses real Docker, a mock API and no key, and is not part of `npm test`.
 | Local POC | Host Node.js | Claude's loop on the host, tools in a disposable local container |
 | Multi-agent host (`scripts/deploy-multi-agent.sh`) | Host Node.js under systemd, Postgres in Compose | Disposable local container |
 | Local development (`npm run dev:demo`) | Host Node.js | Simulated |
-
-## Extension seams
-
-| Track | Primary seam | Expected change |
-| --- | --- | --- |
-| Glass Box | `ExecutionRuntime`, trace records | Emit and display correlated execution events. |
-| Bouncer | API routes, workspace roles | Tighten server-side authorization. |
-| Kill Switch | `ExecutionRuntime`, `ToolSandbox` | Add threat-specific policy or a stronger sandbox. |
 
 The tool container is the POC trust boundary. Ordinary containers are not hardened
 multi-tenant isolation. Denied network means a container with no network; a profile

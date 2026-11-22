@@ -706,7 +706,7 @@ real Claude Run has proven this path.
   to, so `view .env` counts as a sensitive read exactly as `cat .env` does.
 - **Network.** A policy that denies network gives the container `--network none`.
   Nothing in the container reaches the model, so this closes, for this path, the gap
-  [handover.md](../handover.md) records. A policy that allows network keeps a bridge,
+  [architecture documentation](ARCHITECTURE.md) records. A policy that allows network keeps a bridge,
   which can reach the host.
 - **Trace.** Records use the Codex app-server shapes, ordering and the `declined`
   item, taken from real traces in `benchmark-results/`. No check was forked or

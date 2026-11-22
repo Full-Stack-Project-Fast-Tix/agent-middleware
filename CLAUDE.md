@@ -8,8 +8,8 @@ Apply higher-priority system/developer instructions and the user's current task 
 
 1. Inspect the current implementation and tests to establish what the code actually does.
 2. Follow settled interface and behavior decisions in [`docs/contract-decisions.md`](docs/contract-decisions.md), unless the task explicitly changes them.
-3. Use [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for current system structure and [`docs/architecture-direction.md`](docs/architecture-direction.md) for agreed direction that may not yet be implemented.
-4. Treat [`README_AgentGuard.md`](README_AgentGuard.md) as broader product vision and [`README.md`](README.md) as user-facing project, setup, and evidence documentation—not proof that planned capabilities exist.
+3. Use [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for current system structure.
+4. Use [`README.md`](README.md) for the submission overview, local setup, limitations and links to measured evidence.
 
 When these sources conflict, do not silently promote a plan into an implementation claim. Verify behavior in code, honor settled contracts, and update the relevant documentation when the task changes behavior or status. Historical decisions belong in the contract-decision/ADR record; current status belongs in architecture documentation; setup and operations belong in the README or [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
@@ -37,7 +37,7 @@ For changes to security interfaces, policy, taint, or enforcement ordering, read
 
 ## Ownership and boundaries
 
-The project workstreams are described in [`README_AgentGuard.md`](README_AgentGuard.md#team-workstreams): Person 1 — Security; Person 2 — Orchestration; Person 3 — Platform; Person 4 — Contracts & Integration. Respect shared contracts and coordinate cross-boundary changes when required. Do not duplicate policy authorization logic in the orchestrator or UI. Ownership is coordination guidance, not a reason to leave a required cross-boundary fix incomplete.
+The capstone workstreams are Person 1: Security; Person 2: Orchestration; Person 3: Platform; Person 4: Contracts and Integration. Respect shared contracts and coordinate cross-boundary changes when required. Do not duplicate policy authorization logic in the orchestrator or UI. Ownership is coordination guidance, not a reason to leave a required cross-boundary fix incomplete.
 
 ## Change and safety practices
 

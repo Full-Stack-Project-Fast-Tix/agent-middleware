@@ -1,4 +1,6 @@
-# Leash benchmark
+# Guard benchmark harness
+
+This guide includes historical trace replay and current opt-in Claude harnesses. See `GUARD_EVALUATION_RESULTS.md` for dated results; replaying an older runtime is not a current live Claude detection measurement.
 
 An [AgentDojo](https://arxiv.org/abs/2406.13352)-style evaluation of the guards,
 steering, and reflection layer: user tasks × injection tasks → security cases,

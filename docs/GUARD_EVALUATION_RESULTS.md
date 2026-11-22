@@ -1,5 +1,17 @@
 # Guard evaluation results
 
+## Submission reconciliation - 2026-11-22
+
+This pass checked the capstone report against the API/authentication, PostgreSQL adapters and migrations, orchestrator lifecycle/continuation, Claude runtime and sandbox, deterministic/semantic controllers, final diff review, vault/broker, artifact import/export/retention, and console evidence views. It corrected documentation claims rather than treating older plans as implemented behavior.
+
+- `npm run check` passed: shared 47, server 1,190, web 135; **1,372 passed**, with 79 conditional server cases skipped in that invocation. Typecheck and production builds passed. Rollup reported harmless upstream Zod annotation warnings.
+- A separate disposable PostgreSQL 16 database ran all persistence tests and the orchestration fuzz suite: **9 files, 592 tests passed** in 284.88 seconds. This includes real-store randomized Runs; the application database was not used. The disposable database was removed after testing.
+- `npm run verify:claude-runtime -w @launchpad/server` passed **13/13** boundary scenarios with a mock model API and real Docker: declined edit, approved edit/non-root execution, refused command, denied network, network-enabled control, model-key exclusion, path/link refusal, directory-swap race check, read-only mount, shell state/output bounds, command timeout, cancellation and container cleanup. The directory-swap check is timing-dependent, not a proof against every race.
+- The simulated demo started under the existing password-mode environment after its startup fix; `/api/auth` and `/api/health` returned HTTP 200. It uses an in-memory store and does not establish model/guard accuracy.
+- The edited Word report opened in Microsoft Word with both images retained. Non-document ZIP entries, including image assets, were preserved byte-for-byte. All retained Markdown local file links resolved, and `git diff --check` passed.
+
+No paid live Claude calls or visual browser acceptance pass were performed in this reconciliation. Earlier live findings below remain dated, case-specific evidence. The report preserves those measured results and their caveats; historical model refusals are not relabelled as guard blocks.
+
 ## Stage 3 verification — 2026-11-19 (Claude blocked by credentials)
 
 Commits `7d4ee7a` and `1f6f357` were pushed before these checks. Docker Desktop

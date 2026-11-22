@@ -93,4 +93,4 @@ Rules the diagram cannot show:
 - A trigger makes `audit_events` append-only for the application.
 - Agents, profiles and policies are archived, never deleted, so evidence can still
   name them.
-- `reflections` and `reflection_sightings` exist but are not yet read or written.
+- `reflections` and `reflection_sightings` store bounded per-agent facts and recurrence evidence. Password-mode middleware loads and folds them when the optional reflection layer is enabled.

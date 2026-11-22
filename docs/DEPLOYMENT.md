@@ -21,7 +21,7 @@ POSTGRES_PASSWORD=letters-digits-only-and-not-the-default
 ANTHROPIC_API_KEY=your-anthropic-api-key
 PUBLIC_PORT=3000
 # Optional. Copies each nightly backup off the machine; the dump's path is $1.
-BACKUP_UPLOAD_COMMAND=tosutil cp "$1" tos://your-bucket/agentguard/
+BACKUP_UPLOAD_COMMAND=your-upload-tool "$1"
 ```
 
 Then deploy and add people:
@@ -68,14 +68,14 @@ tenants.
 > script were tested, the systemd steps were not. Serve it over TLS before real use, because sessions are bearer tokens.
 
 Settings worth knowing: `RUN_ARTIFACT_RETENTION_DAYS` (30, 0 keeps files forever)
-removes a finished Run's working copy and raw traces, and `RUN_TOKEN_BUDGET`
-(2,000,000) stops new attempts once a Run has used that many tokens.
+removes old finished Run copies and raw traces, retaining the latest successful copy for continuation, and `RUN_TOKEN_BUDGET`
+(2,000,000) controls admission of planner, agent and review calls through a shared reservation ledger.
 
 ## Claude runtime
 
 Runs run on Claude. The first-run steps
 and costs are in the README, under
-[Run on Claude](../README.md#run-on-claude). What is different for deployment:
+[Local setup](../README.md#local-setup). What is different for deployment:
 
 - **It runs on a host with a container engine.** The server process starts one
   container per execution, so it needs access to Docker, Colima or Podman. `npm run poc` does this. The
@@ -87,10 +87,8 @@ and costs are in the README, under
 - **The API key stays with the server process.** Only the server needs
   `ANTHROPIC_API_KEY`. The server needs outbound HTTPS to `api.anthropic.com`. The
   tool containers need no route to it, and get none when policy denies network.
-- **Only the host's network matters for model calls.** With any guard enabled the
-  policy denies network to every execution, so containers run with
-  `--network none`. An agent profile with the `network` capability and no guard
-  gets a bridge network, which can reach the host, including
+- **Only the host's network matters for model calls.** Network defaults off. When the operator enables `AGENT_NETWORK_ACCESS` and the agent profile permits it, the execution
+  gets a bridge network even with guards enabled, which can reach the host, including
   `host.docker.internal`. Treat that capability accordingly.
 - **Tools run as a non-root user.** Set `CONTAINER_USER` to a non-root `uid:gid` if
   the server itself runs as root; the runtime refuses to start a container as root.

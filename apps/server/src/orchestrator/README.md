@@ -22,7 +22,7 @@ always the middleware's decision
 | `task-prompt.ts` | What a specialist is told: its objective, earlier results fenced with a per-prompt nonce and marked as data, and the required final disposition report. |
 | `task-disposition.ts` | Strictly validates whether a specialist reports its Task complete or incomplete. |
 | `ports.ts` | The interfaces the orchestrator depends on: `RunStore`, `AgentDirectory`, `ExecutionRuntime`, `WorkingCopies`, `RunDiffReviewer` and `ActionGate`. |
-| `in-memory-run-store.ts` | `RunStore` in memory, publishing RunEvents with per-run seqs. Used by tests and by `dev:demo` without `DATABASE_URL`; real Runs use `PostgresRunStore`. |
+| `in-memory-run-store.ts` | `RunStore` in memory, publishing RunEvents with per-run seqs. Used by tests and by the in-memory `dev:demo`; real Runs use `PostgresRunStore`. |
 | `claude-execution-runtime.ts` | `ClaudeExecutionRuntime`, an agent loop on this host over the Messages API, with tools in one disposable container per execution. Writes JSON-RPC-shaped trace records. |
 | `working-copies.ts` | `DirectoryWorkingCopies`: copies the configured source for the first Run and the latest successful Run's copy for each follow-up to `<root>/<runId>/workspace`. Skips dependencies, local tool/credential stores (`credential-names.ts`), environment secrets, and common private-key files; keeps example environment templates and copies other symlinks as links. Takes the bounded baseline (`workspace-snapshot.ts`) only when it creates the copy, and serves the Run's diff artifact (`run-diff.ts`) once execution has stopped. |
 
