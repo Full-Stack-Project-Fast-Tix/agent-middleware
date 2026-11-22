@@ -18,6 +18,7 @@
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "npm run test -w @launchpad/shared && npm run test -w @launchpad/server && npm run test -w @launchpad/web",
     "check": "npm run typecheck && npm run test && npm run build",
+    "eval:guards": "node --import tsx --conditions=development benchmark/run-guard-suite.ts",
     "poc": "./scripts/start-local-poc.sh",
     "build:claude-runtime": "docker build --file Dockerfile.claude-runtime --tag agentguard-claude-runtime:local .",
     "start": "npm run start -w @launchpad/server"

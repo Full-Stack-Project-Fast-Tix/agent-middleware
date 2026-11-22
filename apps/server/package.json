@@ -13,6 +13,7 @@
     "test:fuzz": "vitest run tests/orchestrator/fuzz.test.ts",
     "benchmark:multi-agent": "tsx --conditions=development ../../benchmark/run-multi-agent-live.ts",
     "eval:final-review": "tsx --conditions=development ../../benchmark/run-final-review-live.ts",
+    "eval:semantic": "tsx --conditions=development ../../benchmark/run-semantic-review-live.ts",
     "verify:claude-runtime": "tsx --conditions=development scripts/verify-claude-runtime.ts",
     "measure:orchestration": "tsx --conditions=development scripts/measure-orchestration.ts",
     "start": "node dist/index.js",

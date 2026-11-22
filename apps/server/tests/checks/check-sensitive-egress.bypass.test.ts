@@ -3,8 +3,8 @@
 // One trace per evasion technique, named by the technique. Each asserts either
 // that the guard still fires (`caught`) or, for techniques that are outside
 // what a deterministic trace matcher can see, that it does not (`missed`) with
-// a `KNOWN GAP` note. The gaps are listed in README.md under "Guard coverage
-// and limitations".
+// a `KNOWN GAP` note. The boundary cases are recorded separately in the guard evaluation summary
+// (docs/GUARD_EVALUATION_RESULTS.md).
 //
 // Both checks run together here, the same pair guard-checks.ts wires up.
 
