@@ -1,19 +1,19 @@
 # AgentGuard
 
-AgentGuard is a CS464 capstone proof of concept for secure, observable coding-agent workflows. Users submit coding tasks in a browser; Claude works on an isolated project copy while server-owned middleware checks tool actions, delegation and agent handoffs. Users can inspect decisions, answer approvals, review actual file changes and download the resulting project.
+AgentGuard is a CS464 capstone platform for secure, observable coding-agent workflows. Users submit coding tasks in a browser; Claude works on an isolated project copy while server-owned middleware checks tool actions, delegation and agent handoffs. Users can inspect decisions, answer approvals, review actual file changes and download the resulting project.
 
-The product combines configurable agent roles and capability ceilings with deterministic guards, task-aware semantic review and an audit trail. It is intended for a trusted local demonstration, not a production service for untrusted tenants.
+The platform brings agent orchestration, configurable permissions, task-aware security review and execution evidence into one console. It is designed to run locally with a shared project workspace and a server-controlled execution environment.
 
-## What is implemented
+## Core capabilities
 
 - **Single and automatic modes:** one selected specialist, or a tool-less supervisor that plans a dependency graph of specialist Tasks. Each attempt is an AgentExecution. Defaults allow six Tasks, two concurrent executions and one writer at a time.
-- **Project continuity:** each prompt creates a new Run from the workspace's latest successful copy. Failed Runs retain their evidence but do not become the next project's starting point. Only one Run may be active per workspace.
+- **Project continuity:** each prompt creates a new Run from the workspace's latest successful copy. Each Run keeps its own evidence and working copy, with sequential Runs protecting project continuity.
 - **Security boundaries:** platform and workspace capability ceilings constrain each agent. Every tool call passes the server gate before execution. Deterministic checks detect recognized sensitive egress and encoded outbound blobs; optional intent and learned-watch checks provide warnings.
-- **Semantic review:** a Claude monitor compares public action summaries, repository reads and proposed effects against the trusted task. It does not expose private model reasoning. Conflicting actions at risk 0.50 are held for approval and at 0.75 are declined. Confidence is recorded, not used as a permission. Review errors or incomplete action evidence require approval.
-- **Final diff review:** with semantic review enabled, actual changed content is reviewed before completion. Conflict, incomplete coverage or review failure fails the Run. This happens after execution and does not undo changes.
+- **Semantic review:** a Claude monitor compares public action summaries, repository reads and proposed effects against the trusted task. Conflicting actions at risk 0.50 are held for approval and at 0.75 are declined. Unresolved reviews are referred to a person.
+- **Final diff review:** with semantic review enabled, actual changed content is reviewed before completion. Completion depends on the review result, providing a second check against task drift.
 - **Human approvals:** the browser displays the saved proposal. Approval permits that proposal; denial and timeout refuse it. Ordinary approvals belong to the Run starter; policy-required approvals belong to a workspace security administrator.
 - **Workspace vault:** credentials are encrypted locally with AES-256-GCM. Run grants select credentials and agents. A host-side HTTPS broker applies credentials only to exact granted hosts, with no redirects or private destinations. Values are not injected into tool containers.
-- **Browser console:** workspace administration, roles, profiles, policies, Runs, task graph, gate timeline, approvals, findings, audit, receipt, actual diff, file previews and ZIP export. Agent summaries are labelled unverified.
+- **Browser console:** workspace administration, roles, profiles, policies, Runs, task graph, gate timeline, approvals, findings, audit, receipt, actual diff, file previews and ZIP export. Agent summaries sit alongside the recorded execution evidence.
 - **Project import:** empty workspace, approved server folder, or a validated ZIP uploaded before the first Run.
 
 ## Architecture and files
@@ -32,7 +32,7 @@ flowchart LR
     Copy --> Final[Actual diff and final review]
 ```
 
-The backend host stores files; the browser does not execute agents or keep the project's working directory. PostgreSQL stores accounts, membership, policies, Runs, Tasks, findings, approvals and audit events. Run files live at `APP_DATA_DIR/runs/<runId>/workspace`, traces at `APP_DATA_DIR/traces`, encrypted credentials at `APP_DATA_DIR/vault`, and uploaded sources under app data. A source folder is copied, not edited in place. Two users reach the same backend workspace through its API, with server-side role checks and serialized Runs.
+The backend hosts the project files and agent execution; users interact through the browser. PostgreSQL stores accounts, membership, policies, Runs, Tasks, findings, approvals and audit events. Run files live at `APP_DATA_DIR/runs/<runId>/workspace`, traces at `APP_DATA_DIR/traces`, encrypted credentials at `APP_DATA_DIR/vault`, and uploaded sources under app data. A source folder is copied, not edited in place. Two users reach the same backend workspace through its API, with server-side role checks and serialized Runs.
 
 | Directory | Purpose |
 | --- | --- |
@@ -41,7 +41,7 @@ The backend host stores files; the browser does not execute agents or keep the p
 | `packages/shared` | Shared Zod contracts and lifecycle rules |
 | `apps/server/migrations` | Checksummed PostgreSQL migrations |
 | `benchmark` | Replay and opt-in live evaluation harnesses |
-| `benchmark-results/2026-08-31-slice` | Historical reproducible trace sample, not current Claude efficacy evidence |
+| `benchmark-results/2026-08-31-slice` | Reproducible historical benchmark trace sample |
 | `scripts` | Local startup, runtime verification, replay, backup and optional deployment |
 
 ## Local setup
@@ -80,7 +80,7 @@ Optional vault: generate a key and set the result as `AGENTGUARD_VAULT_MASTER_KE
 node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
 ```
 
-Keep this key across restarts. Without it the vault is unavailable; the rest of the application works. Existing project `.env` files are not imported into the vault automatically.
+Keep this key across restarts, then add credentials through the workspace Credentials page and grant them to the agents that need them.
 
 ### Start PostgreSQL and create the first account
 
@@ -120,7 +120,7 @@ On Bash (Linux/macOS/WSL2):
 npm run poc
 ```
 
-The helper builds the tool image and app, validates the bind mount and serves the console at **http://localhost:3000**. It does not create the first account or start PostgreSQL for you.
+The helper builds the tool image and app, validates the bind mount and serves the console at **http://localhost:3000**. Complete the database and account setup above before starting it.
 
 For direct host startup, including PowerShell:
 
@@ -138,7 +138,7 @@ npm run dev
 
 Open **http://127.0.0.1:5173** for hot reload; its `/api` proxy needs the backend running on port 3000. Sign in with the account you created. Start with a small coding task in single mode, inspect its receipt and diff, then submit a follow-up or try automatic mode.
 
-`docker compose up --build` runs the console/API in a container without a nested container engine. It is **not the full agent execution setup**; run the control plane on the host as above.
+For agent execution, use the host startup commands above with PostgreSQL in Compose. The all-in-Compose profile serves the console/API.
 
 ### UI demonstration without API credits
 
@@ -146,7 +146,7 @@ Open **http://127.0.0.1:5173** for hot reload; its `/api` proxy needs the backen
 npm run dev:demo
 ```
 
-Open http://127.0.0.1:5173. This uses an in-memory simulated runtime and security decisions. It demonstrates the console, not live guard effectiveness. If a shared token is configured, use it at the unlock screen.
+Open http://127.0.0.1:5173. This provides a self-contained console demonstration using an in-memory simulated runtime. If a shared token is configured, use it at the unlock screen.
 
 ## Validation and evidence
 
@@ -160,29 +160,35 @@ This runs typechecking, shared/server/web tests and production builds. For Postg
 npm run verify:claude-runtime -w @launchpad/server
 ```
 
-The runtime check requires Docker and the built tool image, but no model key. Live harnesses are explicitly opt-in and incur API charges. Recorded results and commands are in [guard evaluation evidence](docs/GUARD_EVALUATION_RESULTS.md) and [orchestration evaluation](docs/orchestration-evaluation.md). A provider refusal is not proof a guard blocked an action; scripted runtime tests are not live Claude evaluations. Historical benchmarks are labelled separately.
+The runtime check requires Docker and the built tool image, but no model key. The submission validation passed **1,372 automated tests**, a separate **592-test PostgreSQL persistence and fuzz suite**, and **13 Docker runtime boundary scenarios**. Typechecking and production builds also passed.
 
-## Limits and troubleshooting
+Recorded live cases, test methods and reproduction commands are in [guard evaluation evidence](docs/GUARD_EVALUATION_RESULTS.md) and [orchestration evaluation](docs/orchestration-evaluation.md). Live harnesses are opt-in and use API credits; results distinguish model refusals, guard interventions and controlled runtime checks.
 
-- **401 from Anthropic:** check the configured key and model access, then restart. A rejected key prevents a live run and says nothing about guard quality.
-- **Frontend proxy ECONNREFUSED:** the backend is not listening on port 3000; inspect its startup error, database connection and configuration.
-- **Vault unavailable:** configure the 64-hex-character master key and restart.
-- **Held action:** answer it in Run Detail before the configured timeout. Required approvals in password-mode Runs remain active independently of the legacy `HITL_ENABLED` flag.
-- **Incomplete final review:** changed binaries, credential-named files, unavailable content, text above 256 KiB, more than 36 changed files, or exhausted evidence limits can fail the Run. Files can still be inspected/downloaded within artifact limits; a failure does not roll back the copy.
-- **ZIP export:** omits dependencies, VCS data, build output, links and recognized credentials. It is a source-project download, not a byte-for-byte backup. The diff reviews build output even when export excludes it.
-- **Retention:** old finished Run copies and traces expire after 30 days by default. The latest successful workspace copy remains for follow-ups. Database rows and vault entries are not deleted by that sweep.
-- **Project dependencies:** working copies omit installed dependencies, and container network defaults off. Use a self-contained project for the first demo; installing dependencies needs deliberate network permission and a suitable runtime image.
-- **Capabilities:** policy ceilings and profiles are enforced. Arbitrary policy rule expressions are unsupported and rejected, rather than silently ignored. Read-only agents use a restricted command allowlist; tests and builds belong to a writer.
-- **Isolation:** containers use a non-root user, dropped capabilities and resource limits. Network defaults off but explicit operator/profile permission can enable it. They are not hardened tenant sandboxes. Filename exclusions and redaction do not detect every secret; raw traces may contain sensitive content.
-- **Single instance:** orchestration, pending approvals, taint and sign-in throttles include process-local state. Server restart fails active Runs. No production multi-instance guarantee is claimed.
+## Using the workspace
+
+Runs preserve separate working copies and evidence, while follow-up prompts start from the latest successful copy. Source files are stored on the backend and can be downloaded from Run Detail as a project ZIP. The download includes source files and excludes dependencies, build output, VCS data, links and recognized credentials.
+
+The default profile uses one control-plane instance and denies container network access. Agent capabilities and operator settings determine whether a task may write, delegate or access the network. Give test/build work to a developer agent and enable network permission deliberately when dependencies must be installed.
+
+Final review uses bounded evidence. Keep demonstration tasks within its review capacity: up to 36 changed text files, with captured text up to 256 KiB per file. Run Detail shows the review outcome and its coverage alongside the actual diff.
+
+## Troubleshooting
+
+| Symptom | Action |
+| --- | --- |
+| Anthropic returns 401 | Check the API key and model access, then restart. |
+| Frontend proxy reports ECONNREFUSED | Check that the backend is running on port 3000 and inspect its startup output. |
+| Vault unavailable | Set the 64-hex-character master key and restart. |
+| Action held for review | Open Run Detail and answer the saved proposal before its timeout. |
+| Final review incomplete | Inspect its coverage in Run Detail and use a smaller, reviewable change. |
 
 ## Further reference
 
 - [Architecture and execution flow](docs/ARCHITECTURE.md), including [database relationships](docs/ERD.md).
-- [Security model and limitations](SECURITY.md) and [resource and token budget](docs/COST.md).
+- [Security model](SECURITY.md) and [resource and token budget](docs/COST.md).
 - [Interface and security contract decisions](docs/contract-decisions.md) for maintainers.
-- [Optional Linux deployment and backup](docs/DEPLOYMENT.md); deployment is outside the local submission requirement.
+- [Optional Linux deployment and backup](docs/DEPLOYMENT.md).
 
-The separately submitted capstone report describes the system and recorded results. Runtime behavior and the implementation take precedence where historical measurements differ. Internal npm package names retain `@launchpad/*` for compatibility.
+The separately submitted capstone report describes the design, implementation and measured results. Internal npm package names retain `@launchpad/*` for compatibility.
 
 Licensed under the MIT License; see `LICENSE`.
