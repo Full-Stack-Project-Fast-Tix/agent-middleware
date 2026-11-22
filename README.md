@@ -194,6 +194,7 @@ Final review uses bounded evidence. Keep demonstration tasks within its review c
 
 ## Further reference
 
+- [Capstone project report](docs/PROJECT_REPORT.md) — motivation, technology choices, milestones, team contributions and success criteria.
 - [Architecture and execution flow](docs/ARCHITECTURE.md), including [database relationships](docs/ERD.md).
 - [Security model](SECURITY.md) and [resource and token budget](docs/COST.md).
 - [Interface and security contract decisions](docs/contract-decisions.md) for maintainers.
